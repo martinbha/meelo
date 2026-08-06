@@ -14,6 +14,7 @@ uv run ruff format --check .
 uv run pytest
 uv run mypy .
 uv run pre-commit install
+uv run python manage.py create_private_user --email you@example.com --staff
 ```
 
 The application processes financial screenshots locally. Do not add screenshots,

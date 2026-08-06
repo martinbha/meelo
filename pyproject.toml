@@ -65,6 +65,7 @@ exclude_lines = [
 ]
 
 [tool.mypy]
+plugins = ["mypy_django_plugin.main"]
 python_version = "3.12"
 check_untyped_defs = true
 disallow_any_generics = true
