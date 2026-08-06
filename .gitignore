@@ -1,2 +1,12 @@
 # Local documentation artifacts
 /docs/
+
+# Local development environments and generated files
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+*.py[cod]

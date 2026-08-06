@@ -1,0 +1,78 @@
+[project]
+name = "finance-ocr"
+version = "0.1.0"
+description = "Local screenshot OCR and personal finance platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "argon2-cffi>=23.1,<26",
+    "cryptography>=43,<47",
+    "django>=5.2,<6",
+    "django-axes>=7,<9",
+    "django-otp>=1.5,<2",
+    "gunicorn>=23,<24",
+    "numpy>=2,<3",
+    "opencv-python-headless>=4.10,<5",
+    "paddleocr>=2.10,<4",
+    "pillow>=11,<13",
+    "psycopg[binary]>=3.2,<4",
+    "pytesseract>=0.3.13,<1",
+    "rapidfuzz>=3.10,<4",
+]
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.6,<8",
+    "django-stubs[compatible-mypy]>=5.2,<6",
+    "factory-boy>=3.3,<4",
+    "mypy>=1.13,<2",
+    "pre-commit>=4,<5",
+    "pytest-django>=4.9,<5",
+    "pytest>=8.3,<9",
+    "ruff>=0.9,<1",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+python_files = ["test_*.py", "*_test.py"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["config", "apps"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["migrations"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.base"
