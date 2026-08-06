@@ -49,6 +49,7 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
+DJANGO_SETTINGS_MODULE = "config.settings.testing"
 python_files = ["test_*.py", "*_test.py"]
 testpaths = ["tests"]
 
