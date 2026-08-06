@@ -13,7 +13,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest
 uv run mypy .
-pre-commit install
+uv run pre-commit install
 ```
 
 The application processes financial screenshots locally. Do not add screenshots,
