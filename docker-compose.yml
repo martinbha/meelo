@@ -63,6 +63,8 @@ services:
 
   proxy:
     image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"
