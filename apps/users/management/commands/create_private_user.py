@@ -11,6 +11,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser) -> None:  # type: ignore[no-untyped-def]
         parser.add_argument("--email", required=True)
         parser.add_argument("--staff", action="store_true", help="Grant Django admin access.")
+        parser.add_argument(
+            "--superuser",
+            action="store_true",
+            help="Grant all permissions and Django admin access.",
+        )
 
     def handle(self, *args, **options) -> None:  # type: ignore[no-untyped-def]
         email = options["email"]
@@ -24,5 +29,11 @@ class Command(BaseCommand):
         if password != confirmation:
             raise CommandError("Passwords do not match")
 
-        user = User.objects.create_user(email=email, password=password, is_staff=options["staff"])
+        is_superuser = options["superuser"]
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            is_staff=options["staff"] or is_superuser,
+            is_superuser=is_superuser,
+        )
         self.stdout.write(self.style.SUCCESS(f"Created private user {user.email}"))
