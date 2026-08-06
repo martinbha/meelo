@@ -19,5 +19,15 @@ uv run python manage.py migrate
 uv run python manage.py create_private_user --email you@example.com --superuser
 ```
 
+The Compose deployment runs the web application, PostgreSQL, and Caddy proxy by
+default. Enable the processing worker profile after the worker command is
+implemented:
+
+```bash
+docker compose --env-file .env.example config
+docker compose --env-file .env.example up -d
+docker compose --env-file .env.example --profile processing up -d
+```
+
 The application processes financial screenshots locally. Do not add screenshots,
 OCR output, credentials, or other sensitive data to the repository.

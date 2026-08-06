@@ -1,0 +1,88 @@
+services:
+  web:
+    build: .
+    command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost}
+      DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-Asia/Seoul}
+      DATABASE_ENGINE: django.db.backends.postgresql
+      POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
+      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - finance_ocr_tmp:/run/finance-ocr
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=128m
+
+  worker:
+    build: .
+    command: ["python", "manage.py", "process_document_jobs"]
+    profiles: ["processing"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost}
+      DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-Asia/Seoul}
+      DATABASE_ENGINE: django.db.backends.postgresql
+      POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
+      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - finance_ocr_tmp:/run/finance-ocr
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=128m
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
+      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_config:
+  caddy_data:
+  finance_ocr_tmp:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=512m,mode=0700
+  postgres_data:
