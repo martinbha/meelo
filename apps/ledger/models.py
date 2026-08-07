@@ -148,3 +148,35 @@ class LedgerAccount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.code} {self.name_blind_index}"
+
+
+class LedgerEntry(models.Model):
+    class EntryType(models.TextChoices):
+        DEBIT = "debit", "Debit"
+        CREDIT = "credit", "Credit"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    transaction = models.ForeignKey(
+        "transactions.CanonicalTransaction",
+        on_delete=models.PROTECT,
+        related_name="ledger_entries",
+    )
+    account = models.ForeignKey(
+        LedgerAccount,
+        on_delete=models.PROTECT,
+        related_name="ledger_entries",
+    )
+    entry_type = models.CharField(max_length=8, choices=EntryType.choices)
+    amount_encrypted = models.TextField()
+    currency = models.CharField(max_length=3)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("transaction", "entry_type"), name="ledger_entry_txn_type_idx"),
+            models.Index(fields=("account", "created_at"), name="ledger_entry_account_date_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.entry_type} {self.currency}"
