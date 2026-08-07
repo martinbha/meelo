@@ -119,8 +119,8 @@ class MerchantAlias(models.Model):
         ordering = ("alias_blind_index", "created_at")
         constraints = [
             models.UniqueConstraint(
-                fields=("user", "alias_blind_index"),
-                name="merchant_alias_user_alias_blind_unique",
+                fields=("user", "alias_blind_index", "payment_instrument"),
+                name="merchant_alias_user_alias_card_unique",
             ),
         ]
 
@@ -153,6 +153,15 @@ class MerchantAlias(models.Model):
 
 
 class CategoryRule(models.Model):
+    class RuleType(models.TextChoices):
+        MERCHANT_EXACT = "merchant_exact", "Merchant exact"
+        MERCHANT_CONTAINS = "merchant_contains", "Merchant contains"
+        COUNTERPARTY_EXACT = "counterparty_exact", "Counterparty exact"
+        COUNTERPARTY_CONTAINS = "counterparty_contains", "Counterparty contains"
+        PAYMENT_INSTRUMENT = "payment_instrument", "Payment instrument"
+        FINANCIAL_ACCOUNT = "financial_account", "Financial account"
+        AMOUNT_RANGE = "amount_range", "Amount range"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -161,6 +170,11 @@ class CategoryRule(models.Model):
     )
     merchant_pattern_encrypted = models.TextField()
     merchant_pattern_blind_index = models.CharField(max_length=128)
+    rule_type = models.CharField(
+        max_length=32,
+        choices=RuleType.choices,
+        default=RuleType.MERCHANT_EXACT,
+    )
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="rules")
     payment_instrument = models.ForeignKey(
         PaymentInstrument,
@@ -215,7 +229,13 @@ class CategoryRule(models.Model):
         payment_instrument_id: uuid.UUID | None = None,
         financial_account_id: uuid.UUID | None = None,
     ) -> bool:
-        if not self.is_active or self.merchant_pattern_blind_index != merchant_blind_index:
+        if not self.is_active:
+            return False
+        if (
+            self.rule_type in {self.RuleType.MERCHANT_EXACT, self.RuleType.MERCHANT_CONTAINS}
+            and self.merchant_pattern_blind_index != merchant_blind_index
+        ):
+            return False
             return False
         if self.payment_instrument_id and self.payment_instrument_id != payment_instrument_id:
             return False

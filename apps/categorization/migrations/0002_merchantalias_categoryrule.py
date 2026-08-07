@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 "ordering": ("alias_blind_index", "created_at"),
-                "constraints": [models.UniqueConstraint(fields=("user", "alias_blind_index"), name="merchant_alias_user_alias_blind_unique")],
+                "constraints": [models.UniqueConstraint(fields=("user", "alias_blind_index", "payment_instrument"), name="merchant_alias_user_alias_card_unique")],
             },
         ),
         migrations.CreateModel(
@@ -38,6 +38,7 @@ class Migration(migrations.Migration):
                 ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ("merchant_pattern_encrypted", models.TextField()),
                 ("merchant_pattern_blind_index", models.CharField(max_length=128)),
+                ("rule_type", models.CharField(choices=[("merchant_exact", "Merchant exact"), ("merchant_contains", "Merchant contains"), ("counterparty_exact", "Counterparty exact"), ("counterparty_contains", "Counterparty contains"), ("payment_instrument", "Payment instrument"), ("financial_account", "Financial account"), ("amount_range", "Amount range")], default="merchant_exact", max_length=32)),
                 ("amount_min_encrypted", models.TextField(blank=True)),
                 ("amount_max_encrypted", models.TextField(blank=True)),
                 ("priority", models.PositiveIntegerField(default=0)),
