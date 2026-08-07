@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "axes",
     "apps.core.apps.CoreConfig",
     "apps.financial_accounts.apps.FinancialAccountsConfig",
+    "apps.instruments.apps.InstrumentsConfig",
     "apps.processing.apps.ProcessingConfig",
     "apps.users.apps.UsersConfig",
 ]
