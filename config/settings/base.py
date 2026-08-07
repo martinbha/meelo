@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.categorization.apps.CategorizationConfig",
     "apps.financial_accounts.apps.FinancialAccountsConfig",
     "apps.instruments.apps.InstrumentsConfig",
+    "apps.ledger.apps.LedgerConfig",
     "apps.processing.apps.ProcessingConfig",
     "apps.transactions.apps.TransactionsConfig",
     "apps.users.apps.UsersConfig",
