@@ -236,7 +236,6 @@ class CategoryRule(models.Model):
             and self.merchant_pattern_blind_index != merchant_blind_index
         ):
             return False
-            return False
         if self.payment_instrument_id and self.payment_instrument_id != payment_instrument_id:
             return False
         return not (self.financial_account_id and self.financial_account_id != financial_account_id)
