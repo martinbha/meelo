@@ -23,6 +23,16 @@ def serialize_money(amount: Money) -> str:
     return f"{amount.amount_minor}:{amount.resolved_currency.code}"
 
 
+def deserialize_money(value: str) -> Money:
+    try:
+        amount_minor, currency = value.split(":", maxsplit=1)
+        return Money(int(amount_minor), currency)
+    except (TypeError, ValueError) as exc:
+        raise InvalidRequestError(
+            "Transaction amounts must be encoded as minor_units:CURRENCY."
+        ) from exc
+
+
 def post_balanced_transaction(
     canonical_transaction: CanonicalTransaction,
     postings: Sequence[Posting],
