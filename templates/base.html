@@ -1,0 +1,43 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Private personal finance workspace">
+    <title>{% block title %}Finance workspace{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+    <script src="{% static 'js/app.js' %}" defer></script>
+  </head>
+  <body hx-boost="true" hx-indicator="#global-progress">
+    <header class="site-header">
+      <a class="brand" href="/">Finance workspace</a>
+      <nav aria-label="Primary navigation">
+        {% if request.user.is_authenticated %}
+          <span class="user-email">{{ request.user.email }}</span>
+          <form action="{% url 'logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit">Sign out</button>
+          </form>
+        {% else %}
+          <a href="{% url 'login' %}">Sign in</a>
+        {% endif %}
+      </nav>
+    </header>
+    <div id="global-progress" class="htmx-indicator" role="status" aria-live="polite">
+      Loading…
+    </div>
+    {% if messages %}
+      <section class="messages" aria-label="Messages">
+        {% for message in messages %}
+          <p class="message message-{{ message.tags|default:'info' }}">{{ message }}</p>
+        {% endfor %}
+      </section>
+    {% endif %}
+    <main id="main-content" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,56 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 72rem;
+  padding: 1rem;
+}
+
+.site-header,
+nav,
+nav form {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
+
+.site-header {
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.brand {
+  font-weight: 700;
+}
+
+button {
+  cursor: pointer;
+}
+
+.auth-card {
+  margin: 10vh auto 0;
+  max-width: 28rem;
+}
+
+.messages {
+  margin-bottom: 1rem;
+}
+
+.message {
+  border: 1px solid currentcolor;
+  padding: 0.5rem 0.75rem;
+}
+
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
+}
