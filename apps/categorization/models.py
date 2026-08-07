@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+
+from apps.financial_accounts.models import FinancialAccount
+from apps.instruments.models import PaymentInstrument
 
 
 class Category(models.Model):
@@ -81,3 +85,157 @@ class Category(models.Model):
 
     def __str__(self) -> str:
         return self.name_blind_index
+
+
+class MerchantAlias(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="merchant_aliases",
+    )
+    alias_encrypted = models.TextField()
+    alias_blind_index = models.CharField(max_length=128)
+    normalized_merchant_encrypted = models.TextField()
+    normalized_merchant_blind_index = models.CharField(max_length=128)
+    default_category = models.ForeignKey(
+        Category,
+        on_delete=models.PROTECT,
+        related_name="merchant_aliases",
+        blank=True,
+        null=True,
+    )
+    payment_instrument = models.ForeignKey(
+        PaymentInstrument,
+        on_delete=models.PROTECT,
+        related_name="merchant_aliases",
+        blank=True,
+        null=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("alias_blind_index", "created_at")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "alias_blind_index", "payment_instrument"),
+                name="merchant_alias_user_alias_card_unique",
+            ),
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        if self.default_category_id:
+            category_owner = (
+                Category.objects.filter(pk=self.default_category_id)
+                .values_list("user_id", flat=True)
+                .first()
+            )
+            if category_owner != self.user_id:
+                errors["default_category"] = "The default category must belong to the same user."
+        if self.payment_instrument_id:
+            instrument_owner = (
+                PaymentInstrument.objects.filter(pk=self.payment_instrument_id)
+                .values_list("user_id", flat=True)
+                .first()
+            )
+            if instrument_owner != self.user_id:
+                errors["payment_instrument"] = (
+                    "The payment instrument must belong to the same user."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return self.alias_blind_index
+
+
+class CategoryRule(models.Model):
+    class RuleType(models.TextChoices):
+        MERCHANT_EXACT = "merchant_exact", "Merchant exact"
+        MERCHANT_CONTAINS = "merchant_contains", "Merchant contains"
+        COUNTERPARTY_EXACT = "counterparty_exact", "Counterparty exact"
+        COUNTERPARTY_CONTAINS = "counterparty_contains", "Counterparty contains"
+        PAYMENT_INSTRUMENT = "payment_instrument", "Payment instrument"
+        FINANCIAL_ACCOUNT = "financial_account", "Financial account"
+        AMOUNT_RANGE = "amount_range", "Amount range"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="category_rules",
+    )
+    merchant_pattern_encrypted = models.TextField()
+    merchant_pattern_blind_index = models.CharField(max_length=128)
+    rule_type = models.CharField(
+        max_length=32,
+        choices=RuleType.choices,
+        default=RuleType.MERCHANT_EXACT,
+    )
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="rules")
+    payment_instrument = models.ForeignKey(
+        PaymentInstrument,
+        on_delete=models.PROTECT,
+        related_name="category_rules",
+        blank=True,
+        null=True,
+    )
+    financial_account = models.ForeignKey(
+        FinancialAccount,
+        on_delete=models.PROTECT,
+        related_name="category_rules",
+        blank=True,
+        null=True,
+    )
+    amount_min_encrypted = models.TextField(blank=True)
+    amount_max_encrypted = models.TextField(blank=True)
+    priority = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-priority", "created_at")
+        indexes = [
+            models.Index(
+                fields=("user", "merchant_pattern_blind_index", "is_active"),
+                name="category_rule_lookup_idx",
+            ),
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        related_objects: dict[str, tuple[Any, uuid.UUID | None]] = {
+            "category": (Category, self.category_id),
+            "payment_instrument": (PaymentInstrument, self.payment_instrument_id),
+            "financial_account": (FinancialAccount, self.financial_account_id),
+        }
+        for field_name, (model, object_id) in related_objects.items():
+            if object_id:
+                owner = model.objects.filter(pk=object_id).values_list("user_id", flat=True).first()
+                if owner != self.user_id:
+                    errors[field_name] = "Related records must belong to the same user."
+        if errors:
+            raise ValidationError(errors)
+
+    def matches(
+        self,
+        merchant_blind_index: str,
+        *,
+        payment_instrument_id: uuid.UUID | None = None,
+        financial_account_id: uuid.UUID | None = None,
+    ) -> bool:
+        if not self.is_active:
+            return False
+        if (
+            self.rule_type in {self.RuleType.MERCHANT_EXACT, self.RuleType.MERCHANT_CONTAINS}
+            and self.merchant_pattern_blind_index != merchant_blind_index
+        ):
+            return False
+        if self.payment_instrument_id and self.payment_instrument_id != payment_instrument_id:
+            return False
+        return not (self.financial_account_id and self.financial_account_id != financial_account_id)
