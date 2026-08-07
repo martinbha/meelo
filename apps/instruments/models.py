@@ -7,6 +7,8 @@ from django.db import models
 
 from apps.financial_accounts.models import FinancialAccount
 
+from .validators import validate_payment_instrument_mapping
+
 
 class PaymentInstrument(models.Model):
     class InstrumentType(models.TextChoices):
@@ -55,6 +57,10 @@ class PaymentInstrument(models.Model):
             models.Index(fields=("user", "is_active"), name="instrument_user_active_idx"),
             models.Index(fields=("user", "instrument_type"), name="instrument_user_type_idx"),
         ]
+
+    def clean(self) -> None:
+        super().clean()
+        validate_payment_instrument_mapping(self)
 
     def __str__(self) -> str:
         return f"{self.name_blind_index} ({self.instrument_type})"
