@@ -58,6 +58,8 @@ def post_balanced_transaction(
         locked_transaction = CanonicalTransaction.objects.select_for_update().get(
             pk=canonical_transaction.pk
         )
+        if locked_transaction.status != CanonicalTransaction.Status.CONFIRMED:
+            raise InvalidRequestError("Only confirmed transactions can be posted to the ledger.")
         if LedgerEntry.objects.filter(transaction=locked_transaction).exists():
             raise ConflictError("This transaction has already been posted to the ledger.")
         entries = LedgerEntry.objects.bulk_create(
