@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "axes",
     "apps.core.apps.CoreConfig",
+    "apps.categorization.apps.CategorizationConfig",
     "apps.financial_accounts.apps.FinancialAccountsConfig",
     "apps.instruments.apps.InstrumentsConfig",
     "apps.processing.apps.ProcessingConfig",
