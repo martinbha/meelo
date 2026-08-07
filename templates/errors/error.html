@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Request error · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="error-heading">
+    <h1 id="error-heading">We could not complete that request</h1>
+    <p>{{ error.message }}</p>
+    <p>Reference: <code>{{ request_id }}</code></p>
+  </section>
+{% endblock %}
