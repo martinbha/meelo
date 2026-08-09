@@ -21,3 +21,4 @@ class LedgerAccountAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 class LedgerEntryAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     list_display = ("transaction", "account", "entry_type", "currency", "created_at")
     list_filter = ("entry_type", "currency")
+    readonly_fields = ("amount_encrypted",)
