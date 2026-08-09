@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Uploads · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="uploads-heading">
+    <h1 id="uploads-heading">Uploads</h1>
+    <p><a href="{% url 'upload-new' %}">Upload a screenshot</a></p>
+    {% if documents %}
+      <ul>
+        {% for document in documents %}
+          <li><a href="{% url 'upload-detail' document.pk %}">{{ document.original_filename_encrypted }}</a> · {{ document.processing_status }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No screenshots uploaded.</p>
+    {% endif %}
+  </section>
+{% endblock %}

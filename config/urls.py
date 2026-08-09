@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
+from apps.processing.views import UploadCreateView, UploadDetailView, UploadListView
 from apps.transactions.views import (
     ManualTransactionCreateView,
     ManualTransactionUpdateView,
@@ -19,4 +20,7 @@ urlpatterns = [
         ManualTransactionUpdateView.as_view(),
         name="transaction-edit",
     ),
+    path("uploads/", UploadListView.as_view(), name="upload-list"),
+    path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),
+    path("uploads/<uuid:pk>/", UploadDetailView.as_view(), name="upload-detail"),
 ]
