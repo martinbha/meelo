@@ -27,11 +27,12 @@ def cleanup_document_storage(document_id: UUID, temporary_path: str) -> bool:
     if not temporary_path:
         return True
     try:
-        path = safe_document_path(document_id, temporary_path)
-        path.unlink(missing_ok=True)
+        safe_document_path(document_id, temporary_path)
         directory = document_directory(document_id)
         if directory.exists():
-            directory.rmdir()
+            if directory.is_symlink():
+                raise ValueError("The document directory cannot be a symlink.")
+            shutil.rmtree(directory)
         SourceDocument.objects.filter(pk=document_id).update(cleanup_error_code="")
         return True
     except (OSError, ValueError) as exc:
@@ -58,9 +59,12 @@ def cleanup_stale_directories(*, cutoff: datetime) -> tuple[int, int]:
         document = SourceDocument.objects.filter(pk=document_id).first()
         if document is not None and document.processing_status in ACTIVE_STATUSES:
             continue
-        modified_at = datetime.fromtimestamp(
-            directory.stat().st_mtime, tz=timezone.get_current_timezone()
-        )
+        try:
+            modified_at = datetime.fromtimestamp(
+                directory.stat().st_mtime, tz=timezone.get_current_timezone()
+            )
+        except OSError:
+            continue
         if modified_at >= cutoff:
             continue
         try:
