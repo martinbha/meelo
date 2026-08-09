@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +37,22 @@ class ValidatedUpload:
     suffix: str
     width: int
     height: int
+
+
+def fingerprint_uploaded_file(uploaded_file: Any) -> str:
+    digest = hashlib.sha256()
+    uploaded_file.seek(0)
+    chunks = (
+        uploaded_file.chunks()
+        if hasattr(uploaded_file, "chunks")
+        else iter(lambda: uploaded_file.read(1024 * 1024), b"")
+    )
+    for chunk in chunks:
+        if not chunk:
+            break
+        digest.update(chunk)
+    uploaded_file.seek(0)
+    return digest.hexdigest()
 
 
 def validate_uploaded_file(uploaded_file: Any) -> ValidatedUpload:
