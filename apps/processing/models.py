@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
-from typing import Self
+from typing import Any, Self
 
 from django.conf import settings
 from django.db import models, transaction
@@ -57,6 +57,15 @@ class ProcessingJob(models.Model):
                 name="processing_job_max_attempts_positive",
             ),
         ]
+
+    @classmethod
+    def for_user(cls, user: object) -> Any:
+        """Return jobs through the owner boundary used by web and worker code."""
+
+        user_id = getattr(user, "pk", None)
+        if user_id is None or not getattr(user, "is_authenticated", False):
+            return cls.objects.none()
+        return cls.objects.filter(user_id=user_id)
 
     @classmethod
     def claim_next(cls) -> Self | None:

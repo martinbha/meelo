@@ -3,10 +3,12 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.http import Http404
 
 from apps.categorization.models import Category
 from apps.core.audit import record_audit_event
 from apps.core.errors import InvalidRequestError
+from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.ledger.models import LedgerEntry
@@ -186,3 +188,34 @@ def test_audit_events_are_chained_without_plaintext(user: Any) -> None:
     assert first.previous_digest == ""
     assert second.previous_digest == first.digest
     assert "secret" not in second.metadata
+
+
+@pytest.mark.django_db
+def test_owned_queries_and_routes_do_not_reveal_another_user(
+    user: Any, account: FinancialAccount, client: Any
+) -> None:
+    other = type(user).objects.create_user("other@example.com", password="password")
+    other_account = FinancialAccount.objects.create(
+        user=other,
+        name_encrypted="other",
+        name_blind_index="other-account",
+        institution_encrypted="bank",
+        institution_blind_index="other-bank",
+        account_type=FinancialAccount.AccountType.CHECKING,
+    )
+    other_transaction = create_manual_transaction(
+        user=other,
+        occurred_at=date(2026, 8, 7),
+        amount_minor=100,
+        currency="KRW",
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+        financial_account=other_account,
+    )
+
+    assert list(owned_queryset(CanonicalTransaction, user)) == []
+    with pytest.raises(Http404):
+        get_owned_object_or_404(CanonicalTransaction, user, pk=other_transaction.pk)
+
+    client.force_login(user)
+    response = client.get(f"/transactions/{other_transaction.pk}/edit/")
+    assert response.status_code == 404
