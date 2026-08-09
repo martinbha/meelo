@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+
+from django.conf import settings
+from django.db import models
+
+
+class AuditEvent(models.Model):
+    """Privacy-safe record of a security or financial workflow event."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="audit_events",
+    )
+    event_type = models.CharField(max_length=64)
+    object_type = models.CharField(max_length=128, blank=True)
+    object_id = models.UUIDField(blank=True, null=True)
+    request_id = models.CharField(max_length=64, blank=True)
+    ip_hash = models.CharField(max_length=128, blank=True)
+    user_agent_hash = models.CharField(max_length=128, blank=True)
+    metadata = models.JSONField(default=dict)
+    previous_digest = models.CharField(max_length=128, blank=True)
+    digest = models.CharField(max_length=128, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        indexes = [
+            models.Index(fields=("user", "created_at"), name="audit_user_created_idx"),
+            models.Index(fields=("user", "event_type"), name="audit_user_event_idx"),
+        ]
+
+    def calculate_digest(self) -> str:
+        payload = {
+            "user_id": str(self.user_id),
+            "event_type": self.event_type,
+            "object_type": self.object_type,
+            "object_id": str(self.object_id) if self.object_id else "",
+            "request_id": self.request_id,
+            "ip_hash": self.ip_hash,
+            "user_agent_hash": self.user_agent_hash,
+            "metadata": self.metadata,
+            "previous_digest": self.previous_digest,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self.digest:
+            self.digest = self.calculate_digest()
+        super().save(*args, **kwargs)  # type: ignore[arg-type]
