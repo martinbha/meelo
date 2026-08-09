@@ -44,6 +44,7 @@ def validate_uploaded_file(uploaded_file: Any) -> ValidatedUpload:
     declared_size = int(getattr(uploaded_file, "size", 0))
     if declared_size <= 0 or declared_size > settings.MAX_UPLOAD_SIZE:
         raise InvalidRequestError("The screenshot is empty or exceeds the upload size limit.")
+    previous_pixel_limit = Image.MAX_IMAGE_PIXELS
     try:
         uploaded_file.seek(0)
         Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_PIXELS
@@ -70,6 +71,7 @@ def validate_uploaded_file(uploaded_file: Any) -> ValidatedUpload:
     except (UnidentifiedImageError, OSError) as exc:
         raise ImageDecodeError("The screenshot could not be decoded.") from exc
     finally:
+        Image.MAX_IMAGE_PIXELS = previous_pixel_limit
         uploaded_file.seek(0)
     return ValidatedUpload(
         mime_type=detected_mime,
