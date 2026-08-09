@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="transaction-heading">
+    <h1 id="transaction-heading">Transaction</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Save transaction</button>
+    </form>
+  </section>
+{% endblock %}
