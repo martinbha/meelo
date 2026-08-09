@@ -11,8 +11,9 @@ from django.utils import timezone
 
 from apps.core.errors import InvalidRequestError
 from apps.core.models import AuditEvent
-from apps.processing.models import SourceDocument
+from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.retention import delete_document, expire_documents, retention_deadline
+from apps.processing.services import process_one_job
 
 
 @pytest.fixture
@@ -101,3 +102,16 @@ def test_delete_route_is_owner_scoped(user: Any) -> None:
     document = make_document(other)
     client.force_login(user)
     assert client.post(f"/uploads/{document.pk}/delete/").status_code == 404
+
+
+@pytest.mark.django_db
+def test_worker_noops_a_job_for_a_deleted_document(user: Any) -> None:
+    document = make_document(user)
+    delete_document(document.pk, user=user)
+    job = ProcessingJob.objects.create(
+        user=user, document_id=document.pk, task_name="process_document"
+    )
+
+    assert process_one_job() is True
+    job.refresh_from_db()
+    assert job.status == ProcessingJob.Status.SUCCEEDED
