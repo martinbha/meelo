@@ -25,6 +25,8 @@ def _document_for_job(job: ProcessingJob) -> SourceDocument:
 @register_handler("process_document")
 def process_document_job(job: ProcessingJob) -> None:
     document = _document_for_job(job)
+    if document.processing_status == SourceDocument.Status.DELETED:
+        return
     try:
         if document.processing_status == SourceDocument.Status.FAILED:
             document = transition_document(
@@ -50,6 +52,8 @@ def process_document_job(job: ProcessingJob) -> None:
         )
     except DocumentPipelineError as exc:
         current = SourceDocument.objects.get(pk=document.pk)
+        if current.processing_status == SourceDocument.Status.DELETED:
+            return
         if current.processing_status != SourceDocument.Status.FAILED:
             transition_document(
                 document.pk,
@@ -61,6 +65,8 @@ def process_document_job(job: ProcessingJob) -> None:
         raise
     except Exception as exc:
         current = SourceDocument.objects.get(pk=document.pk)
+        if current.processing_status == SourceDocument.Status.DELETED:
+            return
         if current.processing_status != SourceDocument.Status.FAILED:
             transition_document(
                 document.pk,

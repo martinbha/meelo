@@ -10,6 +10,7 @@ from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, InvalidRequestError
 
 from .models import ProcessingJob, SourceDocument
+from .retention import retention_deadline
 from .storage import store_uploaded_file
 from .validation import fingerprint_uploaded_file, validate_uploaded_file
 
@@ -25,8 +26,14 @@ class DuplicateUploadError(ConflictError):
 
 
 @transaction.atomic
-def create_uploaded_document(*, user: Any, uploaded_file: Any) -> SourceDocument:
+def create_uploaded_document(
+    *,
+    user: Any,
+    uploaded_file: Any,
+    retention_policy: str = SourceDocument.RetentionPolicy.IMMEDIATE,
+) -> SourceDocument:
     validated = validate_uploaded_file(uploaded_file)
+    deadline = retention_deadline(retention_policy)
     content_type = validated.mime_type
     digest = fingerprint_uploaded_file(uploaded_file)
     existing = SourceDocument.objects.filter(user=user, file_sha256=digest).first()
@@ -54,6 +61,8 @@ def create_uploaded_document(*, user: Any, uploaded_file: Any) -> SourceDocument
                 image_height=validated.height,
                 temporary_path=str(path),
                 processing_status=SourceDocument.Status.QUEUED,
+                retention_policy=retention_policy,
+                retention_deadline=deadline,
             )
             ProcessingJob.objects.create(
                 user=user,
