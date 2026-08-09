@@ -100,6 +100,7 @@ AXES_RESET_ON_SUCCESS = True
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
+AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "3650"))
 
 LOGGING = {
     "version": 1,
