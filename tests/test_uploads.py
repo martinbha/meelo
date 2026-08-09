@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import shutil
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,6 +16,7 @@ from PIL import Image
 from apps.core.errors import InvalidRequestError
 from apps.processing.forms import ScreenshotUploadForm
 from apps.processing.models import ProcessingJob, SourceDocument
+from apps.processing.storage import document_directory, safe_document_path
 from apps.processing.upload_services import DuplicateUploadError, create_uploaded_document
 from apps.processing.validation import ImageDimensionsTooLargeError
 
@@ -47,6 +50,8 @@ def test_upload_creates_document_and_queued_job(user: Any) -> None:
     assert document.processing_status == SourceDocument.Status.QUEUED
     assert document.file_size > 0
     assert document.temporary_path.endswith("/original.png")
+    assert os.stat(document_directory(document.pk)).st_mode & 0o777 == 0o700
+    assert os.stat(document.temporary_path).st_mode & 0o777 == 0o600
     assert ProcessingJob.objects.get(document_id=document.pk).task_name == "process_document"
     assert user.audit_events.filter(event_type="screenshot_uploaded").exists()
 
@@ -116,3 +121,10 @@ def test_duplicate_fingerprint_is_scoped_to_one_user(user: Any) -> None:
     other = type(user).objects.create_user("other-fingerprint@example.com", password="password")
     second = create_uploaded_document(user=other, uploaded_file=screenshot())
     assert second.pk != first.pk
+
+
+@pytest.mark.django_db
+def test_storage_rejects_traversal_and_symlink_paths(user: Any) -> None:
+    document = create_uploaded_document(user=user, uploaded_file=screenshot())
+    with pytest.raises(ValueError, match="outside"):
+        safe_document_path(document.pk, Path(document.temporary_path).parent / "../escape")

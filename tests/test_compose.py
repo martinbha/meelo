@@ -12,3 +12,4 @@ def test_compose_has_required_redis_free_services() -> None:
     assert "proxy:" in compose
     assert "redis" not in compose.lower()
     assert "celery" not in compose.lower()
+    assert "DOCUMENT_TMP_ROOT: /run/finance-ocr" in compose
