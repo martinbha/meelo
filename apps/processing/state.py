@@ -102,7 +102,7 @@ def transition_document(
 def retry_failed_document(document_id: Any, *, user: Any) -> SourceDocument:
     document = transition_document(document_id, user=user, status=SourceDocument.Status.QUEUED)
     if not ProcessingJob.objects.filter(
-        document_id=document.pk, status=ProcessingJob.Status.QUEUED
+        user=user, document_id=document.pk, status=ProcessingJob.Status.QUEUED
     ).exists():
         ProcessingJob.objects.create(
             user=user,
