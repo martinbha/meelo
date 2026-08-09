@@ -176,8 +176,8 @@ def test_document_worker_updates_each_pipeline_phase(user: Any) -> None:
     assert document.processing_status == SourceDocument.Status.READY_FOR_REVIEW
     assert document.processing_attempt_count == 1
     assert job.status == ProcessingJob.Status.SUCCEEDED
-    path.unlink()
-    directory.rmdir()
+    assert not path.exists()
+    assert not directory.exists()
 
 
 @pytest.mark.django_db

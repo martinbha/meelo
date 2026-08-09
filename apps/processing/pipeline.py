@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .cleanup import cleanup_document_storage
 from .models import ProcessingJob, SourceDocument
 from .services import JobHandler, RetryableJobError, register_handler
 from .state import transition_document
@@ -69,6 +70,8 @@ def process_document_job(job: ProcessingJob) -> None:
                 error_message=str(exc),
             )
         raise
+    finally:
+        cleanup_document_storage(document.pk, document.temporary_path)
 
 
 # Keep a named handler type available to integration checks that inspect the registry.

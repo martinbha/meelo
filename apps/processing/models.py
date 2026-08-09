@@ -56,6 +56,7 @@ class SourceDocument(models.Model):
     )
     error_code = models.CharField(max_length=64, blank=True)
     error_message_encrypted = models.TextField(blank=True)
+    cleanup_error_code = models.CharField(max_length=64, blank=True)
     temporary_path = models.TextField(blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     processing_started_at = models.DateTimeField(blank=True, null=True)
