@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from .base import *  # noqa: F403
 
 DEBUG = False
@@ -9,3 +11,4 @@ DATABASES = {
         "NAME": ":memory:",
     }
 }
+DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-tests")

@@ -10,6 +10,75 @@ from django.db.models import Q
 from django.utils import timezone
 
 
+class SourceDocument(models.Model):
+    """Metadata and lifecycle state for one user-uploaded screenshot."""
+
+    class SourceType(models.TextChoices):
+        BANK_TRANSACTION_LIST = "bank_transaction_list", "Bank transaction list"
+        BANK_TRANSACTION_DETAIL = "bank_transaction_detail", "Bank transaction detail"
+        BANK_TRANSFER_CONFIRMATION = "bank_transfer_confirmation", "Bank transfer confirmation"
+        CARD_TRANSACTION_LIST = "card_transaction_list", "Card transaction list"
+        CARD_TRANSACTION_DETAIL = "card_transaction_detail", "Card transaction detail"
+        CREDIT_CARD_STATEMENT = "credit_card_statement", "Credit-card statement"
+        CREDIT_CARD_PAYMENT = "credit_card_payment", "Credit-card payment"
+        UNKNOWN = "unknown", "Unknown"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        VALIDATING = "validating", "Validating"
+        QUEUED = "queued", "Queued"
+        PREPROCESSING = "preprocessing", "Preprocessing"
+        OCR_RUNNING = "ocr_running", "OCR running"
+        PARSING = "parsing", "Parsing"
+        READY_FOR_REVIEW = "ready_for_review", "Ready for review"
+        CONFIRMED = "confirmed", "Confirmed"
+        FAILED = "failed", "Failed"
+        DELETED = "deleted", "Deleted"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="source_documents",
+    )
+    file_sha256 = models.CharField(max_length=64, db_index=True)
+    original_filename_encrypted = models.TextField()
+    mime_type = models.CharField(max_length=100)
+    file_size = models.PositiveBigIntegerField()
+    image_width = models.PositiveIntegerField(blank=True, null=True)
+    image_height = models.PositiveIntegerField(blank=True, null=True)
+    source_institution_guess_encrypted = models.TextField(blank=True)
+    source_type = models.CharField(
+        max_length=40, choices=SourceType.choices, default=SourceType.UNKNOWN
+    )
+    processing_status = models.CharField(
+        max_length=24, choices=Status.choices, default=Status.PENDING
+    )
+    error_code = models.CharField(max_length=64, blank=True)
+    error_message_encrypted = models.TextField(blank=True)
+    temporary_path = models.TextField(blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    processing_started_at = models.DateTimeField(blank=True, null=True)
+    processing_completed_at = models.DateTimeField(blank=True, null=True)
+    processing_attempt_count = models.PositiveIntegerField(default=0)
+    next_processing_attempt_at = models.DateTimeField(blank=True, null=True)
+    original_deleted_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-uploaded_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "file_sha256"), name="source_document_user_sha256_unique"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("user", "processing_status"), name="source_doc_user_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.original_filename_encrypted} ({self.processing_status})"
+
+
 class ProcessingJob(models.Model):
     """A durable, database-backed unit of asynchronous document processing."""
 

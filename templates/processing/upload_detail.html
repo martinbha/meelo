@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Upload status · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="upload-detail-heading">
+    <h1 id="upload-detail-heading">{{ document.original_filename_encrypted }}</h1>
+    <p>Status: <strong>{{ document.processing_status }}</strong></p>
+    {% if document.error_code %}<p>Processing error: {{ document.error_code }}</p>{% endif %}
+  </section>
+{% endblock %}

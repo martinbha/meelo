@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Upload screenshot · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="upload-heading">
+    <h1 id="upload-heading">Upload screenshot</h1>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Queue screenshot</button>
+    </form>
+  </section>
+{% endblock %}
