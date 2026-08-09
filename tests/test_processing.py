@@ -230,3 +230,28 @@ def test_worker_classifies_missing_temporary_file(user: Any) -> None:
     assert document.processing_status == SourceDocument.Status.FAILED
     assert document.error_code == "TEMP_PATH_INVALID"
     assert job.last_error_code == "TEMP_PATH_INVALID"
+
+
+@pytest.mark.django_db
+def test_worker_requeues_failed_document_before_automatic_retry(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="retry.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.FAILED,
+        error_code="TEMP_FILE_MISSING",
+    )
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+
+    process_one_job()
+
+    document.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.FAILED
+    assert document.processing_attempt_count == 1
+    assert job.status == ProcessingJob.Status.QUEUED

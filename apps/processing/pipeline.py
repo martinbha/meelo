@@ -25,6 +25,10 @@ def _document_for_job(job: ProcessingJob) -> SourceDocument:
 def process_document_job(job: ProcessingJob) -> None:
     document = _document_for_job(job)
     try:
+        if document.processing_status == SourceDocument.Status.FAILED:
+            document = transition_document(
+                document.pk, user=job.user, status=SourceDocument.Status.QUEUED
+            )
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.VALIDATING)
         try:
             path = safe_document_path(document.pk, document.temporary_path)
@@ -51,6 +55,17 @@ def process_document_job(job: ProcessingJob) -> None:
                 user=job.user,
                 status=SourceDocument.Status.FAILED,
                 error_code=exc.code,
+                error_message=str(exc),
+            )
+        raise
+    except Exception as exc:
+        current = SourceDocument.objects.get(pk=document.pk)
+        if current.processing_status != SourceDocument.Status.FAILED:
+            transition_document(
+                document.pk,
+                user=job.user,
+                status=SourceDocument.Status.FAILED,
+                error_code="UNHANDLED_ERROR",
                 error_message=str(exc),
             )
         raise
