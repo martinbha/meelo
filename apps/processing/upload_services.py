@@ -46,14 +46,14 @@ def create_uploaded_document(*, user: Any, uploaded_file: Any) -> SourceDocument
             task_name="process_document",
             payload={"document_id": str(document.id)},
         )
+        record_audit_event(
+            user=user,
+            event_type="screenshot_uploaded",
+            obj=document,
+            metadata={"mime_type": content_type, "file_size": size},
+        )
     except Exception:
         path.unlink(missing_ok=True)
         path.parent.rmdir()
         raise
-    record_audit_event(
-        user=user,
-        event_type="screenshot_uploaded",
-        obj=document,
-        metadata={"mime_type": content_type, "file_size": size},
-    )
     return document
