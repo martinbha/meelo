@@ -10,21 +10,17 @@ from apps.core.audit import record_audit_event
 from apps.core.errors import InvalidRequestError
 
 from .models import ProcessingJob, SourceDocument
-from .storage import ALLOWED_UPLOAD_TYPES, store_uploaded_file
+from .storage import store_uploaded_file
+from .validation import validate_uploaded_file
 
 
 @transaction.atomic
 def create_uploaded_document(*, user: Any, uploaded_file: Any) -> SourceDocument:
-    content_type = uploaded_file.content_type or ""
-    if content_type not in ALLOWED_UPLOAD_TYPES:
-        raise InvalidRequestError("Upload a PNG, JPEG, or WebP screenshot.")
-    declared_size = int(getattr(uploaded_file, "size", 0))
-    if declared_size <= 0 or declared_size > settings.MAX_UPLOAD_SIZE:
-        raise InvalidRequestError("The screenshot is empty or exceeds the upload size limit.")
+    validated = validate_uploaded_file(uploaded_file)
+    content_type = validated.mime_type
 
     document_id = uuid.uuid4()
-    suffix = ALLOWED_UPLOAD_TYPES[content_type]
-    path, digest, size = store_uploaded_file(document_id, uploaded_file, suffix=suffix)
+    path, digest, size = store_uploaded_file(document_id, uploaded_file, suffix=validated.suffix)
     if size > settings.MAX_UPLOAD_SIZE:
         path.unlink(missing_ok=True)
         path.parent.rmdir()
@@ -37,6 +33,8 @@ def create_uploaded_document(*, user: Any, uploaded_file: Any) -> SourceDocument
             original_filename_encrypted=str(uploaded_file.name),
             mime_type=content_type,
             file_size=size,
+            image_width=validated.width,
+            image_height=validated.height,
             temporary_path=str(path),
             processing_status=SourceDocument.Status.QUEUED,
         )
