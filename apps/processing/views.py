@@ -13,7 +13,7 @@ from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .forms import ScreenshotUploadForm
 from .models import SourceDocument
-from .upload_services import create_uploaded_document
+from .upload_services import DuplicateUploadError, create_uploaded_document
 
 
 class UploadListView(LoginRequiredMixin, View):
@@ -36,9 +36,13 @@ class UploadCreateView(LoginRequiredMixin, FormView):  # type: ignore[type-arg]
         return kwargs
 
     def form_valid(self, form: ScreenshotUploadForm) -> HttpResponse:
-        create_uploaded_document(
-            user=self.request.user, uploaded_file=form.cleaned_data["screenshot"]
-        )
+        try:
+            create_uploaded_document(
+                user=self.request.user, uploaded_file=form.cleaned_data["screenshot"]
+            )
+        except DuplicateUploadError as exc:
+            form.add_error("screenshot", f"Already uploaded as document {exc.document.pk}.")
+            return self.form_invalid(form)
         messages.success(self.request, "Screenshot queued for processing.")
         return super().form_valid(form)
 

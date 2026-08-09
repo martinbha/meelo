@@ -14,7 +14,7 @@ from PIL import Image
 from apps.core.errors import InvalidRequestError
 from apps.processing.forms import ScreenshotUploadForm
 from apps.processing.models import ProcessingJob, SourceDocument
-from apps.processing.upload_services import create_uploaded_document
+from apps.processing.upload_services import DuplicateUploadError, create_uploaded_document
 from apps.processing.validation import ImageDimensionsTooLargeError
 
 
@@ -103,3 +103,16 @@ def test_service_rejects_excessive_image_dimensions_before_persistence(user: Any
 
     assert raised.value.code == "IMAGE_DIMENSIONS_TOO_LARGE"
     assert SourceDocument.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
+def test_duplicate_fingerprint_is_scoped_to_one_user(user: Any) -> None:
+    first = create_uploaded_document(user=user, uploaded_file=screenshot())
+
+    with pytest.raises(DuplicateUploadError) as raised:
+        create_uploaded_document(user=user, uploaded_file=screenshot())
+    assert raised.value.document.pk == first.pk
+
+    other = type(user).objects.create_user("other-fingerprint@example.com", password="password")
+    second = create_uploaded_document(user=other, uploaded_file=screenshot())
+    assert second.pk != first.pk
