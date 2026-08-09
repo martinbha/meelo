@@ -4,7 +4,7 @@ from typing import Any
 
 from django import forms
 
-from .storage import ALLOWED_UPLOAD_TYPES
+from .validation import validate_uploaded_file
 
 
 class ScreenshotUploadForm(forms.Form):
@@ -12,7 +12,8 @@ class ScreenshotUploadForm(forms.Form):
 
     def clean_screenshot(self) -> Any:
         uploaded = self.cleaned_data["screenshot"]
-        content_type = uploaded.content_type or ""
-        if content_type not in ALLOWED_UPLOAD_TYPES:
-            raise forms.ValidationError("Upload a PNG, JPEG, or WebP screenshot.")
+        try:
+            validate_uploaded_file(uploaded)
+        except Exception as exc:
+            raise forms.ValidationError(str(exc)) from exc
         return uploaded
