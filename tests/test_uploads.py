@@ -15,6 +15,7 @@ from apps.core.errors import InvalidRequestError
 from apps.processing.forms import ScreenshotUploadForm
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.upload_services import create_uploaded_document
+from apps.processing.validation import ImageDimensionsTooLargeError
 
 
 @pytest.fixture
@@ -30,9 +31,11 @@ def clean_upload_tmp() -> Any:
     shutil.rmtree("/tmp/finance-ocr-tests", ignore_errors=True)
 
 
-def screenshot(*, name: str = "statement.png", content_type: str = "image/png") -> Any:
+def screenshot(
+    *, name: str = "statement.png", content_type: str = "image/png", size: tuple[int, int] = (2, 2)
+) -> Any:
     output = BytesIO()
-    image = Image.new("RGB", (2, 2), "white")
+    image = Image.new("RGB", size, "white")
     image.save(output, format="PNG")
     return SimpleUploadedFile(name, output.getvalue(), content_type=content_type)
 
@@ -89,4 +92,14 @@ def test_service_rejects_oversized_payload_before_persistence(user: Any) -> None
     with pytest.raises(InvalidRequestError, match="size limit"):
         create_uploaded_document(user=user, uploaded_file=screenshot())
 
+    assert SourceDocument.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(MAX_IMAGE_PIXELS=4)
+def test_service_rejects_excessive_image_dimensions_before_persistence(user: Any) -> None:
+    with pytest.raises(ImageDimensionsTooLargeError) as raised:
+        create_uploaded_document(user=user, uploaded_file=screenshot(size=(3, 2)))
+
+    assert raised.value.code == "IMAGE_DIMENSIONS_TOO_LARGE"
     assert SourceDocument.objects.filter(user=user).count() == 0
