@@ -124,6 +124,35 @@ def test_duplicate_fingerprint_is_scoped_to_one_user(user: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_filename_traversal_cannot_change_private_storage_location(user: Any) -> None:
+    document = create_uploaded_document(
+        user=user,
+        uploaded_file=screenshot(name="../../outside.png"),
+    )
+
+    stored_path = Path(document.temporary_path)
+    assert stored_path.name == "original.png"
+    assert stored_path.parent.name == str(document.pk)
+    assert stored_path.parent.parent == Path("/tmp/finance-ocr-tests").resolve()
+
+
+@pytest.mark.django_db
+def test_cleanup_failure_is_recorded_as_a_safe_code(user: Any, monkeypatch: Any) -> None:
+    document = create_uploaded_document(user=user, uploaded_file=screenshot())
+
+    def fail_cleanup(path: Any, *args: Any, **kwargs: Any) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("apps.processing.cleanup.shutil.rmtree", fail_cleanup)
+    from apps.processing.cleanup import cleanup_document_storage
+
+    assert cleanup_document_storage(document.pk, document.temporary_path) is False
+    document.refresh_from_db()
+    assert document.cleanup_error_code == "CLEANUP_FAILED"
+    monkeypatch.undo()
+
+
+@pytest.mark.django_db
 def test_storage_rejects_traversal_and_symlink_paths(user: Any) -> None:
     document = create_uploaded_document(user=user, uploaded_file=screenshot())
     with pytest.raises(ValueError, match="outside"):
