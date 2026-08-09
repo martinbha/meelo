@@ -6,6 +6,10 @@
   <section aria-labelledby="upload-detail-heading">
     <h1 id="upload-detail-heading">{{ document.original_filename_encrypted }}</h1>
     <p>Status: <strong>{{ document.processing_status }}</strong></p>
+    <form method="post" action="{% url 'upload-delete' document.pk %}">
+      {% csrf_token %}
+      <button type="submit">Delete screenshot</button>
+    </form>
     {% if document.error_code %}<p>Processing error: {{ document.error_code }}</p>{% endif %}
   </section>
 {% endblock %}

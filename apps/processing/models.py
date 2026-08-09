@@ -35,6 +35,12 @@ class SourceDocument(models.Model):
         FAILED = "failed", "Failed"
         DELETED = "deleted", "Deleted"
 
+    class RetentionPolicy(models.TextChoices):
+        IMMEDIATE = "immediate", "Delete after processing"
+        ONE_DAY = "one_day", "Retain for one day"
+        SEVEN_DAYS = "seven_days", "Retain for seven days"
+        THIRTY_DAYS = "thirty_days", "Retain for thirty days"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -64,6 +70,10 @@ class SourceDocument(models.Model):
     processing_attempt_count = models.PositiveIntegerField(default=0)
     next_processing_attempt_at = models.DateTimeField(blank=True, null=True)
     original_deleted_at = models.DateTimeField(blank=True, null=True)
+    retention_policy = models.CharField(
+        max_length=16, choices=RetentionPolicy.choices, default=RetentionPolicy.IMMEDIATE
+    )
+    retention_deadline = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ("-uploaded_at",)

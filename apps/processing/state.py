@@ -18,22 +18,39 @@ ALLOWED_DOCUMENT_TRANSITIONS: dict[str, frozenset[str]] = {
             SourceDocument.Status.QUEUED,
             SourceDocument.Status.PREPROCESSING,
             SourceDocument.Status.FAILED,
+            SourceDocument.Status.DELETED,
         }
     ),
     SourceDocument.Status.QUEUED: frozenset(
-        {SourceDocument.Status.VALIDATING, SourceDocument.Status.FAILED}
+        {
+            SourceDocument.Status.VALIDATING,
+            SourceDocument.Status.FAILED,
+            SourceDocument.Status.DELETED,
+        }
     ),
     SourceDocument.Status.PREPROCESSING: frozenset(
-        {SourceDocument.Status.OCR_RUNNING, SourceDocument.Status.FAILED}
+        {
+            SourceDocument.Status.OCR_RUNNING,
+            SourceDocument.Status.FAILED,
+            SourceDocument.Status.DELETED,
+        }
     ),
     SourceDocument.Status.OCR_RUNNING: frozenset(
-        {SourceDocument.Status.PARSING, SourceDocument.Status.FAILED}
+        {SourceDocument.Status.PARSING, SourceDocument.Status.FAILED, SourceDocument.Status.DELETED}
     ),
     SourceDocument.Status.PARSING: frozenset(
-        {SourceDocument.Status.READY_FOR_REVIEW, SourceDocument.Status.FAILED}
+        {
+            SourceDocument.Status.READY_FOR_REVIEW,
+            SourceDocument.Status.FAILED,
+            SourceDocument.Status.DELETED,
+        }
     ),
     SourceDocument.Status.READY_FOR_REVIEW: frozenset(
-        {SourceDocument.Status.CONFIRMED, SourceDocument.Status.FAILED}
+        {
+            SourceDocument.Status.CONFIRMED,
+            SourceDocument.Status.FAILED,
+            SourceDocument.Status.DELETED,
+        }
     ),
     SourceDocument.Status.CONFIRMED: frozenset({SourceDocument.Status.DELETED}),
     SourceDocument.Status.FAILED: frozenset(
