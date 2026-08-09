@@ -6,8 +6,9 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from apps.processing.models import ProcessingJob
+from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.services import JOB_HANDLERS, process_one_job
+from apps.processing.storage import document_directory
 
 
 @pytest.fixture
@@ -143,3 +144,89 @@ def test_processing_jobs_are_scoped_to_the_authenticated_owner(user: Any) -> Non
     ProcessingJob.objects.create(user=other, document_id=uuid4(), task_name="extract")
 
     assert list(ProcessingJob.for_user(user)) == [own_job]
+
+
+@pytest.mark.django_db
+def test_document_worker_updates_each_pipeline_phase(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="worker.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    directory = document_directory(document.pk)
+    directory.mkdir(parents=True)
+    path = directory / "original.png"
+    path.write_bytes(b"data")
+    path.chmod(0o600)
+    document.temporary_path = str(path)
+    document.save(update_fields=["temporary_path"])
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+
+    assert process_one_job() is True
+
+    document.refresh_from_db()
+    job.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.READY_FOR_REVIEW
+    assert document.processing_attempt_count == 1
+    assert job.status == ProcessingJob.Status.SUCCEEDED
+    path.unlink()
+    directory.rmdir()
+
+
+@pytest.mark.django_db
+def test_stale_job_recovery_requeues_active_document(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="stale.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.OCR_RUNNING,
+    )
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+        status=ProcessingJob.Status.RUNNING,
+        locked_at=timezone.now() - timedelta(minutes=20),
+    )
+
+    recovered = ProcessingJob.recover_stale(cutoff=timezone.now() - timedelta(minutes=15))
+
+    assert recovered == 1
+    document.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.QUEUED
+    job.refresh_from_db()
+    assert job.status == ProcessingJob.Status.QUEUED
+
+
+@pytest.mark.django_db
+def test_worker_classifies_missing_temporary_file(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="missing.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+
+    assert process_one_job() is True
+
+    document.refresh_from_db()
+    job.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.FAILED
+    assert document.error_code == "TEMP_PATH_INVALID"
+    assert job.last_error_code == "TEMP_PATH_INVALID"

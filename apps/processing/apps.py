@@ -5,3 +5,6 @@ class ProcessingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.processing"
     label = "processing"
+
+    def ready(self) -> None:
+        from . import pipeline  # noqa: F401
