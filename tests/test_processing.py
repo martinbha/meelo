@@ -134,3 +134,12 @@ def test_worker_dispatches_registered_handler_and_marks_success(
 def test_process_document_jobs_once_exits_when_queue_is_empty(capsys: Any) -> None:
     call_command("process_document_jobs", once=True)
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.django_db
+def test_processing_jobs_are_scoped_to_the_authenticated_owner(user: Any) -> None:
+    other = type(user).objects.create_user("other@example.com", password="password")
+    own_job = ProcessingJob.objects.create(user=user, document_id=uuid4(), task_name="extract")
+    ProcessingJob.objects.create(user=other, document_id=uuid4(), task_name="extract")
+
+    assert list(ProcessingJob.for_user(user)) == [own_job]

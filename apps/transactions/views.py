@@ -4,10 +4,12 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.generic import FormView
+
+from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .forms import ManualTransactionForm
 from .models import CanonicalTransaction
@@ -37,12 +39,7 @@ class ManualTransactionUpdateView(LoginRequiredMixin, FormView):  # type: ignore
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         assert request.user.pk is not None
-        candidate = CanonicalTransaction.objects.filter(
-            pk=kwargs["pk"], user_id=request.user.pk
-        ).first()
-        if candidate is None:
-            raise Http404
-        self.instance = candidate
+        self.instance = get_owned_object_or_404(CanonicalTransaction, request.user, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)  # type: ignore[return-value]
 
     def get_form_kwargs(self) -> dict[str, Any]:
@@ -66,5 +63,5 @@ class TransactionListView(LoginRequiredMixin, FormView):  # type: ignore[type-ar
         return render(
             request,
             self.template_name,
-            {"transactions": CanonicalTransaction.objects.filter(user_id=request.user.pk)},
+            {"transactions": owned_queryset(CanonicalTransaction, request.user)},
         )

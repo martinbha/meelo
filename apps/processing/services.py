@@ -33,6 +33,8 @@ def register_handler(task_name: str) -> Callable[[JobHandler], JobHandler]:
 
 
 def dispatch_job(job: ProcessingJob) -> None:
+    if not job.user_id:
+        raise UnsupportedTaskError("Processing jobs must have an owner.")
     try:
         handler = JOB_HANDLERS[job.task_name]
     except KeyError as exc:

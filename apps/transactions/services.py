@@ -9,6 +9,7 @@ from django.db import transaction as db_transaction
 from apps.categorization.models import Category
 from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.ownership import owned_queryset
 from apps.core.value_objects import Currency, Money
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -106,8 +107,9 @@ def update_manual_transaction(
     notes: str = "",
 ) -> CanonicalTransaction:
     transaction = (
-        CanonicalTransaction.objects.select_for_update()
-        .filter(pk=transaction_id, user=user)
+        owned_queryset(CanonicalTransaction, user)
+        .select_for_update()
+        .filter(pk=transaction_id)
         .first()
     )
     if transaction is None:
