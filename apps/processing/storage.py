@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import BinaryIO
 from uuid import UUID
@@ -15,7 +16,27 @@ ALLOWED_UPLOAD_TYPES = {
 
 
 def document_directory(document_id: UUID) -> Path:
-    return Path(settings.DOCUMENT_TMP_ROOT) / str(document_id)
+    raw_root = Path(settings.DOCUMENT_TMP_ROOT)
+    if raw_root.is_symlink():
+        raise ValueError("The document temporary root cannot be a symlink.")
+    root = raw_root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    directory = (root / str(document_id)).resolve()
+    if directory.parent != root or directory.name != str(document_id):
+        raise ValueError("Invalid document storage path.")
+    return directory
+
+
+def safe_document_path(document_id: UUID, path: str | Path) -> Path:
+    directory = document_directory(document_id)
+    raw_candidate = Path(path)
+    if raw_candidate.is_symlink():
+        raise ValueError("The temporary file cannot be a symlink.")
+    candidate = raw_candidate.resolve()
+    if not candidate.is_relative_to(directory):
+        raise ValueError("The temporary file is outside the document directory.")
+    return candidate
 
 
 def store_uploaded_file(
@@ -23,6 +44,7 @@ def store_uploaded_file(
 ) -> tuple[Path, str, int]:
     directory = document_directory(document_id)
     directory.mkdir(parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
     path = directory / f"original{suffix}"
     digest = hashlib.sha256()
     size = 0
@@ -38,4 +60,5 @@ def store_uploaded_file(
             destination.write(chunk)
             digest.update(chunk)
             size += len(chunk)
+    os.chmod(path, 0o600)
     return path, digest.hexdigest(), size
