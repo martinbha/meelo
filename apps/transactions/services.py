@@ -15,6 +15,7 @@ from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.ledger.models import LedgerEntry
 
+from .invariants import validate_transaction_invariants
 from .models import CanonicalTransaction
 
 
@@ -79,7 +80,7 @@ def create_manual_transaction(
         notes_encrypted=notes,
         status=CanonicalTransaction.Status.DRAFT,
     )
-    transaction.full_clean()
+    validate_transaction_invariants(transaction)
     transaction.save()
     record_audit_event(
         user=user,
@@ -132,7 +133,7 @@ def update_manual_transaction(
     transaction.merchant_encrypted = merchant
     transaction.counterparty_encrypted = counterparty
     transaction.notes_encrypted = notes
-    transaction.full_clean()
+    validate_transaction_invariants(transaction)
     transaction.save()
     record_audit_event(
         user=user,
