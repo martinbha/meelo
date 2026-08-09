@@ -11,13 +11,31 @@ from django.db import models
 class AuditEvent(models.Model):
     """Privacy-safe record of a security or financial workflow event."""
 
+    class EventType(models.TextChoices):
+        LOGIN_SUCCESS = "login_success", "Login succeeded"
+        LOGIN_FAILURE = "login_failure", "Login failed"
+        LOGOUT = "logout", "Logout"
+        PASSWORD_CHANGED = "password_changed", "Password changed"
+        TWO_FACTOR_ENABLED = "two_factor_enabled", "Two-factor enabled"
+        SCREENSHOT_UPLOADED = "screenshot_uploaded", "Screenshot uploaded"
+        OCR_STARTED = "ocr_started", "OCR started"
+        OCR_FAILED = "ocr_failed", "OCR failed"
+        TRANSACTION_CREATED = "transaction_created", "Transaction created"
+        TRANSACTION_ACCEPTED = "transaction_accepted", "Transaction accepted"
+        TRANSACTION_CORRECTED = "transaction_corrected", "Transaction corrected"
+        TRANSACTION_DELETED = "transaction_deleted", "Transaction deleted"
+        DUPLICATE_MERGED = "duplicate_merged", "Duplicate merged"
+        CATEGORY_CHANGED = "category_changed", "Category changed"
+        EXPORT_CREATED = "export_created", "Export created"
+        ENCRYPTION_KEY_ROTATED = "encryption_key_rotated", "Encryption key rotated"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="audit_events",
     )
-    event_type = models.CharField(max_length=64)
+    event_type = models.CharField(max_length=64, choices=EventType.choices)
     object_type = models.CharField(max_length=128, blank=True)
     object_id = models.UUIDField(blank=True, null=True)
     request_id = models.CharField(max_length=64, blank=True)
@@ -49,6 +67,9 @@ class AuditEvent(models.Model):
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
+
+    def verify_digest(self) -> bool:
+        return self.digest == self.calculate_digest()
 
     def save(self, *args: object, **kwargs: object) -> None:
         if not self.digest:

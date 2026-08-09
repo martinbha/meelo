@@ -27,6 +27,8 @@ def record_audit_event(
 ) -> AuditEvent:
     """Create a chained event containing identifiers and non-sensitive metadata only."""
 
+    if event_type not in AuditEvent.EventType.values:
+        raise ValueError(f"Unsupported audit event type: {event_type}")
     with transaction.atomic():
         previous = AuditEvent.objects.filter(user=user).order_by("-created_at", "-id").first()
         event = AuditEvent(
@@ -42,3 +44,14 @@ def record_audit_event(
         )
         event.save()
         return event
+
+
+def verify_audit_chain(user: Any) -> bool:
+    """Verify every event digest and link for one user's audit stream."""
+
+    previous_digest = ""
+    for event in AuditEvent.objects.filter(user=user).order_by("created_at", "id"):
+        if event.previous_digest != previous_digest or not event.verify_digest():
+            return False
+        previous_digest = event.digest
+    return True

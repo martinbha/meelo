@@ -4,6 +4,8 @@ import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
 
+from apps.core.models import AuditEvent
+
 
 @pytest.fixture
 def user(db: Any) -> Any:
@@ -27,6 +29,7 @@ def test_private_login_uses_email_and_creates_session(user: Any, client: Client)
     assert response.status_code == 302
     assert response["Location"] == "/"
     assert int(client.session["_auth_user_id"]) == user.pk
+    assert user.audit_events.filter(event_type=AuditEvent.EventType.LOGIN_SUCCESS).exists()
 
 
 @pytest.mark.django_db
@@ -38,6 +41,7 @@ def test_logout_clears_session(user: Any, client: Client) -> None:
     assert response.status_code == 302
     assert response["Location"] == "/login/"
     assert "_auth_user_id" not in client.session
+    assert user.audit_events.filter(event_type=AuditEvent.EventType.LOGOUT).exists()
 
 
 @pytest.mark.django_db
