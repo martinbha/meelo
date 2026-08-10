@@ -1,0 +1,14 @@
+{% extends base_template %}
+
+{% block title %}Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="dashboard-heading">
+    <h1 id="dashboard-heading">Finance workspace</h1>
+    <p>Review transactions or upload a financial screenshot to begin processing.</p>
+    <ul>
+      <li><a href="{% url 'transaction-list' %}">View transactions</a></li>
+      <li><a href="{% url 'upload-new' %}">Upload a screenshot</a></li>
+    </ul>
+  </section>
+{% endblock %}

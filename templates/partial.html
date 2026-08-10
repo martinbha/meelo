@@ -1,0 +1,8 @@
+{% if messages %}
+  <section id="flash-messages" class="messages" aria-label="Messages" hx-swap-oob="true">
+    {% for message in messages %}
+      <p class="message message-{{ message.tags|default:'info' }}">{{ message }}</p>
+    {% endfor %}
+  </section>
+{% endif %}
+{% block content %}{% endblock %}

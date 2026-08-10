@@ -1,5 +1,14 @@
+from django.contrib.auth.decorators import login_required
 from django.db import connection
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import render
+
+
+@login_required
+def dashboard(request: HttpRequest) -> HttpResponse:
+    """Render the authenticated application landing page."""
+
+    return render(request, "dashboard.html")
 
 
 def health_check(request: HttpRequest) -> JsonResponse:

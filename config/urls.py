@@ -7,7 +7,7 @@ from django.contrib.auth.views import (
 )
 from django.urls import path
 
-from apps.core.views import health_check
+from apps.core.views import dashboard, health_check
 from apps.processing.views import (
     UploadCreateView,
     UploadDeleteView,
@@ -28,6 +28,7 @@ from apps.users.views import (
 
 urlpatterns = [
     path("health/", health_check, name="health-check"),
+    path("", dashboard, name="dashboard"),
     path("admin/", admin.site.urls),
     path("login/", UserLoginView.as_view(), name="login"),
     path("logout/", UserLogoutView.as_view(), name="logout"),
