@@ -97,3 +97,37 @@ media directory and is discarded when the Docker volume is removed.
 Do not replace the two mounts with separate volumes. Both processes must resolve
 `DOCUMENT_TMP_ROOT` to the same private storage namespace. Directory and file
 permissions remain restricted to `0700` and `0600`, respectively.
+
+## Production TLS and host checklist
+
+Complete these checks before exposing the service outside a private development
+environment:
+
+1. Point `DOMAIN` at the deployment hostname and verify its DNS records resolve
+   to the proxy.
+2. Set `DJANGO_ALLOWED_HOSTS` to the exact accepted hostnames. Do not use a
+   wildcard.
+3. Set `DJANGO_CSRF_TRUSTED_ORIGINS` to the corresponding `https://` origins.
+4. Generate a unique high-entropy `DJANGO_SECRET_KEY` and provide database
+   credentials through the deployment secret store, not an environment file in
+   the repository.
+5. Leave `DJANGO_SECURE_SSL_REDIRECT` enabled. The Caddy proxy terminates TLS and
+   forwards the original protocol through `X-Forwarded-Proto`, which Django
+   trusts via `SECURE_PROXY_SSL_HEADER`.
+6. Confirm ports 80 and 443 reach Caddy, certificate issuance succeeds, and the
+   application is not exposed directly on port 8000.
+7. Verify secure cookies, HSTS, host validation, CSRF, frame protection, and the
+   referrer policy against the production settings:
+
+   ```bash
+   DJANGO_SETTINGS_MODULE=config.settings.production \
+   uv run python manage.py check --deploy
+   ```
+
+8. Request `/health/` through the public HTTPS hostname and confirm that HTTP is
+   redirected to HTTPS. Inspect `docker compose ps` to ensure every service is
+   healthy.
+
+HSTS defaults to one year and includes subdomains with preload enabled. Only use
+that configuration after every subdomain is permanently available over HTTPS;
+otherwise set a shorter `DJANGO_HSTS_SECONDS` during deployment validation.
