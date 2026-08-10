@@ -49,6 +49,11 @@ def test_modified_ciphertext_and_context_fail_authentication() -> None:
     with pytest.raises(InvalidCiphertextError):
         decrypt_value(encrypted, key=key, context=context(field="notes_encrypted"))
 
+    version_parts = encrypted.split(".")
+    version_parts[1] = "2"
+    with pytest.raises(InvalidCiphertextError):
+        decrypt_value(".".join(version_parts), key=key, context=field_context)
+
 
 def test_django_model_helpers_bind_model_record_field_and_user() -> None:
     key = bytes(reversed(range(32)))

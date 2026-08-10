@@ -28,9 +28,10 @@ class FieldContext:
     field: str
     user_id: str
 
-    def associated_data(self) -> bytes:
+    def associated_data(self, *, key_version: int) -> bytes:
         return (
-            f"{FORMAT_VERSION}|{self.model}|{self.record_id}|{self.field}|{self.user_id}"
+            f"{FORMAT_VERSION}|{key_version}|{self.model}|{self.record_id}|{self.field}|"
+            f"{self.user_id}"
         ).encode()
 
 
@@ -63,7 +64,9 @@ def encrypt_value(
     if key_version < 1:
         raise EncryptionError("Encryption key versions must be positive.")
     nonce = os.urandom(NONCE_SIZE)
-    encrypted = AESGCM(key).encrypt(nonce, plaintext.encode(), context.associated_data())
+    encrypted = AESGCM(key).encrypt(
+        nonce, plaintext.encode(), context.associated_data(key_version=key_version)
+    )
     ciphertext, tag = encrypted[:-TAG_SIZE], encrypted[-TAG_SIZE:]
     return ".".join(
         (FORMAT_VERSION, str(key_version), _encode(nonce), _encode(ciphertext), _encode(tag))
@@ -87,7 +90,11 @@ def decrypt_value(envelope: str, *, key: bytes, context: FieldContext) -> str:
     if len(nonce) != NONCE_SIZE or len(tag) != TAG_SIZE:
         raise InvalidCiphertextError("Encrypted field envelope is invalid.")
     try:
-        plaintext = AESGCM(key).decrypt(nonce, ciphertext + tag, context.associated_data())
+        plaintext = AESGCM(key).decrypt(
+            nonce,
+            ciphertext + tag,
+            context.associated_data(key_version=key_version),
+        )
         return plaintext.decode()
     except (InvalidTag, UnicodeDecodeError) as exc:
         raise InvalidCiphertextError("Encrypted field authentication failed.") from exc
