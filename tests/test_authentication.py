@@ -1,6 +1,9 @@
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
+from django.core import mail
 from django.test import Client, override_settings
 from django.urls import reverse
 
@@ -66,3 +69,62 @@ def test_repeated_failed_logins_are_throttled(user: Any, client: Client) -> None
     assert second.status_code == 200
     assert third.status_code == 429
     assert "too many" in third.content.decode().lower()
+
+
+@pytest.mark.django_db
+def test_new_passwords_use_argon2id(user: Any) -> None:
+    assert user.password.startswith("argon2$")
+
+
+@pytest.mark.django_db
+def test_authenticated_password_change_revokes_other_sessions(user: Any) -> None:
+    initiating_client = Client()
+    other_client = Client()
+    initiating_client.force_login(user)
+    other_client.force_login(user)
+
+    response = initiating_client.post(
+        reverse("password-change"),
+        {
+            "old_password": "correct horse battery staple",
+            "new_password1": "new correct horse battery staple",
+            "new_password2": "new correct horse battery staple",
+        },
+    )
+
+    assert response.status_code == 302
+    assert initiating_client.get(reverse("transaction-list")).status_code == 200
+    assert other_client.get(reverse("transaction-list")).status_code == 302
+    assert user.audit_events.filter(event_type=AuditEvent.EventType.PASSWORD_CHANGED).exists()
+
+
+@pytest.mark.django_db
+def test_password_reset_changes_password_and_revokes_existing_session(user: Any) -> None:
+    existing_client = Client()
+    existing_client.force_login(user)
+
+    response = Client().post(reverse("password-reset"), {"email": user.email})
+
+    assert response.status_code == 302
+    assert len(mail.outbox) == 1
+    reset_url = re.search(r"https?://\S+", str(mail.outbox[0].body))
+    assert reset_url is not None
+    reset_path = urlsplit(reset_url.group(0)).path
+
+    reset_client = Client()
+    token_response = reset_client.get(reset_path)
+    assert token_response.status_code == 302
+    set_password_path = token_response["Location"]
+    completed = reset_client.post(
+        set_password_path,
+        {
+            "new_password1": "reset correct horse battery staple",
+            "new_password2": "reset correct horse battery staple",
+        },
+    )
+
+    assert completed.status_code == 302
+    user.refresh_from_db()
+    assert user.check_password("reset correct horse battery staple")
+    assert existing_client.get(reverse("transaction-list")).status_code == 302
+    assert user.audit_events.filter(event_type=AuditEvent.EventType.PASSWORD_CHANGED).exists()
