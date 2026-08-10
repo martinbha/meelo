@@ -57,3 +57,43 @@ a database repeatedly from zero:
 uv run pytest tests/test_migrations.py
 uv run pytest
 ```
+
+## Container topology
+
+The Compose deployment contains four Redis-free services:
+
+- `web` serves Django through Gunicorn.
+- `worker` claims processing jobs directly from PostgreSQL.
+- `postgres` stores application and queue state.
+- `proxy` terminates TLS and forwards requests to `web`.
+
+Start the web, database, and proxy services with:
+
+```bash
+docker compose up -d
+```
+
+Enable the database-backed processing worker with:
+
+```bash
+docker compose --profile processing up -d
+```
+
+Inspect readiness before sending traffic or processing documents:
+
+```bash
+docker compose ps
+docker compose --profile processing ps
+```
+
+### Shared temporary screenshot storage
+
+The `finance_ocr_tmp` volume is mounted at `/run/finance-ocr` in both `web` and
+`worker`. Upload requests write private per-document directories into that
+mount, and the worker reads and removes the same files during processing. The
+volume is backed by an in-memory `tmpfs`; it is not a repository path or public
+media directory and is discarded when the Docker volume is removed.
+
+Do not replace the two mounts with separate volumes. Both processes must resolve
+`DOCUMENT_TMP_ROOT` to the same private storage namespace. Directory and file
+permissions remain restricted to `0700` and `0600`, respectively.

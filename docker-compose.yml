@@ -22,6 +22,17 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=128m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   worker:
     build: .
@@ -47,6 +58,19 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=128m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "manage.py",
+          "shell",
+          "-c",
+          "from django.db import connection; connection.ensure_connection()",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   postgres:
     image: postgres:17-alpine
@@ -71,12 +95,18 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   caddy_config:
