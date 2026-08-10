@@ -19,7 +19,7 @@
           <a href="{% url 'upload-list' %}">Uploads</a>
           <a href="{% url 'password-change' %}">Security</a>
           <span class="user-email">{{ request.user.email }}</span>
-          <form action="{% url 'logout' %}" method="post">
+          <form action="{% url 'logout' %}" method="post" hx-boost="false">
             {% csrf_token %}
             <button type="submit">Sign out</button>
           </form>

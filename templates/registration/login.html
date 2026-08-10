@@ -5,7 +5,7 @@
 {% block content %}
   <section class="auth-card" aria-labelledby="login-heading">
     <h1 id="login-heading">Sign in</h1>
-    <form method="post">
+    <form method="post" hx-boost="false">
       {% csrf_token %}
       {{ form.as_p }}
       <button type="submit">Sign in</button>

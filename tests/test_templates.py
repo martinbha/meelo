@@ -16,6 +16,7 @@ def test_login_uses_shared_template_shell(client: Client) -> None:
     assert 'href="/static/css/app.css"' in content
     assert 'src="/static/js/app.js"' in content
     assert 'name="csrfmiddlewaretoken"' in content
+    assert '<form method="post" hx-boost="false">' in content
 
 
 def test_base_shell_exposes_progress_indicator(client: Client) -> None:
@@ -37,6 +38,7 @@ def test_authenticated_dashboard_uses_shared_shell(client: Client, django_user_m
     assert 'id="dashboard-heading"' in content
     assert reverse("transaction-list") in content
     assert reverse("upload-list") in content
+    assert f'<form action="{reverse("logout")}" method="post" hx-boost="false">' in content
 
 
 @pytest.mark.django_db
