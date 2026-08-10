@@ -1,4 +1,10 @@
 from django.contrib import admin
+from django.contrib.auth.views import (
+    PasswordChangeDoneView,
+    PasswordResetCompleteView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
 from django.urls import path
 
 from apps.core.views import health_check
@@ -13,13 +19,51 @@ from apps.transactions.views import (
     ManualTransactionUpdateView,
     TransactionListView,
 )
-from apps.users.views import UserLoginView, UserLogoutView
+from apps.users.views import (
+    UserLoginView,
+    UserLogoutView,
+    UserPasswordChangeView,
+    UserPasswordResetConfirmView,
+)
 
 urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     path("login/", UserLoginView.as_view(), name="login"),
     path("logout/", UserLogoutView.as_view(), name="logout"),
+    path("password/change/", UserPasswordChangeView.as_view(), name="password-change"),
+    path(
+        "password/change/done/",
+        PasswordChangeDoneView.as_view(template_name="registration/password_change_done.html"),
+        name="password-change-done",
+    ),
+    path(
+        "password/reset/",
+        PasswordResetView.as_view(
+            template_name="registration/password_reset_form.html",
+            email_template_name="registration/password_reset_email.txt",
+            subject_template_name="registration/password_reset_subject.txt",
+            success_url="/password/reset/done/",
+        ),
+        name="password-reset",
+    ),
+    path(
+        "password/reset/done/",
+        PasswordResetDoneView.as_view(template_name="registration/password_reset_done.html"),
+        name="password-reset-done",
+    ),
+    path(
+        "password/reset/<uidb64>/<token>/",
+        UserPasswordResetConfirmView.as_view(),
+        name="password-reset-confirm",
+    ),
+    path(
+        "password/reset/complete/",
+        PasswordResetCompleteView.as_view(
+            template_name="registration/password_reset_complete.html"
+        ),
+        name="password-reset-complete",
+    ),
     path("transactions/", TransactionListView.as_view(), name="transaction-list"),
     path("transactions/new/", ManualTransactionCreateView.as_view(), name="transaction-new"),
     path(
