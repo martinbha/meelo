@@ -14,6 +14,9 @@ SENSITIVE_FIELD_NAMES = (
     "counterparty",
     "amount",
     "identifier",
+    "account_number",
+    "card_number",
+    "last_four",
     "screenshot",
     "filename",
     "password",
@@ -21,16 +24,26 @@ SENSITIVE_FIELD_NAMES = (
     "token",
     "authorization",
 )
+_SENSITIVE_FIELD_PATTERN = (
+    rf"(?:{'|'.join(SENSITIVE_FIELD_NAMES)}|[A-Za-z0-9_]*(?:password|secret|token))"
+)
 _SENSITIVE_ASSIGNMENT = re.compile(
-    rf"(?i)(?P<prefix>\b(?:{'|'.join(SENSITIVE_FIELD_NAMES)})\b\s*[:=]\s*)"
+    rf"(?i)(?P<prefix>\b{_SENSITIVE_FIELD_PATTERN}\b\s*[:=]\s*)"
     r"(?P<value>\"[^\"]*\"|'[^']*'|[^\s,;]+)"
 )
+
+
+def _is_sensitive_field(key: object) -> bool:
+    normalized = str(key).lower()
+    return normalized in SENSITIVE_FIELD_NAMES or normalized.endswith(
+        ("_password", "_secret", "_token")
+    )
 
 
 def _redact_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: "[REDACTED]" if str(key).lower() in SENSITIVE_FIELD_NAMES else _redact_json(item)
+            key: "[REDACTED]" if _is_sensitive_field(key) else _redact_json(item)
             for key, item in value.items()
         }
     if isinstance(value, list):

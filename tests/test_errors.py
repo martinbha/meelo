@@ -130,7 +130,16 @@ def test_structured_formatter_redacts_nested_json_fields() -> None:
         logging.INFO,
         __file__,
         1,
-        json.dumps({"event": "parsed", "details": {"ocr_text": "private text"}}),
+        json.dumps(
+            {
+                "event": "parsed",
+                "details": {
+                    "ocr_text": "private text",
+                    "access_token": "token-value",
+                    "account_number": "123456789",
+                },
+            }
+        ),
         (),
         None,
     )
@@ -138,4 +147,6 @@ def test_structured_formatter_redacts_nested_json_fields() -> None:
     rendered = StructuredFormatter().format(record)
 
     assert "private text" not in rendered
+    assert "token-value" not in rendered
+    assert "123456789" not in rendered
     assert "[REDACTED]" in rendered
