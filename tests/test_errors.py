@@ -102,3 +102,51 @@ def test_structured_formatter_emits_json_with_request_context() -> None:
     assert payload["level"] == "INFO"
     assert payload["message"] == "hello"
     assert payload["request_id"] == "request-456"
+
+
+def test_structured_formatter_redacts_financial_and_secret_fields() -> None:
+    record = logging.LogRecord(
+        "apps.core",
+        logging.ERROR,
+        __file__,
+        1,
+        'merchant="Private Cafe" amount=42900 password=hunter2 screenshot=statement.png',
+        (),
+        None,
+    )
+
+    rendered = StructuredFormatter().format(record)
+
+    assert "Private Cafe" not in rendered
+    assert "42900" not in rendered
+    assert "hunter2" not in rendered
+    assert "statement.png" not in rendered
+    assert rendered.count("[REDACTED]") == 4
+
+
+def test_structured_formatter_redacts_nested_json_fields() -> None:
+    record = logging.LogRecord(
+        "apps.core",
+        logging.INFO,
+        __file__,
+        1,
+        json.dumps(
+            {
+                "event": "parsed",
+                "details": {
+                    "ocr_text": "private text",
+                    "access_token": "token-value",
+                    "account_number": "123456789",
+                },
+            }
+        ),
+        (),
+        None,
+    )
+
+    rendered = StructuredFormatter().format(record)
+
+    assert "private text" not in rendered
+    assert "token-value" not in rendered
+    assert "123456789" not in rendered
+    assert "[REDACTED]" in rendered
