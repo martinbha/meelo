@@ -1,6 +1,9 @@
 import tomllib
 from pathlib import Path
 
+import pytest
+from django.test import Client
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -9,3 +12,11 @@ def test_project_metadata_declares_supported_python() -> None:
 
     assert metadata["project"]["requires-python"] == ">=3.12"
     assert (PROJECT_ROOT / "uv.lock").is_file()
+
+
+@pytest.mark.django_db
+def test_health_check_reports_database_readiness(client: Client) -> None:
+    response = client.get("/health/")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
