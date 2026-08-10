@@ -6,6 +6,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
+from apps.core.context import request_id_context
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.services import JOB_HANDLERS, process_one_job
 from apps.processing.storage import document_directory
@@ -129,6 +130,26 @@ def test_worker_dispatches_registered_handler_and_marks_success(
     assert handled == [str(job.id)]
     assert job.status == ProcessingJob.Status.SUCCEEDED
     assert job.completed_at is not None
+
+
+@pytest.mark.django_db
+def test_worker_operation_uses_job_correlation_id(user: Any, monkeypatch: Any) -> None:
+    observed_ids: list[str] = []
+
+    def handler(job: ProcessingJob) -> None:
+        observed_ids.append(request_id_context.get())
+
+    monkeypatch.setitem(JOB_HANDLERS, "correlated", handler)
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=uuid4(),
+        task_name="correlated",
+    )
+
+    assert process_one_job() is True
+
+    assert observed_ids == [f"job-{job.id}"]
+    assert request_id_context.get() == "-"
 
 
 @pytest.mark.django_db

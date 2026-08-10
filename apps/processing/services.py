@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from apps.core.context import request_id_context
+
 from .models import ProcessingJob
 
 logger = logging.getLogger(__name__)
@@ -49,15 +51,19 @@ def process_one_job() -> bool:
     if job is None:
         return False
 
+    context_token = request_id_context.set(f"job-{job.id}")
     try:
-        dispatch_job(job)
-    except UnsupportedTaskError as exc:
-        job.mark_failed(code="UNSUPPORTED_TASK", message=str(exc))
-    except RetryableJobError as exc:
-        job.mark_failed(code=exc.code, message=str(exc), retryable=True)
-    except Exception as exc:  # pragma: no cover - exercised by integration handlers
-        logger.exception("Processing job %s failed unexpectedly", job.id)
-        job.mark_failed(code="UNHANDLED_ERROR", message=str(exc), retryable=True)
-    else:
-        job.mark_succeeded()
+        try:
+            dispatch_job(job)
+        except UnsupportedTaskError as exc:
+            job.mark_failed(code="UNSUPPORTED_TASK", message=str(exc))
+        except RetryableJobError as exc:
+            job.mark_failed(code=exc.code, message=str(exc), retryable=True)
+        except Exception as exc:  # pragma: no cover - exercised by integration handlers
+            logger.exception("Processing job %s failed unexpectedly", job.id)
+            job.mark_failed(code="UNHANDLED_ERROR", message=str(exc), retryable=True)
+        else:
+            job.mark_succeeded()
+    finally:
+        request_id_context.reset(context_token)
     return True
