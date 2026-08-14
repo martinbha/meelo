@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import cv2  # type: ignore[import-untyped]
+import cv2
 import numpy as np
 from django.conf import settings
 from PIL import Image, UnidentifiedImageError
