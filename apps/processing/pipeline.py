@@ -5,6 +5,7 @@ from .models import ProcessingJob, SourceDocument
 from .services import JobHandler, RetryableJobError, register_handler
 from .state import transition_document
 from .storage import safe_document_path
+from .validation import UploadValidationError, decode_stored_image
 
 
 class DocumentPipelineError(RetryableJobError):
@@ -45,6 +46,10 @@ def process_document_job(job: ProcessingJob) -> None:
             )
 
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.PREPROCESSING)
+        try:
+            decode_stored_image(path)
+        except UploadValidationError as exc:
+            raise DocumentPipelineError(str(exc), code=exc.code) from exc
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.OCR_RUNNING)
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.PARSING)
         transition_document(

@@ -18,7 +18,7 @@ from apps.processing.forms import ScreenshotUploadForm
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.storage import document_directory, safe_document_path
 from apps.processing.upload_services import DuplicateUploadError, create_uploaded_document
-from apps.processing.validation import ImageDimensionsTooLargeError
+from apps.processing.validation import ImageDimensionsTooLargeError, decode_stored_image
 
 
 @pytest.fixture
@@ -181,3 +181,12 @@ def test_storage_rejects_traversal_and_symlink_paths(user: Any) -> None:
     document = create_uploaded_document(user=user, uploaded_file=screenshot())
     with pytest.raises(ValueError, match="outside"):
         safe_document_path(document.pk, Path(document.temporary_path).parent / "../escape")
+
+
+@pytest.mark.django_db
+def test_private_worker_decode_uses_validated_dimensions_before_opencv(user: Any) -> None:
+    document = create_uploaded_document(user=user, uploaded_file=screenshot(size=(3, 2)))
+
+    decoded = decode_stored_image(Path(document.temporary_path))
+
+    assert decoded.shape[:2] == (2, 3)
