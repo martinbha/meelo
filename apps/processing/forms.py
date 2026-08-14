@@ -16,6 +16,8 @@ class ScreenshotUploadForm(forms.Form):
     )
 
     def clean_screenshot(self) -> Any:
+        if len(self.files.getlist("screenshot")) != 1:
+            raise forms.ValidationError("Upload exactly one screenshot at a time.")
         uploaded = self.cleaned_data["screenshot"]
         try:
             validate_uploaded_file(uploaded)
