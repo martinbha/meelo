@@ -44,6 +44,21 @@ class FinancialAccount(models.Model):
                 fields=("user", "name_blind_index"),
                 name="financial_account_user_name_blind_unique",
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    account_type__in=(
+                        "checking",
+                        "savings",
+                        "cash",
+                        "credit_card_liability",
+                        "loan",
+                        "investment",
+                        "other_asset",
+                        "other_liability",
+                    )
+                ),
+                name="financial_account_type_valid",
+            ),
         ]
         indexes = [
             models.Index(fields=("user", "is_active"), name="financial_account_active_idx"),
