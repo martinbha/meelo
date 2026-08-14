@@ -272,3 +272,54 @@ def test_rule_applies_to_draft_but_never_silently_rewrites_confirmed_transaction
         apply_category_rule(transaction_id=draft.pk, user=user)
     draft.refresh_from_db()
     assert draft.category_id is None
+
+
+@pytest.mark.django_db
+def test_card_scoped_rule_wins_over_generic_rule_at_same_priority(
+    user: Any, category: Category
+) -> None:
+    account = make_account(user)
+    instrument = PaymentInstrument.objects.create(
+        user=user,
+        name_encrypted="card",
+        name_blind_index="rule-card",
+        instrument_type=PaymentInstrument.InstrumentType.DEBIT_CARD,
+        financial_account=account,
+    )
+    card_category = Category.objects.create(
+        user=user,
+        name_encrypted="card food",
+        name_blind_index="card-food-index",
+        category_type=Category.CategoryType.EXPENSE,
+    )
+    create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=category,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+    card_rule = create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=card_category,
+        payment_instrument=instrument,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+    transaction_record = CanonicalTransaction.objects.create(
+        user=user,
+        created_by=user,
+        financial_account=account,
+        payment_instrument=instrument,
+        occurred_at=date(2026, 8, 14),
+        amount_encrypted="100:KRW",
+        merchant_encrypted="encrypted-value",
+        merchant_blind_index=merchant_blind_index("Cafe", user_id=user.pk, key=BLIND_INDEX_KEY),
+    )
+
+    assert apply_category_rule(transaction_id=transaction_record.pk, user=user) == card_rule
+    transaction_record.refresh_from_db()
+    assert transaction_record.category_id == card_category.pk

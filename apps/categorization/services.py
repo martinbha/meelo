@@ -201,7 +201,19 @@ def apply_category_rule(*, transaction_id: Any, user: Any) -> CategoryRule | Mer
         .filter(
             Q(financial_account__isnull=True) | Q(financial_account=transaction.financial_account)
         )
-        .order_by("-priority", "created_at")
+        .annotate(
+            scope_rank=Case(
+                When(
+                    payment_instrument__isnull=False,
+                    payment_instrument=transaction.payment_instrument,
+                    then=Value(0),
+                ),
+                When(financial_account=transaction.financial_account, then=Value(1)),
+                default=Value(2),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("-priority", "scope_rank", "created_at")
         .first()
     )
     match: CategoryRule | MerchantAlias | None = rule
