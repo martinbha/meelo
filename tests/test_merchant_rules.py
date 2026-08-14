@@ -1,11 +1,29 @@
+import os
+from datetime import date
 from typing import Any
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 
 from apps.categorization.models import Category, CategoryRule, MerchantAlias
+from apps.categorization.services import (
+    apply_category_rule,
+    create_exact_merchant_rule,
+    create_merchant_alias,
+    decrypt_normalized_merchant,
+    find_merchant_alias,
+    merchant_blind_index,
+    set_rule_active,
+)
+from apps.core.errors import ConflictError
+from apps.core.models import AuditEvent
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
+from apps.transactions.models import CanonicalTransaction
+
+ENCRYPTION_KEY = os.urandom(32)
+BLIND_INDEX_KEY = os.urandom(32)
 
 
 @pytest.fixture
@@ -98,3 +116,213 @@ def test_alias_related_records_must_belong_to_same_user(user: Any, category: Cat
 
     with pytest.raises(ValidationError, match="same user"):
         alias.full_clean()
+
+
+@pytest.mark.django_db
+def test_alias_service_encrypts_values_and_matches_by_scoped_blind_index(
+    user: Any, category: Category
+) -> None:
+    alias = create_merchant_alias(
+        user=user,
+        alias="  Corner   SHOP ",
+        normalized_merchant="Corner Shop Seoul",
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+        default_category=category,
+    )
+
+    assert "corner shop" not in alias.alias_encrypted.casefold()
+    assert decrypt_normalized_merchant(alias, encryption_key=ENCRYPTION_KEY) == "corner shop seoul"
+    assert (
+        find_merchant_alias(user=user, merchant="corner shop", blind_index_key=BLIND_INDEX_KEY)
+        == alias
+    )
+    assert (
+        AuditEvent.objects.get(user=user).event_type == AuditEvent.EventType.MERCHANT_ALIAS_CREATED
+    )
+    other = type(user).objects.create_user("alias-other@example.com", password="password")
+    assert (
+        find_merchant_alias(user=other, merchant="corner shop", blind_index_key=BLIND_INDEX_KEY)
+        is None
+    )
+
+
+@pytest.mark.django_db
+def test_generic_alias_is_unique_per_user(user: Any, category: Category) -> None:
+    values = {
+        "user": user,
+        "alias": "Corner Shop",
+        "normalized_merchant": "Corner Shop",
+        "encryption_key": ENCRYPTION_KEY,
+        "blind_index_key": BLIND_INDEX_KEY,
+        "key_version": 1,
+        "default_category": category,
+    }
+    create_merchant_alias(**values)
+
+    with pytest.raises((ValidationError, IntegrityError)), transaction.atomic():
+        create_merchant_alias(**values)
+
+
+@pytest.mark.django_db
+def test_card_specific_alias_takes_precedence(user: Any, category: Category) -> None:
+    account = make_account(user)
+    instrument = PaymentInstrument.objects.create(
+        user=user,
+        name_encrypted="debit",
+        name_blind_index="specific-card",
+        instrument_type=PaymentInstrument.InstrumentType.DEBIT_CARD,
+        financial_account=account,
+    )
+    generic = create_merchant_alias(
+        user=user,
+        alias="Cafe",
+        normalized_merchant="Generic Cafe",
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+        default_category=category,
+    )
+    specific = create_merchant_alias(
+        user=user,
+        alias="Cafe",
+        normalized_merchant="Card Cafe",
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+        default_category=category,
+        payment_instrument=instrument,
+    )
+
+    assert (
+        find_merchant_alias(
+            user=user,
+            merchant="Cafe",
+            blind_index_key=BLIND_INDEX_KEY,
+            payment_instrument_id=instrument.pk,
+        )
+        == specific
+    )
+    assert (
+        find_merchant_alias(
+            user=user,
+            merchant="Cafe",
+            blind_index_key=BLIND_INDEX_KEY,
+        )
+        == generic
+    )
+
+
+@pytest.mark.django_db
+def test_rule_lifecycle_is_audited_and_preserves_history(user: Any, category: Category) -> None:
+    rule = create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=category,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+
+    set_rule_active(user=user, rule_id=rule.pk, is_active=False)
+    rule.refresh_from_db()
+    assert rule.is_active is False
+    assert rule.disabled_at is not None
+    assert CategoryRule.objects.filter(pk=rule.pk).exists()
+    assert list(AuditEvent.objects.filter(user=user).values_list("event_type", flat=True)) == [
+        AuditEvent.EventType.CATEGORY_RULE_CREATED,
+        AuditEvent.EventType.CATEGORY_RULE_DISABLED,
+    ]
+
+    set_rule_active(user=user, rule_id=rule.pk, is_active=True)
+    rule.refresh_from_db()
+    assert rule.disabled_at is None
+
+
+@pytest.mark.django_db
+def test_rule_applies_to_draft_but_never_silently_rewrites_confirmed_transaction(
+    user: Any, category: Category
+) -> None:
+    account = make_account(user)
+    merchant_index = merchant_blind_index("Cafe", user_id=user.pk, key=BLIND_INDEX_KEY)
+    rule = create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=category,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+    draft = CanonicalTransaction.objects.create(
+        user=user,
+        created_by=user,
+        financial_account=account,
+        occurred_at=date(2026, 8, 14),
+        amount_encrypted="100:KRW",
+        merchant_encrypted="encrypted-value",
+        merchant_blind_index=merchant_index,
+    )
+
+    assert apply_category_rule(transaction_id=draft.pk, user=user) == rule
+    draft.refresh_from_db()
+    assert draft.category_id == category.pk
+
+    draft.status = CanonicalTransaction.Status.CONFIRMED
+    draft.category = None
+    draft.save(update_fields=("status", "category"))
+    with pytest.raises(ConflictError, match="explicit category correction"):
+        apply_category_rule(transaction_id=draft.pk, user=user)
+    draft.refresh_from_db()
+    assert draft.category_id is None
+
+
+@pytest.mark.django_db
+def test_card_scoped_rule_wins_over_generic_rule_at_same_priority(
+    user: Any, category: Category
+) -> None:
+    account = make_account(user)
+    instrument = PaymentInstrument.objects.create(
+        user=user,
+        name_encrypted="card",
+        name_blind_index="rule-card",
+        instrument_type=PaymentInstrument.InstrumentType.DEBIT_CARD,
+        financial_account=account,
+    )
+    card_category = Category.objects.create(
+        user=user,
+        name_encrypted="card food",
+        name_blind_index="card-food-index",
+        category_type=Category.CategoryType.EXPENSE,
+    )
+    create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=category,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+    card_rule = create_exact_merchant_rule(
+        user=user,
+        merchant="Cafe",
+        category=card_category,
+        payment_instrument=instrument,
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
+    transaction_record = CanonicalTransaction.objects.create(
+        user=user,
+        created_by=user,
+        financial_account=account,
+        payment_instrument=instrument,
+        occurred_at=date(2026, 8, 14),
+        amount_encrypted="100:KRW",
+        merchant_encrypted="encrypted-value",
+        merchant_blind_index=merchant_blind_index("Cafe", user_id=user.pk, key=BLIND_INDEX_KEY),
+    )
+
+    assert apply_category_rule(transaction_id=transaction_record.pk, user=user) == card_rule
+    transaction_record.refresh_from_db()
+    assert transaction_record.category_id == card_category.pk

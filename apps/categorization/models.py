@@ -6,6 +6,7 @@ from typing import Any
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -119,7 +120,13 @@ class MerchantAlias(models.Model):
         ordering = ("alias_blind_index", "created_at")
         constraints = [
             models.UniqueConstraint(
+                fields=("user", "alias_blind_index"),
+                condition=Q(payment_instrument__isnull=True),
+                name="merchant_alias_user_alias_generic_unique",
+            ),
+            models.UniqueConstraint(
                 fields=("user", "alias_blind_index", "payment_instrument"),
+                condition=Q(payment_instrument__isnull=False),
                 name="merchant_alias_user_alias_card_unique",
             ),
         ]
@@ -194,6 +201,7 @@ class CategoryRule(models.Model):
     amount_max_encrypted = models.TextField(blank=True)
     priority = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    disabled_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
