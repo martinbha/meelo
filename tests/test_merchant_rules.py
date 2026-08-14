@@ -138,6 +138,9 @@ def test_alias_service_encrypts_values_and_matches_by_scoped_blind_index(
         find_merchant_alias(user=user, merchant="corner shop", blind_index_key=BLIND_INDEX_KEY)
         == alias
     )
+    assert (
+        AuditEvent.objects.get(user=user).event_type == AuditEvent.EventType.MERCHANT_ALIAS_CREATED
+    )
     other = type(user).objects.create_user("alias-other@example.com", password="password")
     assert (
         find_merchant_alias(user=other, merchant="corner shop", blind_index_key=BLIND_INDEX_KEY)

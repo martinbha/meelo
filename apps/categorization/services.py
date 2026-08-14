@@ -80,6 +80,15 @@ def create_merchant_alias(
     )
     alias_record.full_clean()
     alias_record.save()
+    record_audit_event(
+        user=user,
+        event_type="merchant_alias_created",
+        obj=alias_record,
+        metadata={
+            "has_default_category": default_category is not None,
+            "card_scoped": payment_instrument is not None,
+        },
+    )
     return alias_record
 
 
