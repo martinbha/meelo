@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from apps.core.audit import rebuild_audit_chain
 from apps.core.models import AuditEvent
 
 
@@ -28,6 +29,11 @@ class Command(BaseCommand):
         queryset = AuditEvent.objects.filter(created_at__lt=cutoff)
         count = queryset.count()
         if not options["dry_run"]:
+            affected_users = list(queryset.values_list("user", flat=True).distinct())
             queryset.delete()
+            from django.contrib.auth import get_user_model
+
+            for user in get_user_model().objects.filter(pk__in=affected_users):
+                rebuild_audit_chain(user)
         action = "Would delete" if options["dry_run"] else "Deleted"
         self.stdout.write(f"{action} {count} audit events.")

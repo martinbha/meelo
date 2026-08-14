@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import (
@@ -30,6 +31,19 @@ class UserLoginView(LoginView):
             user_agent=self.request.META.get("HTTP_USER_AGENT"),
         )
         return response
+
+    def form_invalid(self, form: AuthenticationForm) -> HttpResponse:
+        email = str(form.data.get("username", "")).strip()
+        user = get_user_model().objects.filter(email__iexact=email).first()
+        if user is not None:
+            record_audit_event(
+                user=user,
+                event_type="login_failure",
+                metadata={"method": "password"},
+                ip_address=self.request.META.get("REMOTE_ADDR"),
+                user_agent=self.request.META.get("HTTP_USER_AGENT"),
+            )
+        return super().form_invalid(form)
 
 
 class UserLogoutView(LogoutView):

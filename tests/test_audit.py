@@ -55,3 +55,4 @@ def test_audit_retention_command_deletes_only_expired_events(user: Any, capsys: 
     assert not AuditEvent.objects.filter(pk=old.pk).exists()
     assert AuditEvent.objects.filter(pk=recent.pk).exists()
     assert "Deleted 1 audit events" in capsys.readouterr().out
+    assert verify_audit_chain(user) is True
