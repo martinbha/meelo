@@ -14,11 +14,14 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       DOCUMENT_TMP_ROOT: /run/finance-ocr
+      FIELD_ENCRYPTION_MASTER_KEY_FILE: /run/secrets/field_encryption_master_key
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - finance_ocr_tmp:/run/finance-ocr
+    secrets:
+      - field_encryption_master_key
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=128m
@@ -50,11 +53,14 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       DOCUMENT_TMP_ROOT: /run/finance-ocr
+      FIELD_ENCRYPTION_MASTER_KEY_FILE: /run/secrets/field_encryption_master_key
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - finance_ocr_tmp:/run/finance-ocr
+    secrets:
+      - field_encryption_master_key
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=128m
@@ -118,3 +124,7 @@ volumes:
       device: tmpfs
       o: size=512m,mode=0700
   postgres_data:
+
+secrets:
+  field_encryption_master_key:
+    file: ${FIELD_ENCRYPTION_MASTER_KEY_SOURCE:-./secrets/field-encryption-master-key}

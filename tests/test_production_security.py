@@ -9,6 +9,7 @@ def production_settings(monkeypatch: Any) -> Any:
     monkeypatch.setenv("DJANGO_SECRET_KEY", "a" * 64)
     monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "example.com")
     monkeypatch.setenv("DJANGO_CSRF_TRUSTED_ORIGINS", "https://example.com")
+    monkeypatch.setenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "/run/secrets/test-master-key")
     module = importlib.import_module("config.settings.production")
     return importlib.reload(module)
 
@@ -38,6 +39,7 @@ def test_production_redirect_can_be_disabled_explicitly(monkeypatch: Any) -> Non
     monkeypatch.setenv("DJANGO_SECRET_KEY", "a" * 64)
     monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "example.com")
     monkeypatch.setenv("DJANGO_SECURE_SSL_REDIRECT", "false")
+    monkeypatch.setenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "/run/secrets/test-master-key")
     module = importlib.import_module("config.settings.production")
 
     assert importlib.reload(module).SECURE_SSL_REDIRECT is False
@@ -47,7 +49,18 @@ def test_production_rejects_invalid_boolean(monkeypatch: Any) -> None:
     monkeypatch.setenv("DJANGO_SECRET_KEY", "a" * 64)
     monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "example.com")
     monkeypatch.setenv("DJANGO_SECURE_SSL_REDIRECT", "sometimes")
+    monkeypatch.setenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "/run/secrets/test-master-key")
     module = importlib.import_module("config.settings.production")
 
     with pytest.raises(RuntimeError, match="must be a boolean"):
+        importlib.reload(module)
+
+
+def test_production_requires_external_master_key_path(monkeypatch: Any) -> None:
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "a" * 64)
+    monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "example.com")
+    monkeypatch.delenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", raising=False)
+    module = importlib.import_module("config.settings.production")
+
+    with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_MASTER_KEY_FILE"):
         importlib.reload(module)
