@@ -87,6 +87,11 @@ class Category(models.Model):
     def __str__(self) -> str:
         return self.name_blind_index
 
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        if self.is_system:
+            raise ValidationError("System categories cannot be deleted.")
+        return super().delete(*args, **kwargs)
+
 
 class MerchantAlias(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
