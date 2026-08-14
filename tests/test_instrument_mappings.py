@@ -130,7 +130,7 @@ def test_mapping_form_scopes_accounts_and_audits_changes(user: Any) -> None:
     )
 
     assert form.is_valid(), form.errors
-    assert other_bank not in form.fields["financial_account"].queryset  # type: ignore[operator, attr-defined]
+    assert other_bank not in form.fields["financial_account"].queryset  # type: ignore[attr-defined]
     saved = form.save()
     assert saved.settlement_account_id == bank.pk
     assert user.audit_events.filter(

@@ -121,7 +121,7 @@ def test_upload_form_rejects_multiple_files() -> None:
     )
 
     assert form.is_valid() is False
-    assert "exactly one" in form.errors["screenshot"][0].lower()
+    assert "exactly one" in str(form.errors["screenshot"][0]).lower()
 
 
 @pytest.mark.django_db
