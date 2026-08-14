@@ -67,6 +67,8 @@ def test_system_category_cannot_be_deleted(user: Any) -> None:
 
     with pytest.raises(ValidationError, match="cannot be deleted"):
         category.delete()
+    with pytest.raises(ValidationError, match="cannot be deleted"):
+        Category.objects.filter(pk=category.pk).delete()
 
     assert Category.objects.filter(pk=category.pk).exists()
 
