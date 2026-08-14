@@ -8,6 +8,8 @@ from uuid import UUID
 
 from django.conf import settings
 
+from apps.core.errors import InvalidRequestError
+
 ALLOWED_UPLOAD_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -53,12 +55,19 @@ def store_uploaded_file(
         if hasattr(uploaded_file, "chunks")
         else iter(lambda: uploaded_file.read(1024 * 1024), b"")
     )
-    with path.open("wb") as destination:
-        for chunk in chunks:
-            if not chunk:
-                break
-            destination.write(chunk)
-            digest.update(chunk)
-            size += len(chunk)
+    try:
+        with path.open("wb") as destination:
+            for chunk in chunks:
+                if not chunk:
+                    break
+                if size + len(chunk) > settings.MAX_UPLOAD_SIZE:
+                    raise InvalidRequestError("The screenshot exceeds the upload size limit.")
+                destination.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+    except Exception:
+        path.unlink(missing_ok=True)
+        directory.rmdir()
+        raise
     os.chmod(path, 0o600)
     return path, digest.hexdigest(), size

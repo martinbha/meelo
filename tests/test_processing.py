@@ -1,10 +1,12 @@
 from datetime import timedelta
+from io import BytesIO
 from typing import Any
 from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
 from django.utils import timezone
+from PIL import Image
 
 from apps.core.context import request_id_context
 from apps.processing.models import ProcessingJob, SourceDocument
@@ -180,7 +182,9 @@ def test_document_worker_updates_each_pipeline_phase(user: Any) -> None:
     directory = document_directory(document.pk)
     directory.mkdir(parents=True)
     path = directory / "original.png"
-    path.write_bytes(b"data")
+    image = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(image, format="PNG")
+    path.write_bytes(image.getvalue())
     path.chmod(0o600)
     document.temporary_path = str(path)
     document.save(update_fields=["temporary_path"])

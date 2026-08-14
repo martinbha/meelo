@@ -69,6 +69,7 @@ def test_repeated_failed_logins_are_throttled(user: Any, client: Client) -> None
     assert second.status_code == 200
     assert third.status_code == 429
     assert "too many" in third.content.decode().lower()
+    assert user.audit_events.filter(event_type=AuditEvent.EventType.LOGIN_FAILURE).exists()
 
 
 @pytest.mark.django_db

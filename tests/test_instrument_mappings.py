@@ -3,7 +3,9 @@ from typing import Any
 import pytest
 from django.core.exceptions import ValidationError
 
+from apps.core.models import AuditEvent
 from apps.financial_accounts.models import FinancialAccount
+from apps.instruments.forms import PaymentInstrumentMappingForm
 from apps.instruments.models import PaymentInstrument
 
 
@@ -105,3 +107,32 @@ def test_valid_credit_card_mapping_passes(user: Any) -> None:
     )
 
     instrument.full_clean()
+
+
+@pytest.mark.django_db
+def test_mapping_form_scopes_accounts_and_audits_changes(user: Any) -> None:
+    liability = make_account(
+        user, FinancialAccount.AccountType.CREDIT_CARD_LIABILITY, "form-liability"
+    )
+    bank = make_account(user, FinancialAccount.AccountType.CHECKING, "form-bank")
+    other = type(user).objects.create_user("mapping-other@example.com", password="password")
+    other_bank = make_account(other, FinancialAccount.AccountType.CHECKING, "other-form-bank")
+    instrument = make_instrument(user, PaymentInstrument.InstrumentType.CREDIT_CARD, liability)
+    instrument.save()
+    form = PaymentInstrumentMappingForm(
+        user=user,
+        instance=instrument,
+        data={
+            "financial_account": liability.pk,
+            "settlement_account": bank.pk,
+            "is_active": "on",
+        },
+    )
+
+    assert form.is_valid(), form.errors
+    assert other_bank not in form.fields["financial_account"].queryset  # type: ignore[attr-defined]
+    saved = form.save()
+    assert saved.settlement_account_id == bank.pk
+    assert user.audit_events.filter(
+        event_type=AuditEvent.EventType.PAYMENT_INSTRUMENT_CHANGED
+    ).exists()

@@ -27,6 +27,7 @@ class AuditEvent(models.Model):
         TRANSACTION_DELETED = "transaction_deleted", "Transaction deleted"
         DUPLICATE_MERGED = "duplicate_merged", "Duplicate merged"
         CATEGORY_CHANGED = "category_changed", "Category changed"
+        PAYMENT_INSTRUMENT_CHANGED = "payment_instrument_changed", "Payment instrument changed"
         MERCHANT_ALIAS_CREATED = "merchant_alias_created", "Merchant alias created"
         CATEGORY_RULE_CREATED = "category_rule_created", "Category rule created"
         CATEGORY_RULE_ENABLED = "category_rule_enabled", "Category rule enabled"

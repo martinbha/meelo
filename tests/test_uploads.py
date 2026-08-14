@@ -18,7 +18,7 @@ from apps.processing.forms import ScreenshotUploadForm
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.storage import document_directory, safe_document_path
 from apps.processing.upload_services import DuplicateUploadError, create_uploaded_document
-from apps.processing.validation import ImageDimensionsTooLargeError
+from apps.processing.validation import ImageDimensionsTooLargeError, decode_stored_image
 
 
 @pytest.fixture
@@ -101,6 +101,30 @@ def test_service_rejects_oversized_payload_before_persistence(user: Any) -> None
 
 
 @pytest.mark.django_db
+@override_settings(MAX_UPLOAD_SIZE=10)
+def test_streaming_limit_stops_underreported_payload_before_excess_bytes_are_written(
+    user: Any,
+) -> None:
+    uploaded = screenshot()
+    uploaded.size = 1
+
+    with pytest.raises(InvalidRequestError, match="size limit"):
+        create_uploaded_document(user=user, uploaded_file=uploaded)
+
+    assert SourceDocument.objects.filter(user=user).count() == 0
+    assert not list(Path("/tmp/finance-ocr-tests").glob("*/original.*"))
+
+
+def test_upload_form_rejects_multiple_files() -> None:
+    form = ScreenshotUploadForm(
+        files=MultiValueDict({"screenshot": [screenshot(), screenshot(name="second.png")]})
+    )
+
+    assert form.is_valid() is False
+    assert "exactly one" in str(form.errors["screenshot"][0]).lower()
+
+
+@pytest.mark.django_db
 @override_settings(MAX_IMAGE_PIXELS=4)
 def test_service_rejects_excessive_image_dimensions_before_persistence(user: Any) -> None:
     with pytest.raises(ImageDimensionsTooLargeError) as raised:
@@ -157,3 +181,12 @@ def test_storage_rejects_traversal_and_symlink_paths(user: Any) -> None:
     document = create_uploaded_document(user=user, uploaded_file=screenshot())
     with pytest.raises(ValueError, match="outside"):
         safe_document_path(document.pk, Path(document.temporary_path).parent / "../escape")
+
+
+@pytest.mark.django_db
+def test_private_worker_decode_uses_validated_dimensions_before_opencv(user: Any) -> None:
+    document = create_uploaded_document(user=user, uploaded_file=screenshot(size=(3, 2)))
+
+    decoded = decode_stored_image(Path(document.temporary_path))
+
+    assert decoded.shape[:2] == (2, 3)

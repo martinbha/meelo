@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from django.contrib import admin
 from django.core.management import call_command
+from django.test import RequestFactory
 
 from apps.categorization.models import Category
 from apps.financial_accounts.models import FinancialAccount
@@ -35,3 +36,31 @@ def test_domain_models_are_registered_with_safe_admin_lists() -> None:
 
     assert "amount_encrypted" not in admin.site._registry[CanonicalTransaction].list_display
     assert "name_encrypted" not in admin.site._registry[FinancialAccount].list_display
+
+
+@pytest.mark.django_db
+def test_non_superuser_admin_queries_are_owner_scoped(user: Any) -> None:
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    other = type(user).objects.create_user("other-admin@example.com", password="password")
+    own = FinancialAccount.objects.create(
+        user=user,
+        name_encrypted="own",
+        name_blind_index="own-admin-account",
+        institution_encrypted="bank",
+        institution_blind_index="own-admin-bank",
+        account_type=FinancialAccount.AccountType.CHECKING,
+    )
+    FinancialAccount.objects.create(
+        user=other,
+        name_encrypted="other",
+        name_blind_index="other-admin-account",
+        institution_encrypted="bank",
+        institution_blind_index="other-admin-bank",
+        account_type=FinancialAccount.AccountType.CHECKING,
+    )
+    request = RequestFactory().get("/admin/financial_accounts/financialaccount/")
+    request.user = user
+
+    model_admin = admin.site._registry[FinancialAccount]
+    assert list(model_admin.get_queryset(request)) == [own]

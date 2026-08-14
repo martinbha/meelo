@@ -49,9 +49,13 @@ def test_audit_retention_command_deletes_only_expired_events(user: Any, capsys: 
     recent = record_audit_event(user=user, event_type=AuditEvent.EventType.LOGIN_SUCCESS)
     old_time = timezone.now() - timedelta(days=10)
     AuditEvent.objects.filter(pk=old.pk).update(created_at=old_time)
+    retained_digest = recent.digest
 
     call_command("prune_audit_events", days=7)
 
     assert not AuditEvent.objects.filter(pk=old.pk).exists()
     assert AuditEvent.objects.filter(pk=recent.pk).exists()
     assert "Deleted 1 audit events" in capsys.readouterr().out
+    recent.refresh_from_db()
+    assert recent.digest == retained_digest
+    assert verify_audit_chain(user) is True

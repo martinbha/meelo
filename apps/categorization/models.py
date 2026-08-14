@@ -12,6 +12,13 @@ from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
 
+class CategoryQuerySet(models.QuerySet):  # type: ignore[type-arg]
+    def delete(self) -> tuple[int, dict[str, int]]:
+        if self.filter(is_system=True).exists():
+            raise ValidationError("System categories cannot be deleted.")
+        return super().delete()
+
+
 class Category(models.Model):
     class CategoryType(models.TextChoices):
         EXPENSE = "expense", "Expense"
@@ -20,6 +27,7 @@ class Category(models.Model):
         OTHER = "other", "Other"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    objects = CategoryQuerySet.as_manager()
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -86,6 +94,11 @@ class Category(models.Model):
 
     def __str__(self) -> str:
         return self.name_blind_index
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        if self.is_system:
+            raise ValidationError("System categories cannot be deleted.")
+        return super().delete(*args, **kwargs)
 
 
 class MerchantAlias(models.Model):

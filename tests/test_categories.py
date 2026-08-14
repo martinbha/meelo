@@ -60,6 +60,20 @@ def test_category_cycle_is_rejected(user: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_system_category_cannot_be_deleted(user: Any) -> None:
+    category = make_category(user, "system")
+    category.is_system = True
+    category.save(update_fields=["is_system"])
+
+    with pytest.raises(ValidationError, match="cannot be deleted"):
+        category.delete()
+    with pytest.raises(ValidationError, match="cannot be deleted"):
+        Category.objects.filter(pk=category.pk).delete()
+
+    assert Category.objects.filter(pk=category.pk).exists()
+
+
+@pytest.mark.django_db
 def test_same_name_is_allowed_under_different_parents(user: Any) -> None:
     first_parent = make_category(user, "first")
     second_parent = make_category(user, "second")
