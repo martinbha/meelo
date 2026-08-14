@@ -50,24 +50,17 @@ def record_audit_event(
         return event
 
 
-def rebuild_audit_chain(user: Any) -> None:
-    """Rebase a retained audit stream after authorized retention pruning."""
-
-    with transaction.atomic():
-        locked_user = get_user_model().objects.select_for_update().get(pk=user.pk)
-        previous_digest = ""
-        for event in AuditEvent.objects.filter(user=locked_user).order_by("created_at", "id"):
-            event.previous_digest = previous_digest
-            event.digest = event.calculate_digest()
-            event.save(update_fields=("previous_digest", "digest"))
-            previous_digest = event.digest
-
-
 def verify_audit_chain(user: Any) -> bool:
     """Verify every event digest and link for one user's audit stream."""
 
-    previous_digest = ""
-    for event in AuditEvent.objects.filter(user=user).order_by("created_at", "id"):
+    events = AuditEvent.objects.filter(user=user).order_by("created_at", "id")
+    first = events.first()
+    if first is None:
+        return True
+    # A retained stream may begin after an authorized, expired prefix. Its first
+    # previous digest remains authenticated as part of the first retained event.
+    previous_digest = first.previous_digest
+    for event in events:
         if event.previous_digest != previous_digest or not event.verify_digest():
             return False
         previous_digest = event.digest
