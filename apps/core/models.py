@@ -35,6 +35,8 @@ class AuditEvent(models.Model):
         CATEGORY_RULE_APPLIED = "category_rule_applied", "Category rule applied"
         EXPORT_CREATED = "export_created", "Export created"
         ENCRYPTION_KEY_ROTATED = "encryption_key_rotated", "Encryption key rotated"
+        ENCRYPTION_KEY_PROVISIONED = "encryption_key_provisioned", "Encryption key provisioned"
+        ENCRYPTION_KEY_ACCESSED = "encryption_key_accessed", "Encryption key accessed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
