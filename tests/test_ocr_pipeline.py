@@ -95,7 +95,7 @@ def test_pipeline_persists_partial_success_and_hands_off_after_ocr(
     assert handed_off == [["primary"]]
     assert OcrRun.objects.filter(source_document=document).count() == 2
     assert OcrRun.objects.get(source_document=document, succeeded=False).error_code == (
-        "OCR_ENGINE_FAILED"
+        "OCR_CONFIGURATION_INVALID"
     )
     assert runs[0].tokens.count() == 1
 
@@ -109,7 +109,7 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
     document = make_document(user)
     key = os.urandom(32)
 
-    with pytest.raises(OcrPipelineError, match="No local OCR"):
+    with pytest.raises(OcrPipelineError, match="No local OCR") as failure:
         orchestrate_document_ocr(
             document=document,
             source_path=source,
@@ -119,6 +119,8 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
             plans=(EnginePlan(StubEngine("failed", fails=True), OcrConfiguration(("ko",))),),
             preprocessing_settings=PreprocessingSettings(),
         )
+    assert failure.value.retryable is False
+    assert failure.value.code == "OCR_CONFIGURATION_INVALID"
 
     with pytest.raises(OcrPipelineError, match="handed to parsing"):
         orchestrate_document_ocr(

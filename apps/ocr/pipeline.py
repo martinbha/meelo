@@ -8,7 +8,8 @@ from typing import Any
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.processing.models import SourceDocument
 
-from .contracts import OcrConfiguration, OcrEngine, OcrError
+from .contracts import OcrConfiguration, OcrEngine
+from .execution import ClassifiedOcrError, run_engine_bounded
 from .models import OcrRun
 from .paddle import PaddleOcrEngine
 from .preprocessing import PreprocessingSettings, preprocess_image
@@ -18,6 +19,11 @@ from .tesseract import TesseractOcrEngine
 
 class OcrPipelineError(RuntimeError):
     """The local OCR phase could not produce parseable results."""
+
+    def __init__(self, message: str, *, code: str, retryable: bool) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,20 +57,28 @@ def orchestrate_document_ocr(
     plans: Sequence[EnginePlan],
     parser_handoff: ParserHandoff = _default_handoff,
     preprocessing_settings: PreprocessingSettings = DEFAULT_PREPROCESSING_SETTINGS,
+    engine_timeout_seconds: float = 120.0,
 ) -> tuple[OcrRun, ...]:
     successful: list[OcrRun] = []
+    failures: list[ClassifiedOcrError] = []
     with preprocess_image(source_path, source_path.parent, preprocessing_settings) as prepared:
         selected = prepared.variant(prepared.selected_variant)
         for plan in plans:
             try:
-                result = plan.engine.run(selected.path, plan.configuration)
-            except OcrError:
+                result = run_engine_bounded(
+                    plan.engine,
+                    selected.path,
+                    plan.configuration,
+                    timeout_seconds=engine_timeout_seconds,
+                )
+            except ClassifiedOcrError as exc:
+                failures.append(exc)
                 record_failed_run(
                     document=document,
                     user=user,
                     metadata=plan.engine.metadata,
                     configuration=plan.configuration,
-                    error_code="OCR_ENGINE_FAILED",
+                    error_code=exc.code,
                     duration_ms=0,
                     data_key=data_key,
                     key_version=key_version,
@@ -81,9 +95,19 @@ def orchestrate_document_ocr(
                 )
             )
     if not successful:
-        raise OcrPipelineError("No local OCR engine completed successfully.")
+        retryable = any(failure.retryable for failure in failures)
+        code = failures[0].code if len(failures) == 1 else "OCR_ALL_ENGINES_FAILED"
+        raise OcrPipelineError(
+            "No local OCR engine completed successfully.",
+            code=code,
+            retryable=retryable,
+        )
     if not parser_handoff(document, successful):
-        raise OcrPipelineError("OCR results could not be handed to parsing.")
+        raise OcrPipelineError(
+            "OCR results could not be handed to parsing.",
+            code="OCR_PARSE_HANDOFF_FAILED",
+            retryable=False,
+        )
     return tuple(successful)
 
 

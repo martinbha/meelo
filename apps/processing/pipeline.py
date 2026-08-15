@@ -4,7 +4,7 @@ from apps.ocr.pipeline import OcrPipelineError, execute_document_ocr
 
 from .cleanup import cleanup_document_storage
 from .models import ProcessingJob, SourceDocument
-from .services import JobHandler, RetryableJobError, register_handler
+from .services import JobHandler, NonRetryableJobError, RetryableJobError, register_handler
 from .state import transition_document
 from .storage import safe_document_path
 from .validation import UploadValidationError, decode_stored_image
@@ -56,12 +56,26 @@ def process_document_job(job: ProcessingJob) -> None:
         try:
             execute_document_ocr(document=document, source_path=path, user=job.user)
         except OcrPipelineError as exc:
-            raise DocumentPipelineError(str(exc), code="OCR_PIPELINE_FAILED") from exc
+            error_type = DocumentPipelineError if exc.retryable else NonRetryableJobError
+            raise error_type(str(exc), code=exc.code) from exc
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.PARSING)
         transition_document(
             document.pk, user=job.user, status=SourceDocument.Status.READY_FOR_REVIEW
         )
     except DocumentPipelineError as exc:
+        current = SourceDocument.objects.get(pk=document.pk)
+        if current.processing_status == SourceDocument.Status.DELETED:
+            return
+        if current.processing_status != SourceDocument.Status.FAILED:
+            transition_document(
+                document.pk,
+                user=job.user,
+                status=SourceDocument.Status.FAILED,
+                error_code=exc.code,
+                error_message=str(exc),
+            )
+        raise
+    except NonRetryableJobError as exc:
         current = SourceDocument.objects.get(pk=document.pk)
         if current.processing_status == SourceDocument.Status.DELETED:
             return
