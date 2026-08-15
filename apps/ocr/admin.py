@@ -21,6 +21,7 @@ class OcrRunAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):  # type: ignore[type
         "source_document",
         "engine",
         "engine_version",
+        "model_versions",
         "languages",
         "configuration_encrypted",
         "preprocessing_encrypted",

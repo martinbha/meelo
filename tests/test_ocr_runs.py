@@ -60,6 +60,7 @@ def test_successful_runs_encrypt_payloads_and_preserve_reproducibility(
         )
 
     assert run.succeeded is True
+    assert run.model_versions == {"paddlepaddle": "3.3"}
     assert run.selected_preprocessing_variant == "threshold"
     assert run.raw_output_encrypted != result.raw_output
     raw = decrypt_model_field(run, "raw_output_encrypted", key=data_key)
@@ -74,7 +75,7 @@ def test_multiple_and_failed_runs_keep_only_safe_failure_metadata(user: Any) -> 
     document = make_document(user)
     key = os.urandom(32)
     configuration = OcrConfiguration(("en",), {"psm": 6})
-    metadata = EngineMetadata("tesseract", "5.5")
+    metadata = EngineMetadata("tesseract", "5.5", {"language_data": "2026.08"})
 
     first = record_failed_run(
         document=document,
@@ -101,6 +102,7 @@ def test_multiple_and_failed_runs_keep_only_safe_failure_metadata(user: Any) -> 
     assert first.raw_output_encrypted == ""
     assert second.raw_output_encrypted == ""
     assert first.error_code == "LANGUAGE_PACK_MISSING"
+    assert first.model_versions == {"language_data": "2026.08"}
     assert "psm" not in first.configuration_encrypted
 
 

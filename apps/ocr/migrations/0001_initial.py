@@ -21,6 +21,7 @@ class Migration(migrations.Migration):
                 ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ("engine", models.CharField(max_length=32)),
                 ("engine_version", models.CharField(max_length=128)),
+                ("model_versions", models.JSONField(default=dict)),
                 ("languages", models.JSONField(default=list)),
                 ("configuration_encrypted", models.TextField()),
                 ("preprocessing_encrypted", models.TextField(blank=True)),

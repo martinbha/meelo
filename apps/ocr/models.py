@@ -23,6 +23,7 @@ class OcrRun(models.Model):
     )
     engine = models.CharField(max_length=32)
     engine_version = models.CharField(max_length=128)
+    model_versions = models.JSONField(default=dict)
     languages = models.JSONField(default=list)
     configuration_encrypted = models.TextField()
     preprocessing_encrypted = models.TextField(blank=True)
