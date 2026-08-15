@@ -32,6 +32,17 @@ class InvalidEngine(SlowEngine):
         raise OcrConfigurationError("missing local language data")
 
 
+class LargeResultEngine(SlowEngine):
+    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+        return OcrRunResult(
+            (),
+            self.metadata,
+            configuration,
+            10,
+            raw_output="x" * (2 * 1024 * 1024),
+        )
+
+
 def test_bounded_execution_terminates_hung_engine() -> None:
     started = time.monotonic()
     with pytest.raises(ClassifiedOcrError) as failure:
@@ -58,3 +69,14 @@ def test_bounded_execution_marks_configuration_failure_permanent() -> None:
 
     assert failure.value.code == "OCR_CONFIGURATION_INVALID"
     assert failure.value.retryable is False
+
+
+def test_bounded_execution_drains_large_result_before_joining_child() -> None:
+    result = run_engine_bounded(
+        LargeResultEngine(),
+        Path("fixture.png"),
+        OcrConfiguration(("en",)),
+        timeout_seconds=2,
+    )
+
+    assert len(result.raw_output) == 2 * 1024 * 1024

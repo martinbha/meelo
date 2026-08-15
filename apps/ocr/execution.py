@@ -114,24 +114,27 @@ def run_engine_bounded(
     process = context.Process(
         target=_run_child,
         args=(output, engine, image_path, configuration),
-        daemon=True,
     )
     process.start()
-    process.join(timeout_seconds)
-    if process.is_alive():
-        process.terminate()
+    try:
+        status, payload = output.get(timeout=timeout_seconds)
+    except queue.Empty as exc:
+        timed_out = process.is_alive()
+        if timed_out:
+            process.terminate()
         process.join(1)
         if process.is_alive():
             process.kill()
             process.join()
-        raise ClassifiedOcrError(code="OCR_ENGINE_TIMEOUT", retryable=True)
-    try:
-        status, payload = output.get(timeout=1)
-    except queue.Empty as exc:
-        raise ClassifiedOcrError(code="OCR_ENGINE_CRASHED", retryable=True) from exc
+        code = "OCR_ENGINE_TIMEOUT" if timed_out else "OCR_ENGINE_CRASHED"
+        raise ClassifiedOcrError(code=code, retryable=True) from exc
     finally:
         output.close()
         output.join_thread()
+    process.join(1)
+    if process.is_alive():
+        process.terminate()
+        process.join()
     if status == "failure":
         code, retryable = payload
         raise ClassifiedOcrError(code=code, retryable=retryable)
