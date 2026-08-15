@@ -170,7 +170,11 @@ def test_processing_jobs_are_scoped_to_the_authenticated_owner(user: Any) -> Non
 
 
 @pytest.mark.django_db
-def test_document_worker_updates_each_pipeline_phase(user: Any) -> None:
+def test_document_worker_updates_each_pipeline_phase(user: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "apps.processing.pipeline.execute_document_ocr",
+        lambda **kwargs: (),
+    )
     document = SourceDocument.objects.create(
         user=user,
         file_sha256=uuid4().hex + uuid4().hex,

@@ -136,6 +136,12 @@ def record_successful_run(
     )
     run.full_clean()
     run.save()
+    persist_tokens(
+        run=run,
+        tokens=result.tokens,
+        data_key=data_key,
+        key_version=key_version,
+    )
     return run
 
 

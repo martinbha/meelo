@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from apps.ocr.pipeline import OcrPipelineError, execute_document_ocr
+
 from .cleanup import cleanup_document_storage
 from .models import ProcessingJob, SourceDocument
 from .services import JobHandler, RetryableJobError, register_handler
@@ -51,6 +53,10 @@ def process_document_job(job: ProcessingJob) -> None:
         except UploadValidationError as exc:
             raise DocumentPipelineError(str(exc), code=exc.code) from exc
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.OCR_RUNNING)
+        try:
+            execute_document_ocr(document=document, source_path=path, user=job.user)
+        except OcrPipelineError as exc:
+            raise DocumentPipelineError(str(exc), code="OCR_PIPELINE_FAILED") from exc
         transition_document(document.pk, user=job.user, status=SourceDocument.Status.PARSING)
         transition_document(
             document.pk, user=job.user, status=SourceDocument.Status.READY_FOR_REVIEW
