@@ -16,7 +16,12 @@ from apps.ocr.contracts import (
     OcrToken,
 )
 from apps.ocr.models import OcrRun
-from apps.ocr.pipeline import EnginePlan, OcrPipelineError, orchestrate_document_ocr
+from apps.ocr.pipeline import (
+    EnginePlan,
+    OcrPipelineError,
+    orchestrate_document_ocr,
+    parse_ocr_runs,
+)
 from apps.ocr.preprocessing import PreprocessingSettings
 from apps.processing.models import SourceDocument
 
@@ -133,3 +138,43 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
             parser_handoff=lambda doc, runs: False,
             preprocessing_settings=PreprocessingSettings(),
         )
+
+
+@pytest.mark.django_db
+def test_default_handoff_runs_generic_parser_over_persisted_tokens(
+    user: Any, tmp_path: Path
+) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (300, 50), "white").save(source)
+    document = make_document(user)
+    key = os.urandom(32)
+
+    class RowEngine(StubEngine):
+        def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+            return OcrRunResult(
+                tokens=(
+                    OcrToken("2026.8.15", 0.9, BoundingBox(0, 10, 60, 20)),
+                    OcrToken("Cafe", 0.9, BoundingBox(70, 10, 120, 20)),
+                    OcrToken("출금", 0.9, BoundingBox(130, 10, 160, 20)),
+                    OcrToken("₩4,200", 0.9, BoundingBox(170, 10, 230, 20)),
+                ),
+                metadata=self.metadata,
+                configuration=configuration,
+                duration_ms=2,
+            )
+
+    runs = orchestrate_document_ocr(
+        document=document,
+        source_path=source,
+        user=user,
+        data_key=key,
+        key_version=1,
+        plans=(EnginePlan(RowEngine("primary"), OcrConfiguration(("ko",))),),
+        preprocessing_settings=PreprocessingSettings(),
+    )
+    selection = parse_ocr_runs(document, runs, data_key=key)
+
+    assert selection.metadata.name == "generic"
+    assert len(selection.observations) == 1
+    assert selection.observations[0].merchant == "cafe"
+    assert str(selection.observations[0].amount) == "4200"

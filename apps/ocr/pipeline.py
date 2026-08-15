@@ -5,12 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.core.crypto import decrypt_model_field
 from apps.core.key_management import get_user_data_key, load_master_key
+from apps.parsing.contracts import DocumentMetadata, NormalizedToken
+from apps.parsing.generic import GenericTransactionListParser
+from apps.parsing.registry import ParserRegistry, ParserSelection
 from apps.processing.models import SourceDocument
 
-from .contracts import OcrConfiguration, OcrEngine
+from .contracts import BoundingBox, OcrConfiguration, OcrEngine
 from .execution import ClassifiedOcrError, run_engine_bounded
-from .models import OcrRun
+from .matching import MatchStatus, TokenCandidate, match_engine_tokens
+from .models import OcrRun, OcrToken
 from .paddle import PaddleOcrEngine
 from .preprocessing import PreprocessingSettings, preprocess_image
 from .services import record_failed_run, record_successful_run
@@ -36,8 +41,76 @@ ParserHandoff = Callable[[SourceDocument, Sequence[OcrRun]], bool]
 DEFAULT_PREPROCESSING_SETTINGS = PreprocessingSettings(scale=2.0)
 
 
-def _default_handoff(document: SourceDocument, runs: Sequence[OcrRun]) -> bool:
-    return any(run.tokens.exists() for run in runs)
+def _run_candidates(run: OcrRun, data_key: bytes) -> tuple[TokenCandidate, ...]:
+    return tuple(
+        TokenCandidate(
+            engine=run.engine,
+            text=decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
+            normalized_text=decrypt_model_field(
+                token, "normalized_text_encrypted", key=data_key
+            ),
+            confidence=token.confidence,
+            bounding_box=BoundingBox(token.left, token.top, token.right, token.bottom),
+        )
+        for token in OcrToken.objects.filter(ocr_run=run).order_by("sequence")
+    )
+
+
+def tokens_for_parsing(runs: Sequence[OcrRun], *, data_key: bytes) -> tuple[NormalizedToken, ...]:
+    if not runs:
+        return ()
+    candidates = [_run_candidates(run, data_key) for run in runs]
+    grouped: list[tuple[str, float, BoundingBox, tuple[str, ...]]] = []
+    if len(candidates) == 1:
+        grouped.extend(
+            (token.normalized_text, token.confidence, token.bounding_box, (token.engine,))
+            for token in candidates[0]
+        )
+    else:
+        for group in match_engine_tokens(candidates[0], candidates[1]):
+            if group.status == MatchStatus.MATCHED:
+                strongest = max(group.tokens, key=lambda token: token.confidence)
+                grouped.append(
+                    (
+                        strongest.normalized_text,
+                        strongest.confidence,
+                        group.region,
+                        tuple(token.engine for token in group.tokens),
+                    )
+                )
+            else:
+                grouped.extend(
+                    (
+                        token.normalized_text,
+                        token.confidence,
+                        token.bounding_box,
+                        (token.engine,),
+                    )
+                    for token in group.tokens
+                )
+        for extra in candidates[2:]:
+            grouped.extend(
+                (token.normalized_text, token.confidence, token.bounding_box, (token.engine,))
+                for token in extra
+            )
+    grouped.sort(key=lambda item: (item[2].top, item[2].left, item[0]))
+    return tuple(
+        NormalizedToken(text, confidence, box, sequence, engines)
+        for sequence, (text, confidence, box, engines) in enumerate(grouped)
+    )
+
+
+def parse_ocr_runs(
+    document: SourceDocument, runs: Sequence[OcrRun], *, data_key: bytes
+) -> ParserSelection:
+    tokens = tokens_for_parsing(runs, data_key=data_key)
+    registry = ParserRegistry(generic_parser=GenericTransactionListParser())
+    metadata = DocumentMetadata(
+        source_type=document.source_type,
+        width=document.image_width,
+        height=document.image_height,
+    )
+    return registry.parse(metadata, tokens)
 
 
 def default_engine_plans() -> tuple[EnginePlan, ...]:
@@ -55,7 +128,7 @@ def orchestrate_document_ocr(
     data_key: bytes,
     key_version: int,
     plans: Sequence[EnginePlan],
-    parser_handoff: ParserHandoff = _default_handoff,
+    parser_handoff: ParserHandoff | None = None,
     preprocessing_settings: PreprocessingSettings = DEFAULT_PREPROCESSING_SETTINGS,
     engine_timeout_seconds: float = 120.0,
 ) -> tuple[OcrRun, ...]:
@@ -102,7 +175,12 @@ def orchestrate_document_ocr(
             code=code,
             retryable=retryable,
         )
-    if not parser_handoff(document, successful):
+    parsing_succeeded = (
+        parser_handoff(document, successful)
+        if parser_handoff is not None
+        else bool(parse_ocr_runs(document, successful, data_key=data_key).observations)
+    )
+    if not parsing_succeeded:
         raise OcrPipelineError(
             "OCR results could not be handed to parsing.",
             code="OCR_PARSE_HANDOFF_FAILED",
