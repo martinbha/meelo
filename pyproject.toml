@@ -13,6 +13,7 @@ dependencies = [
     "gunicorn>=23,<24",
     "numpy>=2,<3",
     "opencv-contrib-python>=4.10,<5",
+    "paddlepaddle>=3.1,<4",
     "paddleocr>=2.10,<4",
     "pillow>=11,<13",
     "psycopg[binary]>=3.2,<4",
