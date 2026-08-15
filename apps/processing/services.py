@@ -22,6 +22,14 @@ class RetryableJobError(Exception):
         self.code = code
 
 
+class NonRetryableJobError(Exception):
+    """Raised by a handler when repeating the job cannot resolve the failure."""
+
+    def __init__(self, message: str, *, code: str = "PERMANENT_ERROR") -> None:
+        super().__init__(message)
+        self.code = code
+
+
 JobHandler = Callable[[ProcessingJob], None]
 JOB_HANDLERS: dict[str, JobHandler] = {}
 
@@ -59,6 +67,8 @@ def process_one_job() -> bool:
             job.mark_failed(code="UNSUPPORTED_TASK", message=str(exc))
         except RetryableJobError as exc:
             job.mark_failed(code=exc.code, message=str(exc), retryable=True)
+        except NonRetryableJobError as exc:
+            job.mark_failed(code=exc.code, message=str(exc), retryable=False)
         except Exception as exc:  # pragma: no cover - exercised by integration handlers
             logger.exception("Processing job %s failed unexpectedly", job.id)
             job.mark_failed(code="UNHANDLED_ERROR", message=str(exc), retryable=True)

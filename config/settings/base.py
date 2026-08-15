@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "apps.instruments.apps.InstrumentsConfig",
     "apps.ledger.apps.LedgerConfig",
     "apps.ocr.apps.OcrConfig",
+    "apps.parsing.apps.ParsingConfig",
     "apps.processing.apps.ProcessingConfig",
     "apps.transactions.apps.TransactionsConfig",
     "apps.users.apps.UsersConfig",

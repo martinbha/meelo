@@ -7,11 +7,12 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.core.crypto import encrypt_model_field
+from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.processing.models import SourceDocument
 
 from .contracts import EngineMetadata, OcrConfiguration, OcrRunResult
-from .models import OcrRun
+from .models import OcrRun, OcrToken
+from .normalization import normalize_ocr_text
 from .preprocessing import PreprocessingResult
 
 
@@ -31,6 +32,69 @@ def _encrypted_json(
 
 def _configuration_payload(configuration: OcrConfiguration) -> dict[str, Any]:
     return {"languages": list(configuration.languages), "options": dict(configuration.options)}
+
+
+def persist_tokens(
+    *, run: OcrRun, tokens: tuple[Any, ...], data_key: bytes, key_version: int
+) -> list[OcrToken]:
+    records: list[OcrToken] = []
+    for sequence, token in enumerate(tokens):
+        hierarchy = (*token.hierarchy, 0, 0, 0, 0, 0)
+        box = token.bounding_box
+        record = OcrToken(
+            user_id=run.user_id,
+            ocr_run=run,
+            confidence=token.confidence,
+            left=box.left,
+            top=box.top,
+            right=box.right,
+            bottom=box.bottom,
+            page_number=hierarchy[0],
+            block_number=hierarchy[1],
+            paragraph_number=hierarchy[2],
+            line_number=hierarchy[3],
+            word_number=hierarchy[4],
+            sequence=sequence,
+        )
+        record.text_encrypted = encrypt_model_field(
+            record,
+            "text_encrypted",
+            token.text,
+            key=data_key,
+            key_version=key_version,
+        )
+        record.normalized_text_encrypted = encrypt_model_field(
+            record,
+            "normalized_text_encrypted",
+            normalize_ocr_text(token.text),
+            key=data_key,
+            key_version=key_version,
+        )
+        record.full_clean()
+        records.append(record)
+    return OcrToken.objects.bulk_create(records)
+
+
+def serialize_token_for_review(*, token: OcrToken, user: Any, data_key: bytes) -> dict[str, Any]:
+    if token.user_id != user.pk:
+        raise ValueError("The OCR token does not belong to the requesting user.")
+    return {
+        "id": str(token.pk),
+        "text": decrypt_model_field(token, "text_encrypted", key=data_key),
+        "normalized_text": decrypt_model_field(
+            token, "normalized_text_encrypted", key=data_key
+        ),
+        "confidence": token.confidence,
+        "bounds": {
+            "left": token.left,
+            "top": token.top,
+            "right": token.right,
+            "bottom": token.bottom,
+        },
+        "line": token.line_number,
+        "word": token.word_number,
+        "sequence": token.sequence,
+    }
 
 
 @transaction.atomic
@@ -83,6 +147,12 @@ def record_successful_run(
     )
     run.full_clean()
     run.save()
+    persist_tokens(
+        run=run,
+        tokens=result.tokens,
+        data_key=data_key,
+        key_version=key_version,
+    )
     return run
 
 

@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from apps.core.admin import OwnerScopedAdminMixin
 
-from .models import OcrRun
+from .models import OcrRun, OcrToken
 
 
 @admin.register(OcrRun)
@@ -32,6 +32,35 @@ class OcrRunAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):  # type: ignore[type
         "duration_ms",
         "started_at",
         "completed_at",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):  # type: ignore[no-untyped-def]
+        return False
+
+    def has_change_permission(self, request, obj=None):  # type: ignore[no-untyped-def]
+        return False
+
+
+@admin.register(OcrToken)
+class OcrTokenAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):  # type: ignore[type-arg]
+    list_display = ("ocr_run", "sequence", "confidence", "line_number", "word_number")
+    readonly_fields = (
+        "user",
+        "ocr_run",
+        "text_encrypted",
+        "normalized_text_encrypted",
+        "confidence",
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "page_number",
+        "block_number",
+        "paragraph_number",
+        "line_number",
+        "word_number",
+        "sequence",
         "created_at",
     )
 
