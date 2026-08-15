@@ -71,6 +71,9 @@ class ParsedObservation:
     missing_fields: frozenset[str] = frozenset()
     ambiguous_fields: frozenset[str] = frozenset()
     output_version: int = PARSER_OUTPUT_VERSION
+    parser_name: str = ""
+    parser_version: str = ""
+    parser_support_score: float = 0.0
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -78,6 +81,8 @@ class ParsedObservation:
         )
         if self.output_version < 1:
             raise ValueError("Parser output versions must be positive.")
+        if not 0.0 <= self.parser_support_score <= 1.0:
+            raise ValueError("Stored parser support score must be between zero and one.")
 
 
 class ScreenshotParser(ABC):
