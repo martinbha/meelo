@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,16 @@ class FakePaddle:
 
     def ocr(self, path: str, *, cls: bool) -> Any:
         self.calls.append((path, cls))
+        return self.output
+
+
+class FakePaddleV3:
+    def __init__(self, output: Any) -> None:
+        self.output = output
+        self.calls: list[str] = []
+
+    def predict(self, path: str) -> Any:
+        self.calls.append(path)
         return self.output
 
 
@@ -42,6 +53,33 @@ def test_paddle_adapter_normalizes_korean_tokens_without_network(tmp_path: Path)
     }
     assert paddle.calls == [(str(image), False)]
     assert "결제" in result.raw_output
+
+
+def test_paddle_adapter_normalizes_current_mapping_results(tmp_path: Path) -> None:
+    image = tmp_path / "sanitized.png"
+    image.touch()
+    paddle = FakePaddleV3(
+        [
+            {
+                "rec_texts": ["승인", "10,000원"],
+                "rec_scores": [0.98, 0.93],
+                "rec_polys": [
+                    [[1, 2], [20, 2], [20, 8], [1, 8]],
+                    [[1, 10], [40, 10], [40, 18], [1, 18]],
+                ],
+            }
+        ]
+    )
+
+    result = PaddleOcrEngine(factory=lambda **options: paddle).run(
+        image, OcrConfiguration(("ko",), {"ocr_version": "PP-OCRv5"})
+    )
+
+    assert result.text == "승인 10,000원"
+    assert paddle.calls == [str(image)]
+    assert result.metadata.model_versions["ocr"] == "PP-OCRv5"
+    assert result.metadata.model_versions["language"] == "korean"
+    assert json.loads(result.raw_output)[0]["rec_texts"] == ["승인", "10,000원"]
 
 
 def test_paddle_adapter_records_explicit_model_configuration(tmp_path: Path) -> None:
