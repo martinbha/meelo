@@ -1,0 +1,13 @@
+{
+  "name": "sanitized-basic",
+  "image": "sanitized-basic.pbm",
+  "tokens": [
+    {"text": "Cafe", "bounds": [1, 1, 6, 6]},
+    {"text": "₩4,200", "bounds": [8, 1, 15, 6]}
+  ],
+  "fields": {
+    "amount": "4200 KRW",
+    "date": "2026-08-15",
+    "merchant": "cafe"
+  }
+}
