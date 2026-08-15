@@ -12,7 +12,7 @@ from apps.parsing.generic import GenericTransactionListParser
 from apps.parsing.registry import ParserRegistry, ParserSelection
 from apps.processing.models import SourceDocument
 
-from .contracts import BoundingBox, OcrConfiguration, OcrEngine
+from .contracts import BoundingBox, EngineMetadata, OcrConfiguration, OcrEngine, OcrError
 from .execution import ClassifiedOcrError, run_engine_bounded
 from .matching import MatchStatus, TokenCandidate, match_engine_tokens
 from .models import OcrRun, OcrToken
@@ -39,6 +39,14 @@ class EnginePlan:
 
 ParserHandoff = Callable[[SourceDocument, Sequence[OcrRun]], bool]
 DEFAULT_PREPROCESSING_SETTINGS = PreprocessingSettings(scale=2.0)
+
+
+def _safe_engine_metadata(engine: OcrEngine) -> EngineMetadata:
+    try:
+        return engine.metadata
+    except OcrError:
+        name = engine.__class__.__name__.removesuffix("OcrEngine").casefold()
+        return EngineMetadata(name or "unknown", "unavailable")
 
 
 def _run_candidates(run: OcrRun, data_key: bytes) -> tuple[TokenCandidate, ...]:
@@ -149,7 +157,7 @@ def orchestrate_document_ocr(
                 record_failed_run(
                     document=document,
                     user=user,
-                    metadata=plan.engine.metadata,
+                    metadata=_safe_engine_metadata(plan.engine),
                     configuration=plan.configuration,
                     error_code=exc.code,
                     duration_ms=0,

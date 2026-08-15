@@ -52,6 +52,12 @@ class StubEngine(OcrEngine):
         )
 
 
+class UninspectableEngine(StubEngine):
+    @property
+    def metadata(self) -> EngineMetadata:
+        raise OcrConfigurationError("runtime unavailable")
+
+
 @pytest.fixture
 def user(db: Any) -> Any:
     from django.contrib.auth import get_user_model
@@ -178,3 +184,31 @@ def test_default_handoff_runs_generic_parser_over_persisted_tokens(
     assert len(selection.observations) == 1
     assert selection.observations[0].merchant == "cafe"
     assert str(selection.observations[0].amount) == "4200"
+
+
+@pytest.mark.django_db
+def test_pipeline_records_failure_when_engine_metadata_is_unavailable(
+    user: Any, tmp_path: Path
+) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (20, 20), "white").save(source)
+    document = make_document(user)
+
+    with pytest.raises(OcrPipelineError) as failure:
+        orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=os.urandom(32),
+            key_version=1,
+            plans=(
+                EnginePlan(UninspectableEngine("missing", fails=True), OcrConfiguration(("ko",))),
+            ),
+            preprocessing_settings=PreprocessingSettings(),
+        )
+
+    stored = OcrRun.objects.get(source_document=document)
+    assert failure.value.retryable is False
+    assert stored.engine == "uninspectableengine"
+    assert stored.engine_version == "unavailable"
+    assert stored.error_code == "OCR_CONFIGURATION_INVALID"
