@@ -49,6 +49,7 @@ class OcrTokenAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):  # type: ignore[ty
         "user",
         "ocr_run",
         "text_encrypted",
+        "normalized_text_encrypted",
         "confidence",
         "left",
         "top",

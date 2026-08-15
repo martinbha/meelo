@@ -71,6 +71,7 @@ class OcrToken(models.Model):
     )
     ocr_run = models.ForeignKey(OcrRun, on_delete=models.CASCADE, related_name="tokens")
     text_encrypted = models.TextField()
+    normalized_text_encrypted = models.TextField()
     confidence = models.FloatField()
     left = models.PositiveIntegerField()
     top = models.PositiveIntegerField()

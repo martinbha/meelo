@@ -49,9 +49,11 @@ def test_tokens_round_trip_in_reading_order_without_plaintext(user: Any) -> None
 
     assert [token.sequence for token in StoredOcrToken.objects.filter(ocr_run=run)] == [0, 1]
     assert stored[0].text_encrypted != "둘"
+    assert stored[0].normalized_text_encrypted != "둘"
     assert (stored[0].left, stored[0].top, stored[0].right, stored[0].bottom) == (20, 10, 30, 20)
     payload = serialize_token_for_review(token=stored[0], user=user, data_key=key)
     assert payload["text"] == "둘"
+    assert payload["normalized_text"] == "둘"
     assert payload["bounds"] == {"left": 20, "top": 10, "right": 30, "bottom": 20}
     assert payload["line"] == 1
     assert payload["word"] == 2

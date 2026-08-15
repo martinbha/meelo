@@ -12,6 +12,7 @@ from apps.processing.models import SourceDocument
 
 from .contracts import EngineMetadata, OcrConfiguration, OcrRunResult
 from .models import OcrRun, OcrToken
+from .normalization import normalize_ocr_text
 from .preprocessing import PreprocessingResult
 
 
@@ -62,6 +63,13 @@ def persist_tokens(
             key=data_key,
             key_version=key_version,
         )
+        record.normalized_text_encrypted = encrypt_model_field(
+            record,
+            "normalized_text_encrypted",
+            normalize_ocr_text(token.text),
+            key=data_key,
+            key_version=key_version,
+        )
         record.full_clean()
         records.append(record)
     return OcrToken.objects.bulk_create(records)
@@ -73,6 +81,9 @@ def serialize_token_for_review(*, token: OcrToken, user: Any, data_key: bytes) -
     return {
         "id": str(token.pk),
         "text": decrypt_model_field(token, "text_encrypted", key=data_key),
+        "normalized_text": decrypt_model_field(
+            token, "normalized_text_encrypted", key=data_key
+        ),
         "confidence": token.confidence,
         "bounds": {
             "left": token.left,
