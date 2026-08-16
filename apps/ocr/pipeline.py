@@ -9,6 +9,7 @@ from django.conf import settings
 
 from apps.core.crypto import decrypt_model_field
 from apps.core.key_management import get_user_data_key, load_master_key
+from apps.observations.services import import_parser_selection
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
 from apps.parsing.generic import GenericTransactionListParser
 from apps.parsing.institutions import build_institution_parsers
@@ -109,6 +110,36 @@ def tokens_for_parsing(runs: Sequence[OcrRun], *, data_key: bytes) -> tuple[Norm
     )
 
 
+def import_document_observations(
+    *,
+    document: SourceDocument,
+    runs: Sequence[OcrRun],
+    data_key: bytes,
+    key_version: int,
+    user: Any,
+) -> bool:
+    """Parse the OCR runs and store the rows for review.
+
+    Returns whether anything reviewable came out. The import is atomic and
+    keyed to the newest run, so a retried job re-parses without creating a
+    second copy of the same rows.
+    """
+
+    selection = parse_ocr_runs(document, runs, data_key=data_key)
+    if not selection.observations:
+        return False
+    newest = max(runs, key=lambda run: (run.created_at, str(run.pk))) if runs else None
+    import_parser_selection(
+        document=document,
+        ocr_run=newest,
+        selection=selection,
+        data_key=data_key,
+        key_version=key_version,
+        actor=user,
+    )
+    return True
+
+
 def build_parser_registry() -> ParserRegistry:
     """The registry the pipeline parses with: every institution, then generic."""
 
@@ -199,7 +230,13 @@ def orchestrate_document_ocr(
     parsing_succeeded = (
         parser_handoff(document, successful)
         if parser_handoff is not None
-        else bool(parse_ocr_runs(document, successful, data_key=data_key).observations)
+        else import_document_observations(
+            document=document,
+            runs=successful,
+            data_key=data_key,
+            key_version=key_version,
+            user=user,
+        )
     )
     if not parsing_succeeded:
         raise OcrPipelineError(

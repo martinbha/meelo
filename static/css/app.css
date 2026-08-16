@@ -230,3 +230,13 @@ button {
 .empty-state {
   font-style: italic;
 }
+
+.winner-choice {
+  display: block;
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+
+.merge-help {
+  margin: 1rem 0 0.5rem;
+}

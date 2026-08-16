@@ -22,6 +22,11 @@ from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.processing.models import SourceDocument
 from apps.processing.storage import document_directory
 
+# The view layer is the only place the two apps meet. Reconciliation
+# depends on observations' services, never on this module, so importing it
+# here composes the two without creating a cycle.
+from apps.reconciliation.services import queue_match_ids
+
 from .forms import MergeForm, ObservationCorrectionForm, ReviewActionForm
 from .models import ImportedObservation
 from .queue import QueueFilter, review_queue
@@ -71,6 +76,10 @@ class ReviewQueueView(LoginRequiredMixin, View):
         page = review_queue(
             request.user,
             filters=selected,
+            # Reconciliation candidates are injected here rather than queried
+            # inside the queue, so the observations app never has to import the
+            # reconciliation app that already depends on it.
+            match_ids=queue_match_ids(request.user),
             page_number=_positive_int(request.GET.get("page"), default=1),
             page_size=_positive_int(request.GET.get("page_size"), default=25),
         )

@@ -268,17 +268,23 @@ def confirm_duplicate_match(match_id: Any, *, user: Any, winner_id: Any) -> Reco
     if match.match_type != ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION:
         raise ReconciliationError("Only duplicate candidates can be merged.")
 
-    pair = {match.left_observation_id, match.right_observation_id}
-    if winner_id not in pair:
+    # The winner usually arrives from a form as a string, so the pair is
+    # resolved by textual identity and the stored identifier is used from here.
+    by_text = {
+        str(match.left_observation_id): match.left_observation_id,
+        str(match.right_observation_id): match.right_observation_id,
+    }
+    resolved_winner = by_text.get(str(winner_id))
+    if resolved_winner is None:
         raise ReconciliationError("The winning observation must be part of this match.")
-    loser_id = next(iter(pair - {winner_id}))
+    loser_id = next(value for key, value in by_text.items() if key != str(winner_id))
 
     if match.status == ReconciliationMatch.Status.CONFIRMED:
         return match  # Idempotent.
     if match.status == ReconciliationMatch.Status.REJECTED:
         raise ConflictError("This candidate was already rejected.")
 
-    merge_observations(user=user, winner_id=winner_id, duplicate_ids=[loser_id])
+    merge_observations(user=user, winner_id=resolved_winner, duplicate_ids=[loser_id])
 
     match.status = ReconciliationMatch.Status.CONFIRMED
     match.reviewed_by = user
@@ -289,7 +295,7 @@ def confirm_duplicate_match(match_id: Any, *, user: Any, winner_id: Any) -> Reco
         event_type="duplicate_merged",
         obj=match,
         metadata={
-            "winner_observation_id": str(winner_id),
+            "winner_observation_id": str(resolved_winner),
             "merged_observation_id": str(loser_id),
             "score": match.match_score,
         },

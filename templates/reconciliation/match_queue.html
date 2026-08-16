@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Reconciliation candidates{% endblock %}
+
+{% block content %}
+<section class="match-queue">
+  <h1>Reconciliation candidates</h1>
+  <p>
+    Nothing here has been applied. Each row is a proposal waiting for your
+    decision.
+  </p>
+
+  <nav class="queue-filters" aria-label="Candidate types">
+    <a href="{% url 'match-queue' %}">All</a>
+    {% for type in match_types %}
+      <a href="?type={{ type.value }}"
+         {% if selected_type == type.value %}aria-current="page"{% endif %}>
+        {{ type.label }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% if matches %}
+    <table class="queue-table">
+      <caption class="visually-hidden">Proposed matches, strongest first</caption>
+      <thead>
+        <tr>
+          <th scope="col">Score</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Dates</th>
+          <th scope="col">Compare</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for match in matches %}
+          <tr>
+            <td><span class="risk-badge">{{ match.match_score }}</span></td>
+            <td>{{ match.get_match_type_display }}</td>
+            <td>
+              {{ match.left_observation.occurred_at|default:"—" }}
+              ·
+              {{ match.right_observation.occurred_at|default:"—" }}
+            </td>
+            <td><a href="{% url 'match-detail' pk=match.pk %}">Compare rows</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No candidates are waiting.</p>
+  {% endif %}
+</section>
+{% endblock %}
