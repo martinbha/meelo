@@ -1,0 +1,51 @@
+{
+  "name": "shinhan-bank-transaction-list",
+  "parser": "shinhan_bank",
+  "expected_source_type": "bank_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {
+    "source_type": "bank_transaction_list",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul"
+  },
+  "tokens": [
+    {"text": "신한은행", "bounds": [40, 60, 220, 100]},
+    {"text": "거래내역", "bounds": [240, 60, 400, 100]},
+    {"text": "110-***-456789", "bounds": [40, 140, 400, 178]},
+    {"text": "거래일자", "bounds": [40, 220, 200, 254]},
+    {"text": "적요", "bounds": [230, 220, 340, 254]},
+    {"text": "출금", "bounds": [560, 220, 660, 254]},
+    {"text": "입금", "bounds": [720, 220, 820, 254]},
+    {"text": "거래후잔액", "bounds": [880, 220, 1040, 254]},
+    {"text": "2026.08.10", "bounds": [40, 300, 220, 338]},
+    {"text": "이마트 성수점", "bounds": [230, 300, 520, 338]},
+    {"text": "42,900", "bounds": [560, 300, 660, 338]},
+    {"text": "957,100", "bounds": [880, 300, 1040, 338]},
+    {"text": "2026.08.09", "bounds": [40, 380, 220, 418]},
+    {"text": "급여이체", "bounds": [230, 380, 460, 418]},
+    {"text": "2,500,000", "bounds": [720, 380, 820, 418]},
+    {"text": "1,000,000", "bounds": [880, 380, 1040, 418]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-10",
+      "merchant": "이마트 성수점",
+      "amount_minor": 42900,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "6789",
+      "balance_after_minor": 957100
+    },
+    {
+      "date": "2026-08-09",
+      "merchant": "급여이체",
+      "amount_minor": 2500000,
+      "currency": "KRW",
+      "direction": "credit",
+      "instrument_suffix": "6789",
+      "balance_after_minor": 1000000
+    }
+  ]
+}

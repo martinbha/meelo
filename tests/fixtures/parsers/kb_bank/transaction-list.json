@@ -1,0 +1,53 @@
+{
+  "name": "kb-bank-transaction-list",
+  "parser": "kb_bank",
+  "expected_source_type": "bank_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {
+    "source_type": "bank_transaction_list",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul"
+  },
+  "tokens": [
+    {"text": "KB국민은행", "bounds": [40, 60, 280, 100]},
+    {"text": "거래내역", "bounds": [300, 60, 460, 100]},
+    {"text": "004-**-987654", "bounds": [40, 140, 380, 178]},
+    {"text": "거래일", "bounds": [40, 220, 180, 254]},
+    {"text": "거래내용", "bounds": [230, 220, 400, 254]},
+    {"text": "출금", "bounds": [560, 220, 660, 254]},
+    {"text": "입금", "bounds": [720, 220, 820, 254]},
+    {"text": "잔액", "bounds": [880, 220, 1040, 254]},
+    {"text": "2026.08.12", "bounds": [40, 300, 220, 338]},
+    {"text": "카드대금", "bounds": [230, 300, 380, 338]},
+    {"text": "현대카드", "bounds": [390, 300, 540, 338]},
+    {"text": "382,400", "bounds": [560, 300, 660, 338]},
+    {"text": "2,617,600", "bounds": [880, 300, 1040, 338]},
+    {"text": "2026.08.11", "bounds": [40, 380, 220, 418]},
+    {"text": "올리브영 홍대점", "bounds": [230, 380, 520, 418]},
+    {"text": "18,000", "bounds": [560, 380, 660, 418]},
+    {"text": "3,000,000", "bounds": [880, 380, 1040, 418]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-12",
+      "merchant": "현대카드",
+      "amount_minor": 382400,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "7654",
+      "balance_after_minor": 2617600,
+      "is_settlement": true
+    },
+    {
+      "date": "2026-08-11",
+      "merchant": "올리브영 홍대점",
+      "amount_minor": 18000,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "7654",
+      "balance_after_minor": 3000000
+    }
+  ]
+}
