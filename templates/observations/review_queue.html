@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Review queue{% endblock %}
+
+{% block content %}
+<section class="review-queue">
+  <h1>Review queue</h1>
+  <p class="queue-summary">
+    {{ page.total }} row{{ page.total|pluralize }} awaiting a decision
+    out of {{ page.counts.open }} open.
+  </p>
+
+  <nav class="queue-filters" aria-label="Queue filters">
+    <form method="get" hx-boost="false">
+      <fieldset>
+        <legend>Show only</legend>
+        {% for option in filter_options %}
+          <label>
+            <input type="checkbox" name="filter" value="{{ option.value }}"
+                   {% if option.selected %}checked{% endif %}>
+            {{ option.label|capfirst }}
+            <span class="filter-count">({{ option.count }})</span>
+          </label>
+        {% endfor %}
+      </fieldset>
+      <button type="submit">Apply</button>
+      <a href="{% url 'review-queue' %}">Clear</a>
+    </form>
+  </nav>
+
+  {% if page.items %}
+    <table class="queue-table">
+      <caption class="visually-hidden">Observations awaiting review, most urgent first</caption>
+      <thead>
+        <tr>
+          <th scope="col">Risk</th>
+          <th scope="col">Date</th>
+          <th scope="col">Direction</th>
+          <th scope="col">Confidence</th>
+          <th scope="col">Why</th>
+          <th scope="col">Screenshot</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in page.items %}
+          <tr class="{% if item.is_high_risk %}row-high-risk{% endif %}">
+            <td>
+              <span class="risk-badge risk-{% if item.is_high_risk %}high{% elif item.risk_score %}medium{% else %}low{% endif %}">
+                {{ item.risk_score }}
+              </span>
+            </td>
+            <td>{{ item.observation.occurred_at|default:"—" }}</td>
+            <td>{{ item.observation.get_direction_display }}</td>
+            <td>{{ item.observation.overall_confidence|floatformat:2 }}</td>
+            <td>
+              {% for reason in item.reasons %}
+                <span class="flag">{{ reason }}</span>
+              {% empty %}
+                <span class="flag flag-clear">clean</span>
+              {% endfor %}
+            </td>
+            <td>
+              <a href="{% url 'observation-review' pk=item.observation.source_document_id %}">
+                Open review
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <nav class="pagination" aria-label="Queue pages">
+      {% if page.has_previous %}
+        <a href="?page={{ page.page_number|add:'-1' }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page.page_number }} of {{ page.page_count }}</span>
+      {% if page.has_next %}
+        <a href="?page={{ page.page_number|add:'1' }}">Next</a>
+      {% endif %}
+    </nav>
+  {% else %}
+    <p class="empty-state">Nothing is waiting for review.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -8,6 +8,13 @@ from django.contrib.auth.views import (
 from django.urls import path
 
 from apps.core.views import dashboard, health_check
+from apps.observations.views import (
+    DocumentImageView,
+    DocumentReprocessView,
+    ObservationActionView,
+    ObservationReviewView,
+    ReviewQueueView,
+)
 from apps.processing.views import (
     UploadCreateView,
     UploadDeleteView,
@@ -71,6 +78,19 @@ urlpatterns = [
         "transactions/<uuid:pk>/edit/",
         ManualTransactionUpdateView.as_view(),
         name="transaction-edit",
+    ),
+    path("review/", ReviewQueueView.as_view(), name="review-queue"),
+    path("review/<uuid:pk>/", ObservationReviewView.as_view(), name="observation-review"),
+    path("review/<uuid:pk>/image/", DocumentImageView.as_view(), name="document-image"),
+    path(
+        "review/<uuid:pk>/reprocess/",
+        DocumentReprocessView.as_view(),
+        name="document-reprocess",
+    ),
+    path(
+        "observations/<uuid:pk>/<str:action>/",
+        ObservationActionView.as_view(),
+        name="observation-action",
     ),
     path("uploads/", UploadListView.as_view(), name="upload-list"),
     path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),
