@@ -134,6 +134,12 @@ _CARD_CATEGORIES = frozenset(
     }
 )
 
+#: Every recognised label, for callers that need to tell a label apart from a
+#: counterparty name.
+ALL_LABELS: frozenset[str] = frozenset(
+    _SETTLEMENT_LABELS + _INFLOW_LABELS + _OUTFLOW_LABELS + _AMBIVALENT_LABELS
+)
+
 CONFIDENCE_LABELLED = 0.95
 CONFIDENCE_SIGNED = 0.75
 CONFIDENCE_SOURCE_DEFAULT = 0.6
@@ -184,6 +190,15 @@ def _find_label(texts: Sequence[str]) -> tuple[str | None, str | None]:
                 if label in cleaned:
                     return label, family
     return None, None
+
+
+def is_direction_label(text: str) -> bool:
+    """Whether a token is only a direction label, not a counterparty name."""
+
+    cleaned = _clean(text)
+    if not cleaned:
+        return False
+    return cleaned in ALL_LABELS or cleaned.replace(" ", "") in ALL_LABELS
 
 
 def _from_sign(display_sign: str, category: SourceCategory) -> TransactionDirection:

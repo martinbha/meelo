@@ -193,6 +193,29 @@ def _explicit(value: date) -> ResolvedDate:
     )
 
 
+def resolve_explicit_date(text: str) -> ResolvedDate | None:
+    """Resolve a fully written date without any surrounding context.
+
+    Returns ``None`` when the text needs context to be dated, so callers
+    without an upload moment can accept only what the screen states outright.
+    """
+
+    cleaned = _clean(text)
+    for pattern in (FULL_DATE_RE, KOREAN_FULL_DATE_RE):
+        match = pattern.fullmatch(cleaned)
+        if match is None:
+            continue
+        value = _build(
+            _expand_year(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+        if value is None:
+            return ResolvedDate(None, None, 0.0, f"'{cleaned}' is not a real calendar date")
+        return _explicit(value)
+    return None
+
+
 def resolve_date(text: str, context: DateContext) -> ResolvedDate:
     """Resolve one date-like token against the surrounding document context."""
 
@@ -215,18 +238,9 @@ def resolve_date(text: str, context: DateContext) -> ResolvedDate:
             f"'{cleaned}' resolved in {context.time_zone}",
         )
 
-    for pattern in (FULL_DATE_RE, KOREAN_FULL_DATE_RE):
-        match = pattern.fullmatch(cleaned)
-        if match is None:
-            continue
-        value = _build(
-            _expand_year(match.group("year")),
-            int(match.group("month")),
-            int(match.group("day")),
-        )
-        if value is None:
-            return ResolvedDate(None, None, 0.0, f"'{cleaned}' is not a real calendar date")
-        return _explicit(value)
+    explicit = resolve_explicit_date(cleaned)
+    if explicit is not None:
+        return explicit
 
     for pattern in (KOREAN_PARTIAL_DATE_RE, PARTIAL_DATE_RE):
         match = pattern.fullmatch(cleaned)
