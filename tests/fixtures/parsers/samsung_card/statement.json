@@ -1,0 +1,48 @@
+{
+  "name": "samsung-card-statement",
+  "parser": "samsung_card",
+  "expected_source_type": "credit_card_statement",
+  "minimum_confidence": 0.6,
+  "document": {
+    "source_type": "credit_card_statement",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-09-02T12:00:00+09:00",
+    "time_zone": "Asia/Seoul",
+    "statement_month": "2026-08-01",
+    "instrument_type": "credit_card"
+  },
+  "tokens": [
+    {"text": "삼성카드", "bounds": [40, 60, 220, 100]},
+    {"text": "이용대금명세서", "bounds": [240, 60, 520, 100]},
+    {"text": "삼성카드 taptap", "bounds": [40, 140, 340, 178]},
+    {"text": "****-5678", "bounds": [360, 140, 600, 178]},
+    {"text": "08.25", "bounds": [40, 300, 180, 338]},
+    {"text": "청구금액", "bounds": [220, 300, 400, 338]},
+    {"text": "1,204,300원", "bounds": [700, 300, 940, 338]},
+    {"text": "08.20", "bounds": [40, 380, 180, 418]},
+    {"text": "다이소 신촌점", "bounds": [220, 380, 500, 418]},
+    {"text": "일시불", "bounds": [540, 380, 680, 418]},
+    {"text": "8,900원", "bounds": [760, 380, 940, 418]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-25",
+      "merchant": null,
+      "amount_minor": 1204300,
+      "currency": "KRW",
+      "direction": "credit",
+      "instrument_suffix": "5678",
+      "is_settlement": true
+    },
+    {
+      "date": "2026-08-20",
+      "merchant": "다이소 신촌점",
+      "amount_minor": 8900,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "5678",
+      "installment_months": 1
+    }
+  ]
+}

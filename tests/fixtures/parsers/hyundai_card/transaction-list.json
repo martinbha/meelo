@@ -1,0 +1,60 @@
+{
+  "name": "hyundai-card-transaction-list",
+  "parser": "hyundai_card",
+  "expected_source_type": "card_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {
+    "source_type": "card_transaction_list",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul",
+    "instrument_type": "credit_card"
+  },
+  "tokens": [
+    {"text": "현대카드", "bounds": [40, 60, 220, 100]},
+    {"text": "이용내역", "bounds": [240, 60, 400, 100]},
+    {"text": "현대카드 M", "bounds": [40, 140, 300, 178]},
+    {"text": "****-1234", "bounds": [320, 140, 560, 178]},
+    {"text": "08.15", "bounds": [40, 260, 180, 298]},
+    {"text": "쿠팡", "bounds": [220, 260, 360, 298]},
+    {"text": "일시불", "bounds": [420, 260, 560, 298]},
+    {"text": "39,900원", "bounds": [700, 260, 900, 298]},
+    {"text": "08.14", "bounds": [40, 340, 180, 378]},
+    {"text": "이케아 광명점", "bounds": [220, 340, 520, 378]},
+    {"text": "할부 6개월", "bounds": [560, 340, 700, 378]},
+    {"text": "480,000원", "bounds": [720, 340, 900, 378]},
+    {"text": "08.13", "bounds": [40, 420, 180, 458]},
+    {"text": "배달의민족", "bounds": [220, 420, 480, 458]},
+    {"text": "취소", "bounds": [560, 420, 660, 458]},
+    {"text": "17,500원", "bounds": [720, 420, 900, 458]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-15",
+      "merchant": "쿠팡",
+      "amount_minor": 39900,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "1234",
+      "installment_months": 1
+    },
+    {
+      "date": "2026-08-14",
+      "merchant": "이케아 광명점",
+      "amount_minor": 480000,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "1234",
+      "installment_months": 6
+    },
+    {
+      "date": "2026-08-13",
+      "merchant": "배달의민족",
+      "amount_minor": 17500,
+      "currency": "KRW",
+      "direction": "credit",
+      "instrument_suffix": "1234"
+    }
+  ]
+}
