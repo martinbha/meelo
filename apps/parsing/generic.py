@@ -4,9 +4,6 @@ import re
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from statistics import median
-
-from apps.ocr.contracts import BoundingBox
 
 from .contracts import (
     DocumentMetadata,
@@ -17,52 +14,12 @@ from .contracts import (
     ScreenshotParser,
     TransactionDirection,
 )
+from .rows import average_confidence, group_rows, row_region
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONEY_RE = re.compile(r"^(?P<amount>-?\d+) (?P<currency>[A-Z]{3})$")
 DEBIT_MARKERS = frozenset({"debit", "withdrawal", "출금", "결제"})
 CREDIT_MARKERS = frozenset({"credit", "deposit", "입금", "환불"})
-
-
-def _center(token: NormalizedToken) -> float:
-    return (token.bounding_box.top + token.bounding_box.bottom) / 2
-
-
-def _height(token: NormalizedToken) -> int:
-    return max(1, token.bounding_box.bottom - token.bounding_box.top)
-
-
-def _rows(tokens: Sequence[NormalizedToken]) -> tuple[tuple[NormalizedToken, ...], ...]:
-    ordered = sorted(
-        tokens,
-        key=lambda token: (_center(token), token.bounding_box.left, token.sequence),
-    )
-    if not ordered:
-        return ()
-    typical_height = float(median(_height(token) for token in ordered))
-    threshold = max(4.0, typical_height * 0.7)
-    rows: list[list[NormalizedToken]] = []
-    centers: list[float] = []
-    for token in ordered:
-        if not rows or abs(_center(token) - centers[-1]) > threshold:
-            rows.append([token])
-            centers.append(_center(token))
-        else:
-            rows[-1].append(token)
-            centers[-1] = sum(_center(item) for item in rows[-1]) / len(rows[-1])
-    return tuple(
-        tuple(sorted(row, key=lambda token: (token.bounding_box.left, token.sequence)))
-        for row in rows
-    )
-
-
-def _region(row: Sequence[NormalizedToken]) -> BoundingBox:
-    return BoundingBox(
-        min(token.bounding_box.left for token in row),
-        min(token.bounding_box.top for token in row),
-        max(token.bounding_box.right for token in row),
-        max(token.bounding_box.bottom for token in row),
-    )
 
 
 def _date_candidates(row: Sequence[NormalizedToken]) -> list[tuple[int, date]]:
@@ -117,7 +74,7 @@ class GenericTransactionListParser(ScreenshotParser):
         self, document: DocumentMetadata, tokens: Sequence[NormalizedToken]
     ) -> tuple[ParsedObservation, ...]:
         observations: list[ParsedObservation] = []
-        for row in _rows(tokens):
+        for row in group_rows(tokens):
             dates = _date_candidates(row)
             amounts = _amount_candidates(row)
             directions = _directions(row)
@@ -147,7 +104,7 @@ class GenericTransactionListParser(ScreenshotParser):
                 }.items()
                 if value is None and field not in ambiguous
             }
-            average_confidence = sum(token.confidence for token in row) / len(row)
+            row_confidence = average_confidence(row)
             requires_review = bool(missing or ambiguous)
             observations.append(
                 ParsedObservation(
@@ -156,9 +113,9 @@ class GenericTransactionListParser(ScreenshotParser):
                     currency=currency,
                     direction=direction,
                     merchant=merchant,
-                    source_region=_region(row),
+                    source_region=row_region(row),
                     confidence_factors={
-                        "token_confidence": round(average_confidence, 6),
+                        "token_confidence": round(row_confidence, 6),
                         "row_token_count": len(row),
                         "requires_review": requires_review,
                     },
