@@ -1,0 +1,33 @@
+{
+  "name": "toss-bank-transfer-confirmation",
+  "parser": "toss_bank",
+  "expected_source_type": "bank_transfer_confirmation",
+  "minimum_confidence": 0.6,
+  "document": {
+    "source_type": "bank_transfer_confirmation",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul"
+  },
+  "tokens": [
+    {"text": "토스뱅크", "bounds": [40, 60, 220, 100]},
+    {"text": "이체완료", "bounds": [240, 60, 400, 100]},
+    {"text": "출금계좌", "bounds": [40, 200, 220, 238]},
+    {"text": "1002-***-123456", "bounds": [240, 200, 580, 238]},
+    {"text": "2026.08.16", "bounds": [40, 300, 240, 338]},
+    {"text": "김민수", "bounds": [260, 300, 420, 338]},
+    {"text": "출금", "bounds": [560, 300, 640, 338]},
+    {"text": "150,000원", "bounds": [700, 300, 900, 338]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-16",
+      "merchant": "김민수",
+      "amount_minor": 150000,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "3456"
+    }
+  ]
+}

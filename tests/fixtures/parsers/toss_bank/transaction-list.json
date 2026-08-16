@@ -1,0 +1,51 @@
+{
+  "name": "toss-bank-transaction-list",
+  "parser": "toss_bank",
+  "expected_source_type": "bank_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {
+    "source_type": "bank_transaction_list",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul"
+  },
+  "tokens": [
+    {"text": "토스뱅크", "bounds": [40, 60, 220, 100]},
+    {"text": "거래내역", "bounds": [240, 60, 400, 100]},
+    {"text": "입출금통장", "bounds": [40, 140, 260, 178]},
+    {"text": "1002-***-123456", "bounds": [280, 140, 620, 178]},
+    {"text": "2026.08.15", "bounds": [40, 260, 240, 298]},
+    {"text": "스타벅스 강남점", "bounds": [260, 260, 560, 298]},
+    {"text": "출금", "bounds": [600, 260, 680, 298]},
+    {"text": "4,200원", "bounds": [700, 260, 860, 298]},
+    {"text": "잔액", "bounds": [880, 260, 950, 298]},
+    {"text": "957,100원", "bounds": [960, 260, 1040, 298]},
+    {"text": "2026.08.14", "bounds": [40, 340, 240, 378]},
+    {"text": "월급", "bounds": [260, 340, 380, 378]},
+    {"text": "입금", "bounds": [600, 340, 680, 378]},
+    {"text": "3,000,000원", "bounds": [700, 340, 860, 378]},
+    {"text": "잔액", "bounds": [880, 340, 950, 378]},
+    {"text": "961,300원", "bounds": [960, 340, 1040, 378]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-15",
+      "merchant": "스타벅스 강남점",
+      "amount_minor": 4200,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "3456",
+      "balance_after_minor": 957100
+    },
+    {
+      "date": "2026-08-14",
+      "merchant": "월급",
+      "amount_minor": 3000000,
+      "currency": "KRW",
+      "direction": "credit",
+      "instrument_suffix": "3456",
+      "balance_after_minor": 961300
+    }
+  ]
+}
