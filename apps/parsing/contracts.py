@@ -16,6 +16,10 @@ PARSER_OUTPUT_VERSION = 1
 class TransactionDirection(StrEnum):
     DEBIT = "debit"
     CREDIT = "credit"
+    #: The screen carried no label the parser could interpret for its source
+    #: type. Unknown is recorded explicitly rather than guessed, and it blocks
+    #: automatic confirmation.
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
