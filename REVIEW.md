@@ -89,7 +89,11 @@ the reverse. The view layer is the only place the two meet.
 | `accept_observation` | Creates the canonical transaction, optionally posts the ledger |
 | `reject_observation` | Discards the candidate; it is stored but never reported |
 | `merge_observations` | Folds duplicates into one row, both sources preserved |
-| `request_reprocess` | Queues another OCR pass, preserving prior runs |
+| `request_reprocess` | Queues another OCR pass, preserving prior runs and observations |
+
+Reprocessing goes through `transition_document` and enqueues a `ProcessingJob`.
+A document moved to `queued` without a job would wait forever, so both steps
+belong together.
 
 Rules worth knowing before you extend any of them:
 
@@ -97,8 +101,15 @@ Rules worth knowing before you extend any of them:
   its own currency suffix; leaving it stale would post in the currency the
   reviewer just corrected away from. Corrections are applied in a fixed order so
   a currency and an amount submitted together agree.
+- **An amount cannot be corrected without a currency.** A row whose amount never
+  parsed has no currency either; guessing one would post a real amount in the
+  wrong currency. Submit both in the same correction.
 - **Risky rows demand explicit confirmation.** A row scoring at or above 80, or
   with a disputed amount, refuses acceptance unless `confirmed=True`.
+- **A card must belong to the account it posts against.** Acceptance enforces the
+  same instrument/account compatibility as the manual creation path.
+- **Merges never chain.** A row already merged into another cannot become the
+  winner of a second merge, so every merged row points at a surviving one.
 - **Acceptance is idempotent.** A second call returns the transaction already
   created rather than making another.
 - **Ledger posting is atomic with the status change.** If the posting fails, the
