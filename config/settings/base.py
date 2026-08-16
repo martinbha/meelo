@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.financial_accounts.apps.FinancialAccountsConfig",
     "apps.instruments.apps.InstrumentsConfig",
     "apps.ledger.apps.LedgerConfig",
+    "apps.observations.apps.ObservationsConfig",
     "apps.ocr.apps.OcrConfig",
     "apps.parsing.apps.ParsingConfig",
     "apps.processing.apps.ProcessingConfig",

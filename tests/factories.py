@@ -28,6 +28,45 @@ def make_account(user: Any, **overrides: Any) -> FinancialAccount:
     return FinancialAccount.objects.create(**values)
 
 
+def make_document(user: Any, **overrides: Any) -> Any:
+    from apps.processing.models import SourceDocument
+
+    values: dict[str, Any] = {
+        "user": user,
+        "file_sha256": "9" * 64,
+        "original_filename_encrypted": "encrypted",
+        "mime_type": "image/png",
+        "file_size": 1024,
+        "image_width": 1080,
+        "image_height": 1920,
+        "source_type": SourceDocument.SourceType.BANK_TRANSACTION_LIST,
+    }
+    values.update(overrides)
+    return SourceDocument.objects.create(**values)
+
+
+def make_ocr_run(user: Any, document: Any, **overrides: Any) -> Any:
+    from django.utils import timezone
+
+    from apps.ocr.models import OcrRun
+
+    now = timezone.now()
+    values: dict[str, Any] = {
+        "user": user,
+        "source_document": document,
+        "engine": "primary",
+        "engine_version": "1",
+        "languages": ["ko"],
+        "configuration_encrypted": "config",
+        "succeeded": True,
+        "duration_ms": 5,
+        "started_at": now,
+        "completed_at": now,
+    }
+    values.update(overrides)
+    return OcrRun.objects.create(**values)
+
+
 def make_transaction(
     user: Any, account: FinancialAccount, **overrides: Any
 ) -> CanonicalTransaction:
