@@ -120,9 +120,7 @@ def score_observation(
         field: score_field(field, evidence[field], review_threshold=review_threshold)
         for field in FinancialField
     }
-    combined = round(
-        sum(fields[field].score * FIELD_WEIGHTS[field] for field in FinancialField), 6
-    )
+    combined = round(sum(fields[field].score * FIELD_WEIGHTS[field] for field in FinancialField), 6)
     return ObservationConfidence(
         combined_score=combined,
         requires_review=any(result.requires_review for result in fields.values()),

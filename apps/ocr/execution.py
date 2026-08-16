@@ -71,9 +71,7 @@ def _result_from_payload(payload: dict[str, Any]) -> OcrRunResult:
         metadata=EngineMetadata(
             metadata["engine"], metadata["engine_version"], metadata["model_versions"]
         ),
-        configuration=OcrConfiguration(
-            tuple(configuration["languages"]), configuration["options"]
-        ),
+        configuration=OcrConfiguration(tuple(configuration["languages"]), configuration["options"]),
         duration_ms=payload["duration_ms"],
         raw_output=payload["raw_output"],
     )

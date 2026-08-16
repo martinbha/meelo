@@ -145,8 +145,10 @@ class PaddleOcrEngine(OcrEngine):
         started = perf_counter()
         try:
             predict = getattr(engine, "predict", None)
-            output = predict(str(image_path)) if callable(predict) else engine.ocr(
-                str(image_path), cls=False
+            output = (
+                predict(str(image_path))
+                if callable(predict)
+                else engine.ocr(str(image_path), cls=False)
             )
         except Exception as exc:
             raise OcrConfigurationError("PaddleOCR execution failed.") from exc
