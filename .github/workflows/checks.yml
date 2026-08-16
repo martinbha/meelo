@@ -1,0 +1,45 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type-check
+        run: uv run mypy .
+
+      - name: Check for missing migrations
+        run: uv run python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.testing
+
+      # Every parser change must run against all fixture screenshots for that
+      # institution, per specification section 31.3. The parser suite is part
+      # of the full run below and is reported separately so a parser
+      # regression is obvious at a glance.
+      - name: Parser regression tests
+        run: uv run pytest tests/test_institution_parsers.py -v
+
+      - name: Tests
+        run: uv run pytest
