@@ -56,15 +56,15 @@ MY_BANK_PROFILE = InstitutionProfile(
     name="my_bank",
     version="1.0",
     display_name="마이뱅크",
-    institution_markers=("마이뱅크", "my bank"),   # at least one must appear
-    layout_markers=("거래내역", "잔액"),           # confirms a known layout
-    chrome_markers=("조회기간", "더보기"),          # rows that carry no transaction
-    source_type_markers={                          # screen titles, most specific first
+    institution_markers=("마이뱅크", "my bank"),  # at least one must appear
+    layout_markers=("거래내역", "잔액"),  # confirms a known layout
+    chrome_markers=("조회기간", "더보기"),  # rows that carry no transaction
+    source_type_markers={  # screen titles, most specific first
         "bank_transaction_detail": ("거래상세",),
         "bank_transaction_list": ("거래내역",),
     },
-    balance_column=True,       # rightmost amount on a row is a running balance
-    rows_newest_first=True,    # newest transaction drawn at the top
+    balance_column=True,  # rightmost amount on a row is a running balance
+    rows_newest_first=True,  # newest transaction drawn at the top
 )
 
 
