@@ -260,7 +260,11 @@ def _apply_correction(
     if field == "amount_minor":
         if value is None:
             raise ObservationActionError("An amount correction cannot be empty.")
-        currency_code = str(observation.currency or "KRW")
+        if not observation.currency:
+            # Guessing a currency here would post a real amount in the wrong
+            # one. Corrections apply currency first, so submitting both works.
+            raise ObservationActionError("Set the currency before correcting the amount.")
+        currency_code = str(observation.currency)
         try:
             money = Money(int(value), currency_code)
         except (TypeError, ValueError, InvalidCurrencyError) as exc:
@@ -397,6 +401,14 @@ def accept_observation(
     if resolved_type not in CanonicalTransaction.TransactionType.values:
         raise ObservationActionError("Unknown transaction type.")
 
+    instrument = observation.payment_instrument_guess
+    if instrument is not None and instrument.financial_account_id != account.pk:
+        # The manual creation path enforces this too. A card attached to a
+        # different account would post entries against the wrong balance.
+        raise ObservationActionError(
+            "The payment instrument is not compatible with the selected account."
+        )
+
     canonical = CanonicalTransaction(
         user_id=user.pk,
         created_by=user,
@@ -492,6 +504,10 @@ def merge_observations(
     """
 
     winner = _lock(winner_id, user)
+    if winner.merged_into_id is not None:
+        # Merging into an already-merged row would build a chain nobody can
+        # follow back to the surviving transaction.
+        raise ConflictError("The winning observation was itself merged into another row.")
     merged: list[ImportedObservation] = []
     for duplicate_id in duplicate_ids:
         if duplicate_id == winner_id:

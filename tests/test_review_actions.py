@@ -183,6 +183,26 @@ def test_a_currency_and_amount_corrected_together_agree(owner: Any) -> None:
     assert decrypt_model_field(corrected, "amount_encrypted", key=KEY) == "1025:USD"
 
 
+def test_an_amount_cannot_be_corrected_without_a_currency(owner: Any) -> None:
+    # A row whose amount never parsed also has no currency; guessing one would
+    # post a real amount in the wrong currency.
+    row = seed(owner, parsed(amount=None, currency=None))[0]
+
+    with pytest.raises(ObservationActionError, match="currency"):
+        correct_observation(
+            row.pk, user=owner, data_key=KEY, key_version=1, corrections={"amount_minor": 4200}
+        )
+
+    supplied = correct_observation(
+        row.pk,
+        user=owner,
+        data_key=KEY,
+        key_version=1,
+        corrections={"amount_minor": 4200, "currency": "KRW"},
+    )
+    assert decrypt_model_field(supplied, "amount_encrypted", key=KEY) == "4200:KRW"
+
+
 def test_unknown_correction_fields_are_refused_not_ignored(owner: Any) -> None:
     row = seed(owner, parsed())[0]
 
@@ -419,6 +439,50 @@ def test_merging_cannot_discard_a_confirmed_transaction(owner: Any) -> None:
 
     rows[1].refresh_from_db()
     assert rows[1].canonical_transaction_id is not None
+
+
+def test_a_card_from_another_account_cannot_be_accepted(owner: Any) -> None:
+    from apps.instruments.models import PaymentInstrument
+
+    row = seed(owner, parsed())[0]
+    account = make_account(owner)
+    other_account = make_account(owner, name_blind_index="other-account")
+    card = PaymentInstrument.objects.create(
+        user=owner,
+        financial_account=other_account,
+        name_encrypted="card",
+        name_blind_index="review-card",
+        instrument_type=PaymentInstrument.InstrumentType.DEBIT_CARD,
+        last_four="1234",
+    )
+    row.payment_instrument_guess = card
+    row.save(update_fields=["payment_instrument_guess"])
+
+    # The card belongs to a different account; posting would hit the wrong
+    # balance, exactly as the manual creation path already refuses.
+    with pytest.raises(ObservationActionError, match="not compatible"):
+        accept_observation(
+            row.pk,
+            user=owner,
+            data_key=KEY,
+            financial_account=account,
+            transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+        )
+
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 0
+
+
+def test_merging_into_an_already_merged_row_is_refused(owner: Any) -> None:
+    rows = seed(owner, parsed(), parsed(merchant="둘"), parsed(merchant="셋"))
+    merge_observations(user=owner, winner_id=rows[0].pk, duplicate_ids=[rows[1].pk])
+
+    # rows[1] now points at rows[0]; making it a winner would build a chain
+    # nobody can follow back to the surviving transaction.
+    with pytest.raises(ConflictError, match="itself merged"):
+        merge_observations(user=owner, winner_id=rows[1].pk, duplicate_ids=[rows[2].pk])
+
+    rows[2].refresh_from_db()
+    assert rows[2].review_status == ImportedObservation.ReviewStatus.UNREVIEWED
 
 
 def test_actions_refuse_observations_owned_by_another_user(owner: Any) -> None:

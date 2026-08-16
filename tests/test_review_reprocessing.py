@@ -24,7 +24,7 @@ from apps.parsing.contracts import (
     TransactionDirection,
 )
 from apps.parsing.registry import ParserSelection
-from apps.processing.models import SourceDocument
+from apps.processing.models import ProcessingJob, SourceDocument
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import make_account, make_document, make_ocr_run, make_user
 
@@ -89,6 +89,38 @@ def test_reprocessing_preserves_prior_runs_and_observations(owner: Any) -> None:
     assert ImportedObservation.objects.filter(source_document=document).count() == 1
 
 
+def test_reprocessing_enqueues_the_work(owner: Any) -> None:
+    document = ready_document(owner)
+
+    request_reprocess(document.pk, user=owner)
+
+    # A queued document with no job would sit there forever.
+    job = ProcessingJob.objects.get(user=owner, document_id=document.pk)
+    assert job.task_name == "process_document"
+    assert job.status == ProcessingJob.Status.QUEUED
+
+
+def test_reprocessing_does_not_stack_duplicate_jobs(owner: Any) -> None:
+    document = ready_document(owner)
+    request_reprocess(document.pk, user=owner)
+
+    # The document is now queued, so a second request is refused outright.
+    with pytest.raises(ConflictError):
+        request_reprocess(document.pk, user=owner)
+
+    assert ProcessingJob.objects.filter(user=owner, document_id=document.pk).count() == 1
+
+
+def test_a_confirmed_document_can_still_be_reprocessed(owner: Any) -> None:
+    document = make_document(owner, processing_status=SourceDocument.Status.CONFIRMED)
+
+    result = request_reprocess(document.pk, user=owner)
+
+    document.refresh_from_db()
+    assert result.previous_status == SourceDocument.Status.CONFIRMED
+    assert document.processing_status == SourceDocument.Status.QUEUED
+
+
 def test_reprocessing_never_deletes_confirmed_transactions(owner: Any) -> None:
     document = ready_document(owner)
     run = make_ocr_run(owner, document)
@@ -139,7 +171,9 @@ def test_a_failed_document_returns_to_a_reviewable_state(owner: Any) -> None:
     document.refresh_from_db()
     assert result.previous_status == SourceDocument.Status.FAILED
     assert document.processing_status == SourceDocument.Status.QUEUED
-    assert document.error_code == ""
+    # The stale error code clears when validation begins, as it does for any
+    # other retry; queueing alone does not rewrite the failure record.
+    assert document.next_processing_attempt_at is not None
 
 
 def test_a_document_whose_image_was_deleted_cannot_be_reprocessed(owner: Any) -> None:

@@ -50,9 +50,15 @@ ALLOWED_DOCUMENT_TRANSITIONS: dict[str, frozenset[str]] = {
             SourceDocument.Status.CONFIRMED,
             SourceDocument.Status.FAILED,
             SourceDocument.Status.DELETED,
+            # A reviewer may ask for another OCR pass over a badly read image.
+            SourceDocument.Status.QUEUED,
         }
     ),
-    SourceDocument.Status.CONFIRMED: frozenset({SourceDocument.Status.DELETED}),
+    # Confirming a document does not close it to a better reading: reprocessing
+    # adds observations and never disturbs an accepted transaction.
+    SourceDocument.Status.CONFIRMED: frozenset(
+        {SourceDocument.Status.DELETED, SourceDocument.Status.QUEUED}
+    ),
     SourceDocument.Status.FAILED: frozenset(
         {SourceDocument.Status.QUEUED, SourceDocument.Status.DELETED}
     ),

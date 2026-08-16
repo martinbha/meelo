@@ -12,12 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction as db_transaction
-from django.utils import timezone
 
 from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.ocr.models import OcrRun
-from apps.processing.models import SourceDocument
+from apps.processing.models import ProcessingJob, SourceDocument
+from apps.processing.state import transition_document
 
 from .models import ImportedObservation
 
@@ -91,16 +91,19 @@ def request_reprocess(document_id: Any, *, user: Any) -> ReprocessRequest:
     preserved_runs = OcrRun.objects.filter(source_document=document).count()
     preserved_observations = ImportedObservation.objects.filter(source_document=document).count()
 
-    document.processing_status = SourceDocument.Status.QUEUED
-    document.error_code = ""
-    document.next_processing_attempt_at = timezone.now()
-    document.save(
-        update_fields=[
-            "processing_status",
-            "error_code",
-            "next_processing_attempt_at",
-        ]
-    )
+    # Go through the state machine rather than setting the status directly, so
+    # there is one place that decides which transitions are legal, and enqueue
+    # the work — a queued document with no job would wait forever.
+    document = transition_document(document.pk, user=user, status=SourceDocument.Status.QUEUED)
+    if not ProcessingJob.objects.filter(
+        user=user, document_id=document.pk, status=ProcessingJob.Status.QUEUED
+    ).exists():
+        ProcessingJob.objects.create(
+            user=user,
+            document_id=document.pk,
+            task_name="process_document",
+            payload={"document_id": str(document.pk)},
+        )
 
     record_audit_event(
         user=user,
