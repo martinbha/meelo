@@ -124,9 +124,20 @@ class ImportedObservation(models.Model):
     parser_output_version = models.PositiveSmallIntegerField(default=1)
 
     #: Review flags the parser raised, e.g. missing fields or a broken balance
-    #: chain. Names only — never values.
+    #: chain. Names only — never values. Kept for display and explanation.
     review_flags = models.JSONField(default=list, blank=True)
     requires_review = models.BooleanField(default=True)
+
+    # Queryable projections of ``review_flags``. They exist because the review
+    # queue must filter and rank in the database — JSON containment is not
+    # portable across the databases this project runs on, and ranking in Python
+    # would only order rows within a page rather than across the whole queue.
+    amount_uncertain = models.BooleanField(default=False)
+    balance_mismatched = models.BooleanField(default=False)
+    has_missing_fields = models.BooleanField(default=False)
+    is_settlement_candidate = models.BooleanField(default=False)
+    #: Worst-problem score used to sort the queue. Zero means nothing is wrong.
+    risk_score = models.PositiveSmallIntegerField(default=0)
 
     review_status = models.CharField(
         max_length=16, choices=ReviewStatus.choices, default=ReviewStatus.UNREVIEWED
@@ -180,6 +191,11 @@ class ImportedObservation(models.Model):
             models.Index(fields=("user", "merchant_blind_index"), name="observation_merchant_idx"),
             models.Index(
                 fields=("source_document", "row_index"), name="observation_document_row_idx"
+            ),
+            # The queue's default ordering: open rows, worst problems first.
+            models.Index(
+                fields=("user", "review_status", "-risk_score"),
+                name="observation_queue_idx",
             ),
         ]
 

@@ -30,6 +30,7 @@ from apps.parsing.registry import ParserSelection
 from apps.processing.models import SourceDocument
 
 from .models import ImportedObservation
+from .risk import projections, score_flags
 
 #: Confidence factors that name a review concern rather than a measurement.
 FLAG_FACTORS = ("requires_review",)
@@ -156,7 +157,12 @@ def _build(
 ) -> ImportedObservation:
     ocr_confidence, parser_confidence, overall = _confidences(parsed)
     flags = _review_flags(parsed)
+    # A freshly imported row has no account or card mapping yet, so the unknown
+    # mapping penalty always applies; re-scoring happens when review maps it.
+    risk_score, _ = score_flags(flags, overall_confidence=overall, has_mapping=False)
     return ImportedObservation(
+        **projections(flags),
+        risk_score=risk_score,
         user_id=document.user_id,
         source_document=document,
         ocr_run=ocr_run,
@@ -268,6 +274,32 @@ def import_parser_selection(
         },
     )
     return ImportResult(tuple(created), True, parser_name, parser_version)
+
+
+def rescore_observation(observation: ImportedObservation, *, save: bool = True) -> int:
+    """Recompute a row's stored risk from its current state.
+
+    Risk is first scored at import, when nothing is mapped yet. Once review
+    assigns an account or card, or corrects a flagged field, the stored score is
+    stale and the queue would keep ranking the row as though it were still
+    blocked — so every mutation path calls this.
+    """
+
+    flags = [str(flag) for flag in observation.review_flags or ()]
+    has_mapping = (
+        observation.financial_account_guess_id is not None
+        or observation.payment_instrument_guess_id is not None
+    )
+    score, _ = score_flags(
+        flags, overall_confidence=observation.overall_confidence, has_mapping=has_mapping
+    )
+    updates = projections(flags)
+    for name, value in updates.items():
+        setattr(observation, name, value)
+    observation.risk_score = score
+    if save:
+        observation.save(update_fields=[*updates, "risk_score", "updated_at"])
+    return score
 
 
 def observations_for_document(
