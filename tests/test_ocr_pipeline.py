@@ -187,6 +187,55 @@ def test_default_handoff_runs_generic_parser_over_persisted_tokens(
 
 
 @pytest.mark.django_db
+def test_handoff_selects_an_institution_parser_for_a_known_app(user: Any, tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (300, 80), "white").save(source)
+    document = make_document(user)
+    document.source_type = "bank_transaction_list"
+    document.save(update_fields=["source_type"])
+    key = os.urandom(32)
+
+    class TossEngine(StubEngine):
+        def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+            return OcrRunResult(
+                tokens=(
+                    OcrToken("토스뱅크", 0.9, BoundingBox(0, 10, 60, 24)),
+                    OcrToken("거래내역", 0.9, BoundingBox(70, 10, 130, 24)),
+                    # A partial date, dated from the document's upload moment.
+                    OcrToken("08.15", 0.9, BoundingBox(0, 50, 60, 64)),
+                    OcrToken("스타벅스", 0.9, BoundingBox(70, 50, 140, 64)),
+                    OcrToken("출금", 0.9, BoundingBox(150, 50, 190, 64)),
+                    OcrToken("4,200원", 0.9, BoundingBox(200, 50, 280, 64)),
+                ),
+                metadata=self.metadata,
+                configuration=configuration,
+                duration_ms=2,
+            )
+
+    runs = orchestrate_document_ocr(
+        document=document,
+        source_path=source,
+        user=user,
+        data_key=key,
+        key_version=1,
+        plans=(EnginePlan(TossEngine("primary"), OcrConfiguration(("ko",))),),
+        preprocessing_settings=PreprocessingSettings(),
+    )
+    selection = parse_ocr_runs(document, runs, data_key=key)
+
+    assert selection.metadata.name == "toss_bank"
+    assert selection.support.score > 0.5
+    observation = selection.observations[0]
+    assert observation.merchant == "스타벅스"
+    assert observation.amount_minor == 4200
+    assert observation.direction == "debit"
+    # The upload timestamp supplied the missing year, so the row is reviewable.
+    assert observation.occurred_on is not None
+    assert observation.occurred_on.year == document.uploaded_at.year
+    assert observation.confidence_factors["requires_review"] is True
+
+
+@pytest.mark.django_db
 def test_pipeline_records_failure_when_engine_metadata_is_unavailable(
     user: Any, tmp_path: Path
 ) -> None:

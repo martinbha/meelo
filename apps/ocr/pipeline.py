@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
+
 from apps.core.crypto import decrypt_model_field
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
 from apps.parsing.generic import GenericTransactionListParser
+from apps.parsing.institutions import build_institution_parsers
 from apps.parsing.registry import ParserRegistry, ParserSelection
 from apps.processing.models import SourceDocument
 
@@ -54,9 +57,7 @@ def _run_candidates(run: OcrRun, data_key: bytes) -> tuple[TokenCandidate, ...]:
         TokenCandidate(
             engine=run.engine,
             text=decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
-            normalized_text=decrypt_model_field(
-                token, "normalized_text_encrypted", key=data_key
-            ),
+            normalized_text=decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
             confidence=token.confidence,
             bounding_box=BoundingBox(token.left, token.top, token.right, token.bottom),
         )
@@ -108,17 +109,29 @@ def tokens_for_parsing(runs: Sequence[OcrRun], *, data_key: bytes) -> tuple[Norm
     )
 
 
+def build_parser_registry() -> ParserRegistry:
+    """The registry the pipeline parses with: every institution, then generic."""
+
+    registry = ParserRegistry(generic_parser=GenericTransactionListParser())
+    for parser in build_institution_parsers():
+        registry.register(parser)
+    return registry
+
+
 def parse_ocr_runs(
     document: SourceDocument, runs: Sequence[OcrRun], *, data_key: bytes
 ) -> ParserSelection:
     tokens = tokens_for_parsing(runs, data_key=data_key)
-    registry = ParserRegistry(generic_parser=GenericTransactionListParser())
     metadata = DocumentMetadata(
         source_type=document.source_type,
         width=document.image_width,
         height=document.image_height,
+        # The upload moment and the user's time zone date every relative and
+        # partial row on the screen.
+        uploaded_at=document.uploaded_at,
+        time_zone=str(settings.TIME_ZONE),
     )
-    return registry.parse(metadata, tokens)
+    return build_parser_registry().parse(metadata, tokens)
 
 
 def default_engine_plans() -> tuple[EnginePlan, ...]:
