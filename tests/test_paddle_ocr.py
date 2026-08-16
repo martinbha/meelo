@@ -31,9 +31,7 @@ class FakePaddleV3:
 def test_paddle_adapter_normalizes_korean_tokens_without_network(tmp_path: Path) -> None:
     image = tmp_path / "sanitized.png"
     image.write_bytes(b"local fixture")
-    paddle = FakePaddle(
-        [[[[[10, 20], [50, 20], [50, 35], [10, 35]], ["결제", 0.975]]]]
-    )
+    paddle = FakePaddle([[[[[10, 20], [50, 20], [50, 35], [10, 35]], ["결제", 0.975]]]])
     factory_options: dict[str, Any] = {}
 
     def factory(**options: Any) -> FakePaddle:
