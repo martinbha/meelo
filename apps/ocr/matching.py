@@ -122,12 +122,9 @@ def match_engine_tokens(
         available.remove(best_index)
         other = secondary[best_index]
         similarity = float(ratio(candidate.normalized_text, other.normalized_text))
-        structured_disagreement = (
-            candidate.normalized_text != other.normalized_text
-            and (
-                STRUCTURED_VALUE_RE.fullmatch(candidate.normalized_text) is not None
-                or STRUCTURED_VALUE_RE.fullmatch(other.normalized_text) is not None
-            )
+        structured_disagreement = candidate.normalized_text != other.normalized_text and (
+            STRUCTURED_VALUE_RE.fullmatch(candidate.normalized_text) is not None
+            or STRUCTURED_VALUE_RE.fullmatch(other.normalized_text) is not None
         )
         status = (
             MatchStatus.MATCHED

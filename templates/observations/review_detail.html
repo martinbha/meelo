@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Review screenshot{% endblock %}
+
+{% block content %}
+<section class="review-detail">
+  <header class="review-header">
+    <h1>Review screenshot</h1>
+    <p class="document-status">
+      Status: {{ document.get_processing_status_display }}
+      {% if latest_run %}
+        · Latest OCR run: {{ latest_run.engine }} {{ latest_run.engine_version }}
+        ({{ latest_run.created_at|date:"Y-m-d H:i" }})
+      {% endif %}
+    </p>
+    <form method="post" action="{% url 'document-reprocess' pk=document.pk %}" hx-boost="false">
+      {% csrf_token %}
+      <button type="submit" class="secondary">Re-run OCR</button>
+    </form>
+  </header>
+
+  <div class="review-split">
+    <figure class="review-screenshot">
+      <figcaption>Original screenshot</figcaption>
+      {% if has_image %}
+        <div class="screenshot-frame" style="--image-width: {{ document.image_width }}; --image-height: {{ document.image_height }};">
+          <img src="{% url 'document-image' pk=document.pk %}" alt="Uploaded screenshot"
+               width="{{ document.image_width }}" height="{{ document.image_height }}">
+          {% for row in rows %}
+            {% if row.region %}
+              <span class="ocr-region {% if row.observation.requires_review %}ocr-region-flagged{% endif %}"
+                    data-row="{{ row.observation.row_index }}"
+                    title="Row {{ row.observation.row_index|add:1 }}"
+                    style="left: calc({{ row.region.left }} / var(--image-width) * 100%);
+                           top: calc({{ row.region.top }} / var(--image-height) * 100%);
+                           width: calc(({{ row.region.right }} - {{ row.region.left }}) / var(--image-width) * 100%);
+                           height: calc(({{ row.region.bottom }} - {{ row.region.top }}) / var(--image-height) * 100%);">
+                <span class="visually-hidden">Row {{ row.observation.row_index|add:1 }}</span>
+              </span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">
+          The original image is no longer stored, so regions cannot be shown.
+        </p>
+      {% endif %}
+    </figure>
+
+    <div class="review-rows">
+      <h2>Extracted rows</h2>
+      {% for row in rows %}
+        <article class="review-row {% if row.observation.requires_review %}review-row-flagged{% endif %}"
+                 id="row-{{ row.observation.row_index }}" data-row="{{ row.observation.row_index }}">
+          <header>
+            <h3>Row {{ row.observation.row_index|add:1 }}</h3>
+            <span class="status-badge status-{{ row.observation.review_status }}">
+              {{ row.observation.get_review_status_display }}
+            </span>
+            <span class="confidence" title="OCR {{ row.observation.ocr_confidence|floatformat:2 }} · parser {{ row.observation.parser_confidence|floatformat:2 }}">
+              Confidence {{ row.observation.overall_confidence|floatformat:2 }}
+            </span>
+          </header>
+
+          {% if row.observation.review_flags %}
+            <ul class="row-flags">
+              {% for flag in row.observation.review_flags %}
+                <li class="flag flag-warning">{{ flag }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+
+          <dl class="row-values">
+            <dt>Date</dt><dd>{{ row.observation.occurred_at|default:"—" }}</dd>
+            <dt>Merchant</dt><dd>{{ row.values.merchant|default:"—" }}</dd>
+            <dt>Amount</dt><dd>{{ row.values.amount|default:"—" }}</dd>
+            <dt>Direction</dt><dd>{{ row.observation.get_direction_display }}</dd>
+            <dt>Account / card</dt>
+            <dd>
+              {% if row.observation.financial_account_guess_id or row.observation.payment_instrument_guess_id %}
+                mapped
+              {% else %}
+                <span class="flag flag-warning">unmapped</span>
+              {% endif %}
+            </dd>
+            <dt>Category</dt>
+            <dd>{% if row.observation.category_guess_id %}selected{% else %}—{% endif %}</dd>
+            <dt>Type</dt><dd>{{ row.observation.get_transaction_type_guess_display }}</dd>
+            {% if row.values.balance_after %}
+              <dt>Balance after</dt><dd>{{ row.values.balance_after }}</dd>
+            {% endif %}
+            {% if row.observation.installment_months %}
+              <dt>Installments</dt><dd>{{ row.observation.installment_months }} months</dd>
+            {% endif %}
+          </dl>
+
+          {% if row.observation.is_open or row.observation.review_status == "corrected" %}
+            <details class="row-edit">
+              <summary>Correct fields</summary>
+              <form method="post"
+                    action="{% url 'observation-action' pk=row.observation.pk action='correct' %}"
+                    hx-boost="false">
+                {% csrf_token %}
+                {{ row.form.as_p }}
+                <button type="submit">Save correction</button>
+              </form>
+            </details>
+
+            <div class="row-actions">
+              <form method="post"
+                    action="{% url 'observation-action' pk=row.observation.pk action='accept' %}"
+                    hx-boost="false">
+                {% csrf_token %}
+                {% if row.observation.risk_score >= 80 or row.observation.amount_uncertain %}
+                  <label class="confirm-required">
+                    <input type="checkbox" name="confirmed" value="1" required>
+                    This row is low confidence or its amount is disputed — confirm to accept.
+                  </label>
+                {% endif %}
+                <button type="submit">Accept</button>
+              </form>
+              <form method="post"
+                    action="{% url 'observation-action' pk=row.observation.pk action='reject' %}"
+                    hx-boost="false">
+                {% csrf_token %}
+                <button type="submit" class="destructive">Reject</button>
+              </form>
+            </div>
+          {% elif row.observation.canonical_transaction_id %}
+            <p class="row-resolved">Recorded as a transaction.</p>
+          {% elif row.observation.merged_into_id %}
+            <p class="row-resolved">Merged into another row.</p>
+          {% endif %}
+        </article>
+      {% empty %}
+        <p class="empty-state">No rows were parsed from this screenshot.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

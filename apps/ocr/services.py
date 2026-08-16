@@ -25,9 +25,7 @@ def _encrypted_json(
     key_version: int,
 ) -> str:
     plaintext = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return encrypt_model_field(
-        run, field, plaintext, key=data_key, key_version=key_version
-    )
+    return encrypt_model_field(run, field, plaintext, key=data_key, key_version=key_version)
 
 
 def _configuration_payload(configuration: OcrConfiguration) -> dict[str, Any]:
@@ -81,9 +79,7 @@ def serialize_token_for_review(*, token: OcrToken, user: Any, data_key: bytes) -
     return {
         "id": str(token.pk),
         "text": decrypt_model_field(token, "text_encrypted", key=data_key),
-        "normalized_text": decrypt_model_field(
-            token, "normalized_text_encrypted", key=data_key
-        ),
+        "normalized_text": decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
         "confidence": token.confidence,
         "bounds": {
             "left": token.left,

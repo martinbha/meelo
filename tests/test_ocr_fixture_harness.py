@@ -16,9 +16,7 @@ def test_fixture_suite_tracks_duration_and_key_field_regressions() -> None:
 
     def runner(path: Path) -> OcrRunResult:
         assert path.name == "sanitized-basic.pbm"
-        return OcrRunResult(
-            (), EngineMetadata("fixture", "1"), OcrConfiguration(("ko",)), 12
-        )
+        return OcrRunResult((), EngineMetadata("fixture", "1"), OcrConfiguration(("ko",)), 12)
 
     metrics = run_fixture_suite(
         cases,

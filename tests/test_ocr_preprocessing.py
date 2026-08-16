@@ -67,7 +67,8 @@ def test_preprocessing_cleans_variants_when_pipeline_fails(tmp_path: Path) -> No
 def test_preprocessing_rejects_invalid_crop_and_missing_source(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="crop"):
         PreprocessingSettings(crop=(5, 5, 4, 8))
-    with pytest.raises(OcrConfigurationError, match="does not exist"), preprocess_image(
-        tmp_path / "missing.png", tmp_path / "work", PreprocessingSettings()
+    with (
+        pytest.raises(OcrConfigurationError, match="does not exist"),
+        preprocess_image(tmp_path / "missing.png", tmp_path / "work", PreprocessingSettings()),
     ):
         pass

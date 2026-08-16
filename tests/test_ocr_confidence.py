@@ -51,6 +51,4 @@ def test_combined_score_exposes_every_field_factor() -> None:
     assert set(result.fields) == set(FinancialField)
     assert result.combined_score == 0.78625
     assert result.requires_review is True
-    assert result.fields[FinancialField.BALANCE].factors["hard_review_reason"] == (
-        "missing_value"
-    )
+    assert result.fields[FinancialField.BALANCE].factors["hard_review_reason"] == ("missing_value")

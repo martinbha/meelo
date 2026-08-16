@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Compare candidate rows{% endblock %}
+
+{% block content %}
+<section class="match-detail">
+  <h1>{{ match.get_match_type_display }}</h1>
+  <p class="match-score">
+    Score {{ match.match_score }} of 100 ·
+    status {{ match.get_status_display }}
+  </p>
+
+  <form method="post"
+        action="{% url 'match-action' pk=match.pk action='confirm' %}"
+        hx-boost="false">
+    {% csrf_token %}
+    <div class="review-split">
+      {% for candidate in candidates %}
+        <article class="review-row">
+          <header>
+            <h2>{{ candidate.label }}</h2>
+            <span class="status-badge status-{{ candidate.observation.review_status }}">
+              {{ candidate.observation.get_review_status_display }}
+            </span>
+          </header>
+          <dl class="row-values">
+            <dt>Date</dt><dd>{{ candidate.observation.occurred_at|default:"—" }}</dd>
+            <dt>Merchant</dt><dd>{{ candidate.values.merchant|default:"—" }}</dd>
+            <dt>Amount</dt><dd>{{ candidate.values.amount|default:"—" }}</dd>
+            <dt>Direction</dt><dd>{{ candidate.observation.get_direction_display }}</dd>
+            {% if candidate.values.approval_code %}
+              <dt>Approval code</dt><dd>{{ candidate.values.approval_code }}</dd>
+            {% endif %}
+            <dt>Confidence</dt>
+            <dd>{{ candidate.observation.overall_confidence|floatformat:2 }}</dd>
+            <dt>Screenshot</dt>
+            <dd>
+              <a href="{% url 'observation-review' pk=candidate.observation.source_document_id %}">
+                Open source
+              </a>
+            </dd>
+          </dl>
+          {% if is_duplicate %}
+            <label class="winner-choice">
+              <input type="radio" name="winner"
+                     value="{{ candidate.observation.pk }}" required>
+              Keep this row
+            </label>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+
+    {% if is_duplicate %}
+      <p class="merge-help">
+        Choose the row to keep. The other is preserved and linked to it, so both
+        screenshots stay traceable.
+      </p>
+      <button type="submit">Merge into the selected row</button>
+    {% else %}
+      <p class="merge-help">
+        Confirming records the relationship. Neither row is merged or removed.
+      </p>
+      <button type="submit">Confirm match</button>
+    {% endif %}
+  </form>
+
+  <form method="post"
+        action="{% url 'match-action' pk=match.pk action='reject' %}"
+        hx-boost="false">
+    {% csrf_token %}
+    <button type="submit" class="secondary">Not a match</button>
+  </form>
+</section>
+{% endblock %}

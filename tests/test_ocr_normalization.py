@@ -18,8 +18,6 @@ def test_korean_money_variants_share_one_representation(value: str) -> None:
         ("승인 : 완료", "승인: 완료"),
     ],
 )
-def test_korean_and_english_normalization_is_deterministic(
-    value: str, expected: str
-) -> None:
+def test_korean_and_english_normalization_is_deterministic(value: str, expected: str) -> None:
     assert normalize_ocr_text(value) == expected
     assert normalize_ocr_text(value) == normalize_ocr_text(value)

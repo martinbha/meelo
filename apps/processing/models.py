@@ -70,6 +70,10 @@ class SourceDocument(models.Model):
     processing_attempt_count = models.PositiveIntegerField(default=0)
     next_processing_attempt_at = models.DateTimeField(blank=True, null=True)
     original_deleted_at = models.DateTimeField(blank=True, null=True)
+    #: Difference hash of the original image, used to spot screenshots that
+    #: differ only by crop or recompression. Optional: exact SHA-256 duplicate
+    #: detection works without it.
+    perceptual_hash = models.CharField(max_length=32, blank=True, db_index=True)
     retention_policy = models.CharField(
         max_length=16, choices=RetentionPolicy.choices, default=RetentionPolicy.IMMEDIATE
     )

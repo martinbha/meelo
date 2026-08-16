@@ -54,3 +54,189 @@ button {
 .htmx-request.htmx-indicator {
   opacity: 1;
 }
+
+/* ---------------------------------------------------------------------------
+   Review interface
+   The screenshot and the parsed rows sit side by side on a wide screen and
+   stack on a narrow one, so a phone reviewer still sees the image above the
+   fields it produced.
+   --------------------------------------------------------------------------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.review-split {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .review-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .review-screenshot {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.screenshot-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.screenshot-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Each highlight is placed as a percentage of the image box, so it stays
+   aligned with its row at any rendered size. */
+.ocr-region {
+  position: absolute;
+  border: 2px solid #1f9d55;
+  background: rgb(31 157 85 / 12%);
+  pointer-events: none;
+}
+
+.ocr-region-flagged {
+  border-color: #d97706;
+  background: rgb(217 119 6 / 18%);
+}
+
+.review-row {
+  border: 1px solid currentcolor;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+/* A flagged row is distinguishable without relying on colour alone. */
+.review-row-flagged {
+  border-left-width: 6px;
+  border-left-style: double;
+}
+
+.row-flags,
+.queue-table .flag {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+}
+
+.flag {
+  display: inline-block;
+  border: 1px solid currentcolor;
+  padding: 0 0.4rem;
+  margin: 0 0.25rem 0.25rem 0;
+  font-size: 0.85rem;
+}
+
+.flag-warning {
+  font-weight: 700;
+}
+
+.flag-warning::before {
+  content: "⚠ ";
+}
+
+.flag-clear::before {
+  content: "✓ ";
+}
+
+.risk-badge {
+  display: inline-block;
+  min-width: 2.5rem;
+  text-align: center;
+  border: 1px solid currentcolor;
+  padding: 0 0.35rem;
+}
+
+.risk-high {
+  font-weight: 700;
+  border-width: 3px;
+}
+
+.row-high-risk td {
+  font-weight: 600;
+}
+
+.row-values {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.row-values dt {
+  font-weight: 600;
+}
+
+.row-values dd {
+  margin: 0;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.confirm-required {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.queue-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.queue-table th,
+.queue-table td {
+  border-bottom: 1px solid currentcolor;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.queue-filters fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  border: 1px solid currentcolor;
+  padding: 0.5rem 0.75rem;
+}
+
+.pagination {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.empty-state {
+  font-style: italic;
+}
+
+.winner-choice {
+  display: block;
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+
+.merge-help {
+  margin: 1rem 0 0.5rem;
+}
