@@ -20,7 +20,8 @@ uv run python manage.py create_private_user --email you@example.com --superuser
 ```
 
 Screenshot parsers, their fixtures, and the regression suite are documented in
-[PARSERS.md](PARSERS.md). Operational procedures are in
+[PARSERS.md](PARSERS.md). The review queue, reviewer actions, and
+reconciliation are in [REVIEW.md](REVIEW.md). Operational procedures are in
 [OPERATIONS.md](OPERATIONS.md).
 
 The Compose deployment runs the web application, PostgreSQL, and Caddy proxy by
