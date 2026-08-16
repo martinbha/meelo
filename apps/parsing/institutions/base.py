@@ -260,14 +260,15 @@ class InstitutionParser(ScreenshotParser):
     def parse(
         self, document: DocumentMetadata, tokens: Sequence[NormalizedToken]
     ) -> tuple[ParsedObservation, ...]:
-        context = self.date_context(document)
         grouped = group_rows(tokens)
         columns = self.detect_direction_columns(grouped)
         haystack = " ".join(_folded(token.text) for token in tokens)
+        # Resolved once for the whole screenshot: a screen title usually sits
+        # on the header row, not on the row whose direction depends on it.
+        source_type = self.detect_source_type(document, haystack)
+        context = self.date_context(document, tokens)
         candidate_rows = [row for row in grouped if not self.is_chrome_row(row)]
-        if self.detect_source_type(document, haystack) in (
-            self.profile.single_transaction_source_types
-        ):
+        if source_type in self.profile.single_transaction_source_types:
             candidate_rows = self.merge_rows(candidate_rows)
 
         fields: list[RowFields] = []
@@ -286,12 +287,14 @@ class InstitutionParser(ScreenshotParser):
                 # below it belongs to.
                 header_suffix = extracted.instrument_suffix
 
-        unreadable = [self.unreadable_observation(row, reason) for row, reason in failures]
         if not fields:
+            if failures:
+                # Rows that failed outright stay visible to review rather than
+                # being replaced by a fallback guess.
+                return tuple(self.unreadable_observation(row, reason) for row, reason in failures)
             # The institution was recognised but no row looked like a
-            # transaction. Fall back rather than reporting an empty screenshot,
-            # and keep any rows that failed outright visible to review.
-            fallback = [
+            # transaction. Fall back rather than reporting an empty screenshot.
+            return tuple(
                 replace(
                     observation,
                     confidence_factors={
@@ -301,16 +304,18 @@ class InstitutionParser(ScreenshotParser):
                     },
                 )
                 for observation in self._fallback.parse(document, tokens)
-            ]
-            return tuple(fallback) if not unreadable else tuple(unreadable)
+            )
 
-        directions = [self.resolve_row_direction(document, item, columns) for item in fields]
+        directions = [
+            self.resolve_row_direction(document, item, columns, source_type=source_type)
+            for item in fields
+        ]
         validations = self.validate_balances(fields, directions)
         observations = [
             self.build_observation(document, item, direction, validation, header_suffix)
             for item, direction, validation in zip(fields, directions, validations, strict=True)
         ]
-        observations.extend(unreadable)
+        observations.extend(self.unreadable_observation(row, reason) for row, reason in failures)
         return tuple(observations)
 
     # ------------------------------------------------------------------
@@ -327,13 +332,29 @@ class InstitutionParser(ScreenshotParser):
             return document.source_type
         return self.profile.default_source_type
 
-    def date_context(self, document: DocumentMetadata) -> DateContext | None:
+    def date_context(
+        self, document: DocumentMetadata, tokens: Sequence[NormalizedToken] = ()
+    ) -> DateContext | None:
+        """Build the dating context, seeded with the screen's explicit dates.
+
+        A list that mixes ``2026.08.14`` with a bare ``08.13`` states its own
+        year. Feeding the explicit dates back in as surrounding rows dates the
+        partial ones far more accurately than the upload date can, which
+        matters most for screenshots uploaded long after the fact.
+        """
+
         if document.uploaded_at is None:
             return None
+        explicit = tuple(
+            resolved.value
+            for resolved in (resolve_explicit_date(token.text) for token in tokens)
+            if resolved is not None and resolved.value is not None
+        )
         return DateContext(
             uploaded_at=document.uploaded_at,
             time_zone=document.time_zone,
             statement_month=document.statement_month,
+            surrounding_dates=explicit,
         )
 
     def is_screen_marker(self, text: str) -> bool:
@@ -611,14 +632,25 @@ class InstitutionParser(ScreenshotParser):
         document: DocumentMetadata,
         fields: RowFields,
         columns: DirectionColumns | None = None,
+        *,
+        source_type: str | None = None,
     ) -> DirectionResolution:
+        """Resolve one row's direction against the screenshot's source type.
+
+        ``source_type`` is the type detected for the whole screenshot. Passing
+        it matters: a statement's ``청구금액`` row carries no screen title of
+        its own, so detecting the type from that row alone would lose the fact
+        that the screen is a statement.
+        """
+
         labels = list(fields.labels)
         if fields.amount is not None and fields.amount.source_label:
             labels.insert(0, fields.amount.source_label)
         if fields.installment_months is not None:
             labels.append("결제")
         resolution = resolve_direction(
-            source_type=self.detect_source_type(
+            source_type=source_type
+            or self.detect_source_type(
                 document, " ".join(_folded(token.text) for token in fields.row)
             ),
             labels=labels,

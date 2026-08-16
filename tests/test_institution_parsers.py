@@ -24,6 +24,7 @@ from apps.parsing.institutions import (
     INSTITUTION_PARSER_CLASSES,
     HyundaiCardParser,
     KakaoBankParser,
+    SamsungCardParser,
     ShinhanBankParser,
     TossBankParser,
     build_institution_parsers,
@@ -352,6 +353,44 @@ def test_card_statement_payments_are_not_emitted_as_purchases() -> None:
     assert settlement.direction is TransactionDirection.CREDIT
     assert purchase.is_settlement is False
     assert purchase.direction is TransactionDirection.DEBIT
+
+
+def test_the_screen_source_type_reaches_rows_that_do_not_state_it() -> None:
+    # An un-triaged upload has source_type "unknown". The statement title sits
+    # on the header row, so a row-local source type would lose it and resolve
+    # the settlement as unknown.
+    tokens = tokens_from(
+        (
+            (("삼성카드", 40), ("이용대금명세서", 240)),
+            (("2026.08.25", 40), ("청구금액", 240), ("1,204,300원", 740)),
+        )
+    )
+
+    observation = SamsungCardParser().parse(document("unknown"), tokens)[0]
+
+    assert observation.direction is TransactionDirection.CREDIT
+    assert observation.is_settlement is True
+    # The row still needs review because a settlement names no merchant, but
+    # the direction itself is no longer the blocker.
+    assert "direction" not in observation.missing_fields
+
+
+def test_explicit_rows_supply_the_year_for_partial_rows_on_the_same_screen() -> None:
+    # Uploaded well after the fact: the upload year would date the partial row
+    # to 2026, but the row above it states 2024 outright.
+    tokens = tokens_from(
+        (
+            (("카카오뱅크", 40), ("거래내역", 240)),
+            (("2024.12.31", 40), ("gs25", 240), ("출금", 440), ("3,500원", 640)),
+            (("12.30", 40), ("이마트", 240), ("출금", 440), ("8,000원", 640)),
+        )
+    )
+
+    observations = KakaoBankParser().parse(document(), tokens)
+
+    assert observations[0].occurred_on == date(2024, 12, 31)
+    assert observations[1].occurred_on == date(2024, 12, 30)
+    assert observations[1].confidence_factors["date_inference"] == "surrounding_row_year"
 
 
 def test_card_installment_and_approval_metadata_is_preserved() -> None:
