@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "apps.ocr.apps.OcrConfig",
     "apps.parsing.apps.ParsingConfig",
     "apps.processing.apps.ProcessingConfig",
+    "apps.reconciliation.apps.ReconciliationConfig",
     "apps.transactions.apps.TransactionsConfig",
     "apps.users.apps.UsersConfig",
 ]
@@ -113,6 +114,15 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "3650"))
+# Perceptual hashing of screenshots is optional. Disabling it leaves exact
+# SHA-256 duplicate detection working unchanged.
+NEAR_DUPLICATE_DETECTION_ENABLED = (
+    os.getenv("NEAR_DUPLICATE_DETECTION_ENABLED", "true").strip().casefold() == "true"
+)
+NEAR_DUPLICATE_DISTANCE_THRESHOLD = int(
+    os.getenv("NEAR_DUPLICATE_DISTANCE_THRESHOLD", "8")
+)
+
 FIELD_ENCRYPTION_MASTER_KEY_FILE = os.getenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "")
 FIELD_ENCRYPTION_MASTER_KEY_REQUIRED = False
 
