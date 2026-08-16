@@ -1,0 +1,47 @@
+{
+  "name": "kakao-bank-balance-mismatch",
+  "parser": "kakao_bank",
+  "expected_source_type": "bank_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {
+    "source_type": "bank_transaction_list",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul"
+  },
+  "tokens": [
+    {"text": "카카오뱅크", "bounds": [40, 60, 280, 100]},
+    {"text": "거래내역", "bounds": [300, 60, 460, 100]},
+    {"text": "08.14", "bounds": [40, 260, 180, 298]},
+    {"text": "배달의민족", "bounds": [220, 260, 520, 298]},
+    {"text": "출금", "bounds": [560, 260, 640, 298]},
+    {"text": "23,000원", "bounds": [680, 260, 840, 298]},
+    {"text": "잔액", "bounds": [860, 260, 930, 298]},
+    {"text": "1,217,500원", "bounds": [940, 260, 1040, 298]},
+    {"text": "08.13", "bounds": [40, 340, 180, 378]},
+    {"text": "이자", "bounds": [220, 340, 340, 378]},
+    {"text": "입금", "bounds": [560, 340, 640, 378]},
+    {"text": "1,200원", "bounds": [680, 340, 840, 378]},
+    {"text": "잔액", "bounds": [860, 340, 930, 378]},
+    {"text": "1,243,500원", "bounds": [940, 340, 1040, 378]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-14",
+      "merchant": "배달의민족",
+      "amount_minor": 23000,
+      "currency": "KRW",
+      "direction": "debit",
+      "balance_after_minor": 1217500
+    },
+    {
+      "date": "2026-08-13",
+      "merchant": "이자",
+      "amount_minor": 1200,
+      "currency": "KRW",
+      "direction": "credit",
+      "balance_after_minor": 1243500
+    }
+  ]
+}

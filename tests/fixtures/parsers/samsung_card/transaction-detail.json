@@ -1,0 +1,39 @@
+{
+  "name": "samsung-card-transaction-detail",
+  "parser": "samsung_card",
+  "expected_source_type": "card_transaction_detail",
+  "minimum_confidence": 0.6,
+  "document": {
+    "source_type": "card_transaction_detail",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul",
+    "instrument_type": "credit_card"
+  },
+  "tokens": [
+    {"text": "삼성카드", "bounds": [40, 60, 220, 100]},
+    {"text": "승인상세", "bounds": [240, 60, 400, 100]},
+    {"text": "삼성카드 taptap", "bounds": [40, 140, 340, 178]},
+    {"text": "****-5678", "bounds": [360, 140, 600, 178]},
+    {"text": "2026.08.15", "bounds": [40, 300, 240, 338]},
+    {"text": "무신사", "bounds": [260, 300, 420, 338]},
+    {"text": "승인", "bounds": [460, 300, 560, 338]},
+    {"text": "할부 3개월", "bounds": [580, 300, 720, 338]},
+    {"text": "128,000원", "bounds": [760, 300, 940, 338]},
+    {"text": "승인번호", "bounds": [40, 380, 200, 418]},
+    {"text": "20260815", "bounds": [220, 380, 420, 418]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-15",
+      "merchant": "무신사",
+      "amount_minor": 128000,
+      "currency": "KRW",
+      "direction": "debit",
+      "instrument_suffix": "5678",
+      "installment_months": 3,
+      "approval_code": "20260815"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "hyundai-card-payment-receipt",
+  "parser": "hyundai_card",
+  "expected_source_type": "credit_card_payment",
+  "minimum_confidence": 0.6,
+  "document": {
+    "source_type": "credit_card_payment",
+    "width": 1080,
+    "height": 1920,
+    "uploaded_at": "2026-08-16T12:00:00+09:00",
+    "time_zone": "Asia/Seoul",
+    "instrument_type": "credit_card"
+  },
+  "tokens": [
+    {"text": "현대카드", "bounds": [40, 60, 220, 100]},
+    {"text": "결제완료", "bounds": [240, 60, 400, 100]},
+    {"text": "현대카드 M", "bounds": [40, 140, 300, 178]},
+    {"text": "****-1234", "bounds": [320, 140, 560, 178]},
+    {"text": "2026.08.12", "bounds": [40, 300, 240, 338]},
+    {"text": "카드대금", "bounds": [260, 300, 420, 338]},
+    {"text": "382,400원", "bounds": [700, 300, 900, 338]}
+  ],
+  "expected": [
+    {
+      "date": "2026-08-12",
+      "merchant": null,
+      "amount_minor": 382400,
+      "currency": "KRW",
+      "direction": "credit",
+      "instrument_suffix": "1234",
+      "is_settlement": true
+    }
+  ]
+}

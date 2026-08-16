@@ -19,6 +19,10 @@ uv run python manage.py migrate
 uv run python manage.py create_private_user --email you@example.com --superuser
 ```
 
+Screenshot parsers, their fixtures, and the regression suite are documented in
+[PARSERS.md](PARSERS.md). Operational procedures are in
+[OPERATIONS.md](OPERATIONS.md).
+
 The Compose deployment runs the web application, PostgreSQL, and Caddy proxy by
 default. Enable the processing worker profile after the worker command is
 implemented:
