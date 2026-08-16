@@ -2,8 +2,11 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from apps.ocr.contracts import BoundingBox
 from apps.parsing.contracts import (
+    PARSER_OUTPUT_VERSION,
     DocumentMetadata,
     NormalizedToken,
     ParsedObservation,
@@ -52,9 +55,7 @@ class StubParser(ScreenshotParser):
 
 def test_parser_contract_consumes_normalized_tokens_and_returns_multiple_rows() -> None:
     document = DocumentMetadata("unknown", 1080, 1920)
-    tokens = (
-        NormalizedToken("cafe", 0.9, BoundingBox(1, 1, 20, 10), 0, ("primary",)),
-    )
+    tokens = (NormalizedToken("cafe", 0.9, BoundingBox(1, 1, 20, 10), 0, ("primary",)),)
     parser = StubParser()
 
     support = parser.supports(document, tokens)
@@ -64,7 +65,8 @@ def test_parser_contract_consumes_normalized_tokens_and_returns_multiple_rows() 
     assert parser.metadata == ParserMetadata("stub", "1.2.0")
     assert len(observations) == 2
     assert observations[0].amount == Decimal("4200")
-    assert observations[0].output_version == 1
+    assert observations[0].amount_minor == 4200
+    assert observations[0].output_version == PARSER_OUTPUT_VERSION
 
 
 def test_parser_contract_keeps_missing_and_ambiguous_fields_explicit() -> None:
@@ -75,3 +77,29 @@ def test_parser_contract_keeps_missing_and_ambiguous_fields_explicit() -> None:
     assert observation.direction is None
     assert observation.missing_fields == frozenset({"date", "amount", "direction"})
     assert observation.ambiguous_fields == frozenset({"merchant"})
+    assert observation.amount_minor is None
+    assert observation.blocks_automatic_confirmation is True
+
+
+def test_unknown_direction_blocks_automatic_confirmation() -> None:
+    observation = ParsedObservation(
+        occurred_on=date(2026, 8, 15),
+        amount=Decimal("4200"),
+        currency="KRW",
+        direction=TransactionDirection.UNKNOWN,
+        merchant="cafe",
+    )
+
+    assert observation.blocks_automatic_confirmation is True
+
+
+def test_installment_counts_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="at least one month"):
+        ParsedObservation(
+            occurred_on=None,
+            amount=None,
+            currency=None,
+            direction=None,
+            merchant=None,
+            installment_months=0,
+        )
