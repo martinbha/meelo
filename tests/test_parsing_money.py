@@ -134,6 +134,23 @@ def test_tokens_carrying_more_than_an_amount_are_not_parsed() -> None:
     assert parse_money("승인번호 12345678") is None
 
 
+def test_only_a_leading_sign_counts_as_a_sign() -> None:
+    # An interior hyphen belongs to a date or an account number, never to an
+    # amount, so the token must not be read as money at all.
+    assert parse_money("2026-08-15") is None
+    assert parse_money("1002-123-456") is None
+    assert parse_money("110-***-456789") is None
+
+
+def test_a_sign_is_found_after_a_label_or_currency_marker() -> None:
+    for text in ("출금 -42,900원", "₩-42,900", "-42,900 KRW"):
+        candidate = parse_money(text)
+
+        assert candidate is not None, text
+        assert candidate.source_sign == "-", text
+        assert candidate.signed_minor == -42900, text
+
+
 def test_looks_like_money_ignores_bare_digit_runs() -> None:
     assert looks_like_money("42,900원")
     assert looks_like_money("$10.25")

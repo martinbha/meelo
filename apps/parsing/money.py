@@ -135,20 +135,28 @@ def _detect_label(text: str) -> str | None:
     return None
 
 
-def _detect_sign(text: str) -> str:
-    match = SIGN_RE.search(text)
-    if match is None:
-        return ""
-    return "+" if match.group() == "+" else "-"
-
-
 def _residual(text: str, label: str | None) -> str:
-    """Strip currency markers, labels, and signs, leaving the numeric body."""
+    """Strip currency markers and labels, leaving the signed numeric body."""
 
     stripped = MARKER_RE.sub(" ", text)
     if label is not None:
         stripped = re.sub(re.escape(label), " ", stripped, flags=re.IGNORECASE)
-    return SIGN_RE.sub(" ", stripped).strip()
+    return stripped.strip()
+
+
+def _split_sign(residual: str) -> tuple[str, str]:
+    """Split a leading sign from the rest of the body.
+
+    Only a leading sign counts. A hyphen inside the digits belongs to
+    something that is not an amount — an ISO date, an account number — and
+    leaving it in place lets the numeric-body check reject the token.
+    """
+
+    if not residual:
+        return "", residual
+    if SIGN_RE.fullmatch(residual[0]):
+        return ("+" if residual[0] == "+" else "-"), residual[1:].strip()
+    return "", residual
 
 
 def _repair_digits(raw: str) -> tuple[str, bool]:
@@ -239,9 +247,9 @@ def parse_money(text: str, *, default_currency: str | Currency = "KRW") -> Money
     label = _detect_label(cleaned)
     detected_currency = _detect_currency(cleaned)
     currency = Currency(detected_currency) if detected_currency else Currency(str(default_currency))
-    sign = _detect_sign(cleaned)
 
-    repaired, was_repaired = _repair_digits(_residual(cleaned, label))
+    sign, unsigned = _split_sign(_residual(cleaned, label))
+    repaired, was_repaired = _repair_digits(unsigned)
     body = repaired.replace(" ", "")
     if not NUMERIC_BODY_RE.fullmatch(body):
         # Leftover text means this token carries more than an amount.
