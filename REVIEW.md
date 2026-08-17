@@ -175,6 +175,37 @@ Callers pair card-source rows against bank-source rows. The matcher does not
 know which screenshot a row came from, so feeding it two rows from the same card
 statement will happily pair two similar purchases.
 
+### Internal transfers
+
+Money moving between two accounts the same user owns is recorded twice and is
+one event. `apps.reconciliation.transfers.confirm_internal_transfer` is the only
+way to resolve one, because it is the only path that creates a *single*
+`CanonicalTransaction` both observations point at. Confirming a transfer through
+the ordinary `confirm_match` would leave each side free to be accepted on its
+own, which is exactly the double count the candidate exists to prevent — so that
+path refuses the type outright.
+
+The transfer is typed `internal_transfer`, which
+`apps.transactions.classification` places in `NEUTRAL_TYPES`: neither spending
+nor income. Counting it either way would invent an expense and a payday out of a
+move that changed the user's net position by nothing.
+
+Two guards keep an external payment from being read as an internal one:
+
+- **Both sides must be mapped to owned accounts, and to different ones.** Money
+  sent to someone else has no arriving row in an account the user owns, so it
+  never pairs — an unmapped credit of the same amount on the same day is still
+  refused.
+- **A side already accepted alone blocks the transfer.** Absorbing it silently
+  would leave the transaction it already created counted as spending.
+
+Detection is strict by default: an exact amount within one day. A reviewer who
+already believes two rows are the same move can pass a `TransferTolerance` to
+widen the amount and date windows — for a wire fee, or two apps disagreeing
+about the date. Everything the tolerant search returns scores below
+`STRONG_MATCH_SCORE`, because a pair found only by widening the search is
+evidence of the reviewer's intent rather than of the transfer.
+
 ## Serving the original screenshot
 
 `DocumentImageView` streams the stored original after an ownership check, with
