@@ -283,12 +283,48 @@ evidence of the reviewer's intent rather than of the transfer.
 media directory — a bank statement image must not be reachable by anyone who
 guesses a URL.
 
+## Regression scenarios
+
+A reconciliation bug does not look like a crash. It looks like a month that is
+twice what it should be, or a transfer between a user's own accounts appearing
+as both a payday and a shopping spree. Unit tests of the scoring functions miss
+those, because each function is right on its own — what goes wrong is the
+arithmetic after several of them agree.
+
+`tests/fixtures/reconciliation/*.json` therefore describes whole cases, and
+`apps.reconciliation.fixture_harness` loads them. One scenario states:
+
+- the **accounts and screenshots** involved, and the rows read off each;
+- the **candidates** detection must propose, with a score range and the
+  reasons that must appear;
+- how a **reviewer resolves** them — merge, confirm, or reject;
+- the rows accepted on their own afterwards;
+- and the **totals** that must come out: canonical events, ledger entries, and
+  spending, income, refund, and neutral sums.
+
+The totals are the assertions that matter. `spending_minor` and `refund_minor`
+are stated separately rather than netted, so a bug that loses one of them cannot
+hide inside the difference.
+
+Every scenario is run four ways: detection matches expectations, **rerunning
+detection changes nothing**, the books add up after every decision, and
+**repeating every decision changes nothing**. The last two are what catch a
+retried worker doubling the month.
+
+A scenario that names a row or account it never declared is refused at load
+time. A typo in a row key would otherwise assert nothing and pass.
+
+Fixtures are sanitized by construction: invented amounts and dates, and the same
+generic merchant names used throughout the suite. Nothing in them comes from a
+real statement.
+
 ## Testing
 
 ```bash
 uv run pytest tests/test_observation_import.py tests/test_review_queue.py
 uv run pytest tests/test_review_actions.py tests/test_review_views.py
 uv run pytest tests/test_duplicate_detection.py tests/test_reconciliation_matching.py
+uv run pytest tests/test_reconciliation_fixtures.py tests/test_idempotency.py
 ```
 
 Scoring and matching are pure functions over `ObservationFacts`, so they are
