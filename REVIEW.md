@@ -199,6 +199,10 @@ Two guards keep an external payment from being read as an internal one:
 - **A side already accepted alone blocks the transfer.** Absorbing it silently
   would leave the transaction it already created counted as spending.
 
+`propose_internal_transfers` scans the rows still waiting for review — mapped to
+an owned account, dated, and not yet accepted — and records what it finds.
+Re-running it is safe: a pair the reviewer already rejected is left alone.
+
 Detection is strict by default: an exact amount within one day. A reviewer who
 already believes two rows are the same move can pass a `TransferTolerance` to
 widen the amount and date windows — for a wire fee, or two apps disagreeing
