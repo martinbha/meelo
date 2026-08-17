@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Change category{% endblock %}
+
+{% block content %}
+<section class="category-correction">
+  <h1>Change category</h1>
+  <p>
+    Choose how widely this correction should apply. Nothing is written until you
+    save, and confirmed transactions are never changed.
+  </p>
+
+  {% if previews %}
+    <table class="queue-table">
+      <caption class="visually-hidden">What each scope would reach</caption>
+      <thead>
+        <tr>
+          <th scope="col">Scope</th>
+          <th scope="col">Rows awaiting review</th>
+          <th scope="col">Unconfirmed transactions</th>
+          <th scope="col">Confirmed (left alone)</th>
+          <th scope="col">Corrected by hand (left alone)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for label, preview in previews %}
+          <tr>
+            <th scope="row">{{ label }}</th>
+            <td>{{ preview.pending_observations }}</td>
+            <td>{{ preview.draft_transactions }}</td>
+            <td>{{ preview.confirmed_transactions }}</td>
+            <td>{{ preview.manually_categorized }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <form method="post" hx-boost="false">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save the correction</button>
+    <a href="{% url 'transaction-list' %}" class="secondary">Cancel</a>
+  </form>
+</section>
+{% endblock %}

@@ -8,7 +8,7 @@ from typing import Any
 from django.conf import settings
 
 from apps.core.crypto import decrypt_model_field
-from apps.core.key_management import get_user_data_key, load_master_key
+from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.observations.services import import_parser_selection
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
 from apps.parsing.generic import GenericTransactionListParser
@@ -135,6 +135,10 @@ def import_document_observations(
         selection=selection,
         data_key=data_key,
         key_version=key_version,
+        # Derived rather than passed in, so every part of the system agrees on
+        # one search key per user and a rule written from review can find the
+        # rows that produced it.
+        blind_index_key=derive_blind_index_key(data_key),
         actor=user,
     )
     return True

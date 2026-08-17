@@ -207,6 +207,22 @@ def set_rule_active(*, user: Any, rule_id: Any, is_active: bool) -> CategoryRule
     return rule
 
 
+def store_decision(transaction: CanonicalTransaction, decision: CategoryDecision) -> bool:
+    """Write a decision onto a transaction, or leave it alone if it agrees.
+
+    Returns whether anything was written, so a bulk re-run can report how much
+    it changed without churning every row's ``updated_at`` to find out.
+    """
+
+    target = decision.category.pk if decision.category is not None else None
+    if transaction.category_id == target and transaction.category_source == decision.source:
+        return False
+    transaction.category = decision.category
+    transaction.category_source = decision.source
+    transaction.save(update_fields=("category", "category_source", "updated_at"))
+    return True
+
+
 @db_transaction.atomic
 def categorize_transaction(*, transaction_id: Any, user: Any) -> CategoryDecision:
     """Apply the priority engine to one transaction and record what decided it.
@@ -227,15 +243,8 @@ def categorize_transaction(*, transaction_id: Any, user: Any) -> CategoryDecisio
         raise ConflictError("Confirmed transactions require explicit category correction.")
 
     decision = classify(transaction, user=user)
-    if (
-        transaction.category_id == (decision.category.pk if decision.category else None)
-        and transaction.category_source == decision.source
-    ):
+    if not store_decision(transaction, decision):
         return decision
-
-    transaction.category = decision.category
-    transaction.category_source = decision.source
-    transaction.save(update_fields=("category", "category_source", "updated_at"))
     if decision.is_categorized:
         record_audit_event(
             user=user,
