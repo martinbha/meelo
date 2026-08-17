@@ -367,3 +367,23 @@ def test_the_page_requires_a_login() -> None:
 
     assert response.status_code == 302
     assert reverse("login") in response.headers["Location"]
+
+
+def test_the_breakdown_narrows_in_the_database(owner: Any, checking: Any) -> None:
+    """Fetching a month's transfers only to discard them is what fetching costs."""
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.reports.breakdown import category_breakdown
+
+    add(owner, checking, amount_minor=42_900)
+    for _ in range(20):
+        add(owner, checking, amount_minor=500_000, transaction_type=_Type.INTERNAL_TRANSFER)
+
+    with CaptureQueriesContext(connection) as captured:
+        report = category_breakdown(owner, start=AUGUST[0], end=AUGUST[1])
+
+    assert report.transaction_count == 1
+    # The transfers were excluded by the query rather than in Python.
+    assert any("transaction_type" in query["sql"] for query in captured.captured_queries)
