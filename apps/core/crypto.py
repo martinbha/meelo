@@ -138,11 +138,12 @@ def encrypt_model_field(
     *,
     key: bytes,
     key_version: int,
+    user_id: Any = None,
 ) -> str:
     return encrypt_value(
         plaintext,
         key=key,
-        context=model_field_context(instance, field),
+        context=model_field_context(instance, field, user_id=user_id),
         key_version=key_version,
     )
 
@@ -198,6 +199,25 @@ def is_encrypted_value(value: str) -> bool:
     """
 
     return value.startswith(f"{FORMAT_VERSION}.")
+
+
+def envelope_key_version(value: str) -> int:
+    """Which key version sealed this value, without needing the key.
+
+    Rotation reads this to decide what still has to move. Returns 0 for anything
+    that is not an envelope — a plaintext row predating encryption — which is a
+    thing rotation has to handle rather than crash on.
+    """
+
+    if not is_encrypted_value(value):
+        return 0
+    parts = value.split(".")
+    if len(parts) < 2:
+        return 0
+    try:
+        return int(parts[1])
+    except ValueError:
+        return 0
 
 
 def read_model_field(
