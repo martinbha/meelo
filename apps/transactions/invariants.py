@@ -6,12 +6,13 @@ from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
 
 from apps.core.audit import record_audit_event
+from apps.core.crypto import EncryptionError
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency
 from apps.ledger.models import LedgerEntry
-from apps.ledger.posting import deserialize_money
 
 from .models import CanonicalTransaction
+from .money import read_money
 
 ALLOWED_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     CanonicalTransaction.Status.DRAFT: frozenset(
@@ -22,7 +23,9 @@ ALLOWED_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 
-def validate_transaction_invariants(transaction: CanonicalTransaction) -> None:
+def validate_transaction_invariants(
+    transaction: CanonicalTransaction, *, data_key: bytes | None = None
+) -> None:
     """Run all model-level checks plus amount and posting safety checks.
 
     Database constraints are deliberately not pre-checked here. The idempotency
@@ -34,8 +37,8 @@ def validate_transaction_invariants(transaction: CanonicalTransaction) -> None:
 
     transaction.full_clean(validate_constraints=False)
     try:
-        amount = deserialize_money(transaction.amount_encrypted)
-    except InvalidRequestError as exc:
+        amount = read_money(transaction, "amount_encrypted", data_key=data_key)
+    except (InvalidRequestError, EncryptionError) as exc:
         raise ValidationError({"amount_encrypted": str(exc)}) from exc
     if amount.resolved_currency != Currency(transaction.currency):
         raise ValidationError(
@@ -56,6 +59,7 @@ def transition_transaction_status(
     *,
     user: Any,
     status: str,
+    data_key: bytes | None = None,
 ) -> CanonicalTransaction:
     transaction = (
         CanonicalTransaction.objects.select_for_update()
@@ -71,7 +75,7 @@ def transition_transaction_status(
         )
     transaction.status = status
     transaction.reviewed_by = user
-    validate_transaction_invariants(transaction)
+    validate_transaction_invariants(transaction, data_key=data_key)
     transaction.save(update_fields=["status", "reviewed_by", "updated_at"])
     record_audit_event(
         user=user,

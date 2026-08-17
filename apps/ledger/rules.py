@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from apps.core.errors import InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import read_money
 
 from .models import LedgerAccount, LedgerEntry
-from .posting import Posting, deserialize_money, post_balanced_transaction
+from .posting import Posting, post_balanced_transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,8 +28,8 @@ class PostingRuleAccounts:
     liability_account: LedgerAccount | None = None
 
 
-def _amount_for(transaction: CanonicalTransaction) -> Money:
-    amount = deserialize_money(transaction.amount_encrypted)
+def _amount_for(transaction: CanonicalTransaction, *, data_key: bytes | None = None) -> Money:
+    amount = read_money(transaction, "amount_encrypted", data_key=data_key)
     if amount.resolved_currency != Currency(transaction.currency):
         raise InvalidRequestError(
             "Encoded transaction amount currency does not match the transaction."
@@ -117,6 +118,8 @@ POSTING_RULES: dict[str, RuleHandler] = {
 def build_transaction_postings(
     canonical_transaction: CanonicalTransaction,
     context: PostingRuleAccounts,
+    *,
+    data_key: bytes | None = None,
 ) -> list[Posting]:
     try:
         handler = POSTING_RULES[canonical_transaction.transaction_type]
@@ -129,15 +132,20 @@ def build_transaction_postings(
         raise InvalidRequestError(
             "The primary ledger account must link to the transaction financial account."
         )
-    amount = _amount_for(canonical_transaction)
+    amount = _amount_for(canonical_transaction, data_key=data_key)
     return handler(amount, context)
 
 
 def post_transaction_by_type(
     canonical_transaction: CanonicalTransaction,
     context: PostingRuleAccounts,
+    *,
+    data_key: bytes | None = None,
+    key_version: int = 1,
 ) -> list[LedgerEntry]:
     return post_balanced_transaction(
         canonical_transaction,
-        build_transaction_postings(canonical_transaction, context),
+        build_transaction_postings(canonical_transaction, context, data_key=data_key),
+        data_key=data_key,
+        key_version=key_version,
     )

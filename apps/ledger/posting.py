@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from django.db import transaction as db_transaction
 
+from apps.core.crypto import encrypt_model_fields, read_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.transactions.models import CanonicalTransaction
@@ -36,8 +37,16 @@ def deserialize_money(value: str) -> Money:
 def post_balanced_transaction(
     canonical_transaction: CanonicalTransaction,
     postings: Sequence[Posting],
+    *,
+    data_key: bytes | None = None,
+    key_version: int = 1,
 ) -> list[LedgerEntry]:
-    """Atomically post a confirmed transaction when debit and credit totals balance."""
+    """Atomically post a confirmed transaction when debit and credit totals balance.
+
+    Entry amounts are encrypted when a key is available. They are a second copy
+    of money already in the transaction, so leaving them in clear would undo the
+    encryption of the row they came from.
+    """
 
     if canonical_transaction.status != CanonicalTransaction.Status.CONFIRMED:
         raise InvalidRequestError("Only confirmed transactions can be posted to the ledger.")
@@ -72,16 +81,40 @@ def post_balanced_transaction(
             raise InvalidRequestError("Only confirmed transactions can be posted to the ledger.")
         if LedgerEntry.objects.filter(transaction=locked_transaction).exists():
             raise ConflictError("This transaction has already been posted to the ledger.")
-        entries = LedgerEntry.objects.bulk_create(
-            [
-                LedgerEntry(
-                    transaction=locked_transaction,
-                    account=posting.account,
-                    entry_type=posting.entry_type,
-                    amount_encrypted=serialize_money(posting.amount),
-                    currency=posting.amount.resolved_currency.code,
+        pending = []
+        for posting in postings:
+            entry = LedgerEntry(
+                transaction=locked_transaction,
+                account=posting.account,
+                entry_type=posting.entry_type,
+                amount_encrypted=serialize_money(posting.amount),
+                currency=posting.amount.resolved_currency.code,
+            )
+            if data_key is not None:
+                # The identifier already exists — the primary key has a UUID
+                # default — so the associated data can bind the ciphertext to
+                # this entry before it is ever written. An entry holds no owner
+                # of its own, so the transaction's is supplied; ``entry_amount``
+                # passes the same one back.
+                encrypt_model_fields(
+                    entry,
+                    {"amount_encrypted": serialize_money(posting.amount)},
+                    key=data_key,
+                    key_version=key_version,
+                    user_id=locked_transaction.user_id,
                 )
-                for posting in postings
-            ]
-        )
+            pending.append(entry)
+        entries = LedgerEntry.objects.bulk_create(pending)
     return entries
+
+
+def entry_amount(entry: LedgerEntry, *, data_key: bytes | None = None) -> Money:
+    """The amount on one ledger entry, decrypting only if it has to.
+
+    An entry belongs to whoever owns its transaction, so that owner supplies the
+    associated data — the same one used when the value was written.
+    """
+
+    return deserialize_money(
+        read_model_field(entry, "amount_encrypted", key=data_key, user_id=entry.transaction.user_id)
+    )
