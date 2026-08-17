@@ -519,3 +519,20 @@ def test_an_export_still_reads_after_a_rotation(
 
     assert b"42900" in payload
     assert MERCHANT.encode() in payload
+
+
+def test_batches_hold_one_chunk_at_a_time(owner: Any, account: Any, data_key: bytes) -> None:
+    """Bounded batches has to mean bounded memory, not just bounded transactions."""
+
+    from apps.core.rotation import _batches
+
+    for index in range(7):
+        add(owner, account, data_key, day=index + 1)
+    queryset = CanonicalTransaction.objects.filter(user_id=owner.pk)
+
+    sizes = [len(batch) for batch in _batches(queryset, 3)]
+
+    assert sizes == [3, 3, 1]
+    # And every row is visited exactly once.
+    seen = [row.pk for batch in _batches(queryset, 3) for row in batch]
+    assert len(seen) == len(set(seen)) == 7
