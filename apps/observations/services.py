@@ -20,6 +20,7 @@ from typing import Any
 from django.db import IntegrityError
 from django.db import transaction as db_transaction
 
+from apps.categorization.normalization import merchant_blind_index, normalize_merchant
 from apps.core.audit import record_audit_event
 from apps.core.crypto import encrypt_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
@@ -188,11 +189,32 @@ def _encrypt_fields(
     *,
     data_key: bytes,
     key_version: int,
+    blind_index_key: bytes | None = None,
 ) -> None:
-    """Encrypt every value-bearing field once the record has an identity."""
+    """Encrypt every value-bearing field once the record has an identity.
+
+    The merchant is stored twice on purpose: the raw text as the source printed
+    it, which is what a person is shown, and a normalized form that exists only
+    to be looked up. Overwriting the first with the second would tell the user
+    their coffee came from a shop whose name they have never seen.
+    """
+
+    normalized = ""
+    if parsed.merchant:
+        try:
+            normalized = normalize_merchant(parsed.merchant)
+        except InvalidRequestError:
+            # A merchant that normalizes to nothing is not a lookup key. The
+            # raw text is still kept; only the index is skipped.
+            normalized = ""
+    if normalized and blind_index_key is not None:
+        record.merchant_blind_index = merchant_blind_index(
+            parsed.merchant or "", user_id=record.user_id, key=blind_index_key
+        )
 
     plaintexts = {
         "merchant_raw_encrypted": parsed.merchant or "",
+        "merchant_normalized_encrypted": normalized,
         "amount_encrypted": _money_plaintext(parsed),
         "balance_after_encrypted": _balance_plaintext(parsed),
         "approval_code_encrypted": parsed.approval_code or "",
@@ -228,6 +250,7 @@ def import_parser_selection(
     selection: ParserSelection,
     data_key: bytes,
     key_version: int,
+    blind_index_key: bytes | None = None,
     actor: Any | None = None,
 ) -> ImportResult:
     """Store one parse as observations, exactly once.
@@ -254,7 +277,13 @@ def import_parser_selection(
     for row_index, parsed in enumerate(selection.observations):
         record = _build(document=document, ocr_run=ocr_run, parsed=parsed, row_index=row_index)
         record.full_clean(exclude=["merged_into"])
-        _encrypt_fields(record, parsed, data_key=data_key, key_version=key_version)
+        _encrypt_fields(
+            record,
+            parsed,
+            data_key=data_key,
+            key_version=key_version,
+            blind_index_key=blind_index_key,
+        )
         records.append(record)
 
     try:

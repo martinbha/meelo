@@ -456,6 +456,10 @@ def accept_observation(
             else CategorySource.UNCATEGORIZED
         ),
         merchant_encrypted=_decrypt(observation, "merchant_raw_encrypted", data_key=data_key),
+        # Carried across rather than recomputed: the index was built from the
+        # merchant this row actually carries, and rebuilding it here would need
+        # the search key that acceptance has no reason to hold.
+        merchant_blind_index=observation.merchant_blind_index,
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),
     )
