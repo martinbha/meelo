@@ -15,9 +15,9 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
-from apps.core.crypto import decrypt_model_field
+from apps.core.crypto import FORMAT_VERSION, decrypt_model_field
 from apps.core.errors import ApplicationError
-from apps.core.key_management import get_user_data_key, load_master_key
+from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404
 from apps.transactions.models import CanonicalTransaction
 
@@ -30,14 +30,21 @@ def _keys(request: HttpRequest) -> bytes:
 
 
 def _merchant(transaction: CanonicalTransaction, *, data_key: bytes) -> str:
-    if not transaction.merchant_encrypted:
+    """The merchant this rule will be keyed on.
+
+    Rows written before field encryption reached this model hold the name in
+    clear. Those are recognised by the absence of an envelope prefix rather than
+    by catching a decryption failure: a real failure has to stay loud, because
+    indexing a ciphertext would produce a rule that can never fire and nothing
+    would say so (#163).
+    """
+
+    value = transaction.merchant_encrypted
+    if not value:
         return ""
-    try:
-        return decrypt_model_field(transaction, "merchant_encrypted", key=data_key)
-    except ValueError:
-        # Older rows stored the merchant in clear; the value is still the
-        # merchant, and refusing to show it would break the page for no gain.
-        return transaction.merchant_encrypted
+    if not value.startswith(f"{FORMAT_VERSION}."):
+        return value
+    return decrypt_model_field(transaction, "merchant_encrypted", key=data_key)
 
 
 class CategoryCorrectionView(LoginRequiredMixin, View):
@@ -70,7 +77,9 @@ class CategoryCorrectionView(LoginRequiredMixin, View):
                 scope=form.cleaned_data["scope"],
                 merchant=_merchant(transaction, data_key=data_key),
                 encryption_key=data_key,
-                blind_index_key=data_key,
+                # The same derivation import used, so the rule's index
+                # matches the one on the transaction it was written from.
+                blind_index_key=derive_blind_index_key(data_key),
                 apply_to_existing=form.cleaned_data["apply_to_existing"],
             )
         except ApplicationError as error:

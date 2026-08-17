@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import os
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,9 @@ from .errors import ForbiddenError, InvalidRequestError
 
 WRAP_FORMAT = "kw1"
 KEY_SIZE = 32
+#: Domain separator for the search key. Changing it invalidates every stored
+#: blind index, which is a reindex rather than a deployment (#168).
+BLIND_INDEX_INFO = b"finance-ocr|blind-index|v1"
 NONCE_SIZE = 12
 TAG_SIZE = 16
 
@@ -52,6 +57,21 @@ def load_master_key(path: str | Path | None = None) -> bytes:
     except (OSError, UnicodeError) as exc:
         raise KeyManagementError("The field-encryption master key cannot be read.") from exc
     return _decode_master_key(value)
+
+
+def derive_blind_index_key(data_key: bytes) -> bytes:
+    """The search key for one user, derived from their data key.
+
+    Kept separate from the encryption key so the two can be reasoned about
+    apart: an index leak does not hand over the plaintext, and the search key
+    can be rotated on its own schedule. Derivation is deterministic, so every
+    caller holding the data key arrives at the same search key without a second
+    secret having to be stored, wrapped, and backed up alongside the first.
+    """
+
+    if len(data_key) != KEY_SIZE:
+        raise KeyManagementError("Data keys must contain exactly 32 bytes.")
+    return hmac.new(data_key, BLIND_INDEX_INFO, hashlib.sha256).digest()
 
 
 def _context(*, user_id: Any, version: int) -> bytes:
