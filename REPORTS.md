@@ -66,6 +66,11 @@ empty set rather than raising for a currency with no activity. A total that
 mixes two currencies is a number nobody can trace back, so the shape of the
 result makes it impossible rather than merely discouraged.
 
+A row whose `currency` column disagrees with the currency encoded in its amount
+raises. There is no honest answer to which one it is in, and filing it under
+either would put a real number into a total it does not belong to — while a
+later query filtering on the column would disagree with this one.
+
 ## Amounts
 
 Stored as `minor_units:CURRENCY` — integer minor units, never a float and never a
