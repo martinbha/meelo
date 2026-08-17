@@ -311,6 +311,40 @@ def test_the_refund_merchant_is_readable_rather_than_a_copied_envelope(owner: An
     assert event.merchant_encrypted != refund.merchant_raw_encrypted
 
 
+def test_confirming_one_pairing_answers_the_competing_ones(owner: Any) -> None:
+    """One refund can resemble several purchases; picking one settles the rest."""
+
+    _, refund, account = seed_refund(owner)
+    document = make_document(owner, file_sha256="4" * 64)
+    run = make_ocr_run(owner, document)
+    twin = import_parser_selection(
+        document=document,
+        ocr_run=run,
+        selection=ParserSelection(
+            ParserMetadata("hyundai_card", "1.0"),
+            ParserSupport(0.95, "card_transaction_list", ()),
+            (parsed(occurred_on=date(2026, 8, 12)),),
+        ),
+        data_key=KEY,
+        key_version=1,
+    ).observations[0]
+    twin.financial_account_guess = account
+    twin.save(update_fields=["financial_account_guess"])
+
+    candidates = propose_refund_matches(user=owner, data_key=KEY)
+    assert len(candidates) == 2
+
+    confirm_refund_match(candidates[0].pk, user=owner, data_key=KEY)
+
+    other = ReconciliationMatch.objects.get(pk=candidates[1].pk)
+    assert other.status == ReconciliationMatch.Status.REJECTED
+    # And the answered pairing is not asked again on the next detection run.
+    propose_refund_matches(user=owner, data_key=KEY)
+    other.refresh_from_db()
+    assert other.status == ReconciliationMatch.Status.REJECTED
+    assert refund.pk not in {row.pk for row in unmatched_refunds(owner)}
+
+
 def test_confirming_posts_the_ledger_in_the_same_transaction(owner: Any) -> None:
     _, _, account = seed_refund(owner)
     match = propose_refund_matches(user=owner, data_key=KEY)[0]
