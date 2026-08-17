@@ -86,6 +86,11 @@ def create_export(
     assert_recent_authentication(user)
     if export_format == TransactionExport.Format.ENCRYPTED and not passphrase:
         raise ExportError("An encrypted export needs a passphrase.")
+    window = lifetime or DEFAULT_EXPORT_LIFETIME
+    if window <= timedelta(0):
+        # An export that has already expired can never be downloaded, so it is a
+        # file on disk with no purpose and no reader.
+        raise ExportError("An export lifetime must be positive.")
 
     now = timezone.now()
     record = TransactionExport.objects.create(
@@ -94,7 +99,7 @@ def create_export(
         file_path="",
         period_start=start,
         period_end=end,
-        expires_at=now + (lifetime or DEFAULT_EXPORT_LIFETIME),
+        expires_at=now + window,
     )
 
     transactions = reportable_transactions(user, start=start, end=end).select_related(

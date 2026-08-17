@@ -60,12 +60,11 @@ class TransactionExport(models.Model):
             models.Index(fields=("user", "-created_at"), name="export_user_created_idx"),
             models.Index(fields=("expires_at",), name="export_expiry_idx"),
         ]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(expires_at__gt=models.F("created_at")),
-                name="export_expires_after_creation",
-            ),
-        ]
+        # No constraint tying expires_at to created_at, deliberately.
+        # Shortening an expiry to force a cleanup is a legitimate operation, and
+        # a CHECK would forbid it to prevent a mistake nothing makes: the
+        # lifetime is validated in ``create_export``, which is the only place a
+        # nonsense expiry could be written.
 
     @property
     def is_expired(self) -> bool:
