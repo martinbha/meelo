@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.parsing.apps.ParsingConfig",
     "apps.processing.apps.ProcessingConfig",
     "apps.reconciliation.apps.ReconciliationConfig",
+    "apps.reports.apps.ReportsConfig",
     "apps.transactions.apps.TransactionsConfig",
     "apps.users.apps.UsersConfig",
 ]
