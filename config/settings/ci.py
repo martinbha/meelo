@@ -40,4 +40,6 @@ DATABASES = {
     },
 }
 
-DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-ci")
+# The same path the SQLite settings use. Two tests assert against it directly,
+# and the point of this module is to change the database, not the filesystem.
+DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-tests")
