@@ -24,11 +24,13 @@ from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import owned_queryset
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
+from apps.reconciliation.services import queue_match_ids
 
 from .activity import account_activity, instrument_activity
 from .breakdown import category_breakdown, merchant_breakdown, reconciles
 from .overview import period_overview
 from .spending import month_bounds, monthly_spending
+from .workload import outstanding_work
 
 DEFAULT_CURRENCY = "KRW"
 
@@ -215,3 +217,16 @@ class OverviewReportView(LoginRequiredMixin, View):
                 "currency": currency,
             },
         )
+
+
+@method_decorator(never_cache, name="dispatch")
+class WorkloadReportView(LoginRequiredMixin, View):
+    """What is still waiting for a decision, and where to make it."""
+
+    template_name = "reports/workload_report.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        # Reconciliation candidates reach the queue counts as identifiers, which
+        # is how the observations app stays unaware of this one.
+        workload = outstanding_work(request.user, match_ids=queue_match_ids(request.user))
+        return render(request, self.template_name, {"workload": workload})

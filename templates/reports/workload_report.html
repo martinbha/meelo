@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Outstanding work{% endblock %}
+
+{% block content %}
+<section class="workload-report">
+  <h1>Outstanding work</h1>
+  <p>
+    A month's total is only as complete as the screenshots behind it. Everything
+    still waiting for a decision is listed here, and every count links to the
+    place you make it.
+  </p>
+
+  <nav class="queue-filters" aria-label="Reports">
+    <a href="{% url 'report-overview' %}">Overview</a>
+    <a href="{% url 'report-categories' %}">By category</a>
+    <a href="{% url 'report-merchants' %}">By merchant</a>
+    <a href="{% url 'report-accounts' %}">By account</a>
+    <a href="{% url 'report-cards' %}">By card</a>
+    <a href="{% url 'report-outstanding' %}" aria-current="page">Outstanding</a>
+  </nav>
+
+  {% if workload.is_clear %}
+    <p class="empty-state">
+      Nothing is waiting. Every screenshot has been reviewed and every
+      reconciliation candidate decided.
+    </p>
+  {% else %}
+    <p class="risk-badge">
+      {{ workload.unreviewed_count }} row(s) awaiting review ·
+      {{ workload.open_match_count }} candidate(s) awaiting a decision
+    </p>
+  {% endif %}
+
+  <h2>By review status</h2>
+  <ul class="workload-list">
+    {% for item in workload.review_statuses %}
+      <li>
+        {% if item.is_actionable %}
+          <a href="{% url 'review-queue' %}">{{ item.label }}</a>
+        {% else %}
+          {{ item.label }}
+        {% endif %}
+        <strong>{{ item.count }}</strong>
+        {% if item.note %}<small>{{ item.note }}</small>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h2>By confidence</h2>
+  <ul class="workload-list">
+    {% for item in workload.confidence_bands %}
+      <li>
+        {% if item.is_actionable and item.query %}
+          <a href="{% url 'review-queue' %}?{{ item.query }}">{{ item.label }}</a>
+        {% else %}
+          {{ item.label }}
+        {% endif %}
+        <strong>{{ item.count }}</strong>
+        {% if item.note %}<small>{{ item.note }}</small>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h2>By what needs checking</h2>
+  <ul class="workload-list">
+    {% for item in workload.queue_filters %}
+      <li>
+        {% if item.is_actionable %}
+          <a href="{% url 'review-queue' %}?{{ item.query }}">{{ item.label }}</a>
+        {% else %}
+          {{ item.label }}
+        {% endif %}
+        <strong>{{ item.count }}</strong>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h2>Reconciliation candidates</h2>
+  <ul class="workload-list">
+    {% for item in workload.reconciliation %}
+      <li>
+        {% if item.is_actionable %}
+          <a href="{% url 'match-queue' %}">{{ item.label }}</a>
+        {% else %}
+          {{ item.label }}
+        {% endif %}
+        <strong>{{ item.count }}</strong>
+        {% if item.note %}<small>{{ item.note }}</small>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h2>By screenshot</h2>
+  {% if workload.documents %}
+    <table class="queue-table">
+      <caption class="visually-hidden">Screenshots with work outstanding first</caption>
+      <thead>
+        <tr>
+          <th scope="col">Uploaded</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Rows</th>
+          <th scope="col">Waiting</th>
+          <th scope="col">Accepted</th>
+          <th scope="col">Rejected</th>
+          <th scope="col">Merged</th>
+          <th scope="col">Review</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for document in workload.documents %}
+          <tr {% if not document.is_complete %}class="unassigned"{% endif %}>
+            <td>{{ document.uploaded_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ document.source_type }}</td>
+            <td>{{ document.total }}</td>
+            <td>{{ document.unreviewed }}</td>
+            <td>{{ document.accepted }}</td>
+            <td>{{ document.rejected }}</td>
+            <td>{{ document.merged }}</td>
+            <td>
+              <a href="{% url 'observation-review' pk=document.document_id %}">Open</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No screenshots have produced rows yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

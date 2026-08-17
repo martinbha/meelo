@@ -34,6 +34,7 @@ from apps.reports.views import (
     MerchantReportView,
     OverviewReportView,
     SpendingReportView,
+    WorkloadReportView,
 )
 from apps.transactions.views import (
     ManualTransactionCreateView,
@@ -123,6 +124,7 @@ urlpatterns = [
     path("reports/categories/", SpendingReportView.as_view(), name="report-categories"),
     path("reports/merchants/", MerchantReportView.as_view(), name="report-merchants"),
     path("reports/accounts/", AccountReportView.as_view(), name="report-accounts"),
+    path("reports/outstanding/", WorkloadReportView.as_view(), name="report-outstanding"),
     path("reports/cards/", CardReportView.as_view(), name="report-cards"),
     path("uploads/", UploadListView.as_view(), name="upload-list"),
     path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),
