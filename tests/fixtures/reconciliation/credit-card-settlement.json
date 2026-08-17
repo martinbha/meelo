@@ -1,0 +1,56 @@
+{
+  "name": "credit-card-settlement",
+  "description": "A card statement and the bank withdrawal that pays it. The purchases were already counted when they were made, so the payment is not spending — treating it as one would double every card purchase in the month.",
+  "detect": "settlements",
+  "accounts": ["checking"],
+  "documents": [
+    {
+      "key": "card-statement",
+      "source_type": "card_statement",
+      "parser": "hyundai_card",
+      "rows": [
+        {
+          "key": "statement",
+          "date": "2026-08-01",
+          "amount_minor": 380000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "8월 청구금액",
+          "is_settlement": true
+        }
+      ]
+    },
+    {
+      "key": "bank-app",
+      "source_type": "bank_transaction_list",
+      "parser": "toss_bank",
+      "rows": [
+        {
+          "key": "payment",
+          "date": "2026-08-25",
+          "amount_minor": 380000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "현대카드",
+          "account": "checking"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "credit_card_payment",
+      "left": "payment",
+      "right": "statement",
+      "minimum_score": 70,
+      "features": ["issuer_counterparty", "amount_matches_statement"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "confirm"}],
+  "accept": [{"row": "payment", "type": "credit_card_payment"}],
+  "expected": {
+    "canonical_events": 1,
+    "spending_minor": 0,
+    "income_minor": 0
+  }
+}
