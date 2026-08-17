@@ -148,6 +148,15 @@ def accumulate(
     for transaction in transactions:
         amount = transaction_amount(transaction, data_key=data_key)
         currency = amount.resolved_currency.code
+        if transaction.currency and transaction.currency.upper() != currency:
+            # The column and the encoded amount disagree, so there is no honest
+            # answer to which currency this row is in. Filing it under either
+            # would put a real number in a total it does not belong to, and a
+            # later query filtering on the column would disagree with this one.
+            raise ValueError(
+                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
+                f"but its amount is encoded as {currency}."
+            )
         totals = running.setdefault(
             currency, dict.fromkeys([*_BUCKET_FIELDS.values(), "transaction_count"], 0)
         )
