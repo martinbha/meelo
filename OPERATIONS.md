@@ -170,3 +170,67 @@ uv run python manage.py rotate_encryption_keys --verify-only
 ```
 
 See [SECURITY.md](SECURITY.md) for why the ordering is what it is.
+
+## Backup and restore
+
+A backup nobody has restored is a hypothesis. These commands make testing it
+cheap enough to actually do.
+
+```bash
+export MEELO_BACKUP_PASSPHRASE='...'
+uv run python manage.py create_backup /backups/meelo-$(date +%F).enc
+uv run python manage.py verify_backup /backups/meelo-$(date +%F).enc
+```
+
+The passphrase comes from the environment, never an argument — an argument lands
+in shell history and in the process list where every other user on the machine
+can read it.
+
+### What is in the archive
+
+Database rows, the wrapped per-user data keys, the migration state, and the
+retained (already-encrypted) screenshots. The manifest records the row counts and
+the schema version, so a truncated archive is caught by a count rather than by a
+silent half-restore.
+
+### What is deliberately not
+
+**The field-encryption master key.** An archive holding both is not an encrypted
+backup, it is a plaintext backup with extra steps — and the archive is the file
+most likely to reach cloud storage, a laptop, or a disk somebody sells. Store the
+master key where you store other credentials, and never in the same place as the
+archives.
+
+`read_manifest` refuses an archive that *claims* to contain one, because ours
+never do.
+
+### Schedule
+
+| Frequency | Retain | Where |
+| --- | --- | --- |
+| Daily | 7 days | Local disk, separate volume from the database |
+| Weekly | 5 weeks | Removable or remote storage |
+| Monthly | 12 months | Off-site |
+
+Run `verify_backup` on every archive as it is written. Run a full restore
+rehearsal monthly:
+
+```bash
+uv run python manage.py restore_backup /backups/meelo-2026-08-01.enc /tmp/rehearsal
+uv run python manage.py restore_backup /backups/meelo-2026-08-01.enc /tmp/rehearsal --load
+```
+
+Unpacking and loading are separate steps on purpose. A rehearsal should be able to
+inspect what it got before replacing anything, and the first step of a real
+restore is identical to the first step of a rehearsal — otherwise the rehearsal
+is not testing what will happen.
+
+### Restoring for real
+
+1. Provision a database and run `migrate --database=migration`.
+2. Put the master key in place (from wherever it is stored — **not** the archive).
+3. `restore_backup <archive> <directory> --load`.
+4. Confirm a transaction from before the backup reads back correctly.
+
+Step 4 is the one that matters. Rows restored without the master key load fine and
+stay unreadable, which looks like success until somebody opens a report.
