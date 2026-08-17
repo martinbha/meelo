@@ -28,7 +28,7 @@ from apps.core.crypto import read_model_field
 from apps.transactions.classification import bucket_of
 from apps.transactions.models import CanonicalTransaction
 
-from .amounts import transaction_amount
+from .grouping import group_rows, sorted_lines
 from .spending import SpendingTotals, reportable_transactions
 
 #: The two buckets that land on a category or a merchant. Income and pure
@@ -110,74 +110,22 @@ def _spending_rows(
     ]
 
 
-def _lines(
-    grouped: dict[str, dict[str, Any]],
-) -> tuple[BreakdownLine, ...]:
-    """Order lines by what costs most, with the uncategorised line last.
+_FIELDS = ("gross_spending_minor", "refunds_minor", "transaction_count")
 
-    Largest first is what a person reading a month wants. Uncategorised goes to
-    the end regardless of size: it is a call to action rather than a category,
-    and sorting it into the middle of the list hides it.
-    """
 
-    lines = [
-        BreakdownLine(
-            key=key,
-            label=values["label"],
-            gross_spending_minor=values["gross_spending_minor"],
-            refunds_minor=values["refunds_minor"],
-            transaction_count=values["transaction_count"],
-        )
-        for key, values in grouped.items()
-    ]
-    return tuple(
-        sorted(lines, key=lambda line: (line.key == "", -line.net_spending_minor, line.label))
+def _column_for(transaction: CanonicalTransaction) -> str:
+    return (
+        "refunds_minor"
+        if bucket_of(transaction.transaction_type) == "refund"
+        else "gross_spending_minor"
     )
 
 
-def _group(
-    transactions: Sequence[CanonicalTransaction],
-    *,
-    data_key: bytes | None,
-    key_of: Any,
-    label_of: Any,
-    currency: str,
-) -> dict[str, dict[str, Any]]:
-    """Sum each group in one pass.
-
-    One decryption per row, not two: reading an amount is the expensive part of
-    a report, and computing the totals separately would double it (#90).
-    """
-
-    grouped: dict[str, dict[str, Any]] = {}
-    for transaction in transactions:
-        amount = transaction_amount(transaction, data_key=data_key)
-        if amount.resolved_currency.code != currency:
-            # The caller already filtered on the queryable currency column, so
-            # reaching here means the column and the encoded amount disagree.
-            # Skipping it would drop a real number out of a total silently.
-            raise ValueError(
-                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
-                f"but its amount is encoded as {amount.resolved_currency.code}."
-            )
-        key = key_of(transaction)
-        bucket = grouped.setdefault(
-            key,
-            {
-                "label": label_of(transaction, data_key),
-                "gross_spending_minor": 0,
-                "refunds_minor": 0,
-                "transaction_count": 0,
-            },
-        )
-        field = (
-            "refunds_minor"
-            if bucket_of(transaction.transaction_type) == "refund"
-            else "gross_spending_minor"
-        )
-        bucket[field] += amount.amount_minor
-        bucket["transaction_count"] += 1
-    return grouped
+def _lines(grouped: dict[str, dict[str, Any]]) -> tuple[BreakdownLine, ...]:
+    return sorted_lines(
+        BreakdownLine(key=key, **{name: values[name] for name in ("label", *_FIELDS)})
+        for key, values in grouped.items()
+    )
 
 
 def _build(
@@ -190,8 +138,14 @@ def _build(
     start: date,
     end: date,
 ) -> Breakdown:
-    grouped = _group(
-        transactions, data_key=data_key, key_of=key_of, label_of=label_of, currency=currency
+    grouped = group_rows(
+        transactions,
+        data_key=data_key,
+        currency=currency,
+        key_of=key_of,
+        label_of=label_of,
+        column_for=_column_for,
+        fields=_FIELDS,
     )
     return Breakdown(currency=currency, start=start, end=end, lines=_lines(grouped))
 

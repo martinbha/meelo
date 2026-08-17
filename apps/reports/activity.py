@@ -27,7 +27,7 @@ from apps.core.crypto import read_model_field
 from apps.transactions.classification import bucket_of, is_settlement
 from apps.transactions.models import CanonicalTransaction
 
-from .amounts import transaction_amount
+from .grouping import group_rows, sorted_lines
 from .spending import reportable_transactions
 
 #: Shown for transactions that are not attached to any card.
@@ -138,6 +138,13 @@ def _column_for(transaction: CanonicalTransaction) -> str:
     return "settlements_minor" if is_settlement(transaction.transaction_type) else "movement_minor"
 
 
+def _lines(grouped: dict[str, dict[str, Any]]) -> tuple[ActivityLine, ...]:
+    return sorted_lines(
+        ActivityLine(key=key, **{name: values[name] for name in ("label", *_FIELDS)})
+        for key, values in grouped.items()
+    )
+
+
 def _accumulate(
     transactions: Sequence[CanonicalTransaction],
     *,
@@ -146,32 +153,16 @@ def _accumulate(
     label_of: Any,
     currency: str,
 ) -> tuple[ActivityLine, ...]:
-    grouped: dict[str, dict[str, Any]] = {}
-    for transaction in transactions:
-        amount = transaction_amount(transaction, data_key=data_key)
-        if amount.resolved_currency.code != currency:
-            # The caller filtered on the queryable currency column, so this is
-            # the corrupt case: the column and the encoded amount disagree.
-            raise ValueError(
-                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
-                f"but its amount is encoded as {amount.resolved_currency.code}."
-            )
-        key = key_of(transaction)
-        line = grouped.setdefault(
-            key,
-            {"label": label_of(transaction, data_key), **dict.fromkeys(_FIELDS, 0)},
+    return _lines(
+        group_rows(
+            transactions,
+            data_key=data_key,
+            currency=currency,
+            key_of=key_of,
+            label_of=label_of,
+            column_for=_column_for,
+            fields=_FIELDS,
         )
-        line[_column_for(transaction)] += amount.amount_minor
-        line["transaction_count"] += 1
-
-    lines = [
-        ActivityLine(key=key, **{name: values[name] for name in ("label", *_FIELDS)})
-        for key, values in grouped.items()
-    ]
-    # Busiest first, with unmapped activity last: it is a call to action rather
-    # than an account, and sorting it by size would bury it mid-list.
-    return tuple(
-        sorted(lines, key=lambda line: (not line.key, -line.net_spending_minor, line.label))
     )
 
 
