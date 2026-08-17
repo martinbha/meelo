@@ -134,6 +134,59 @@ movement_minor` equals the month's `neutral_minor`, which the tests assert.
 **Activity with no card is a line, sorted last.** Unmapped activity is the thing
 a user needs to go and map, so it is named rather than dropped.
 
+## Income against spending
+
+`apps.reports.overview` keeps a period's four honest answers apart: what came in,
+what went out for good, what merely moved, and what nobody has decided about yet.
+Collapsing them into a single "balance" is how a report claims a user earned half
+a million won by moving money into their own savings account.
+
+It also **shows the exclusions**. A total that quietly leaves out transfers and
+card payments is indistinguishable, to the person reading it, from a total that
+lost them to a bug — so `excluded_minor` is a figure on the page, and every
+excluded row carries the sentence explaining why it is excluded.
+
+Three distinctions:
+
+- **A transfer is not income.** The same money, somewhere else.
+- **A settlement is not spending.** Already counted when it was spent.
+- **Cash withdrawn is not cash spent.** A withdrawal moves money from an account
+  to a pocket; it becomes spending when it is spent, if a screenshot of that ever
+  arrives. The two figures sit side by side and are never added.
+
+Card spending and cash spending are split as well: a purchase with no instrument
+attached is cash out of a pocket.
+
+### Adjustments and unknowns
+
+They are counted in **neither** total and shown on their own row with a count.
+An adjustment of unknown sign added to spending is a wrong number; one silently
+dropped is a total that does not add up. Until the user says what a transaction
+was, the honest report is "this much is unclassified".
+
+## Predicates
+
+`apps.reports.predicates` turns the same classification into `Q` objects, so a
+report can narrow in the database instead of fetching a month and discarding most
+of it. Python and SQL cannot disagree, because both read the same frozensets —
+there is no second list of type names anywhere. Type lists are sorted into the
+predicate so the generated SQL is identical run to run, which matters when
+somebody is reading a query log to work out why a total moved.
+
+A test asserts the predicates partition every transaction type: nothing selected
+twice, nothing left out.
+
+The category and merchant breakdowns use them to narrow in SQL. The alternative
+fetches a whole month's transfers and card payments only to discard them in
+Python, and fetching is the part a report pays for.
+
+### One currency check, in one place
+
+`grouping.amount_in` reads an amount and refuses a row whose `currency` column
+contradicts the currency encoded in its amount. Every report goes through it. The
+check was written three times before it lived in one place, and a drifting copy
+would have had one report refuse a row while another quietly lost it.
+
 ## Nothing is cached
 
 Every figure on a report page is derived from amounts encrypted per user. A
@@ -146,7 +199,7 @@ the trade (specification 22.5).
 
 ```bash
 uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
-uv run pytest tests/test_activity_reports.py
+uv run pytest tests/test_activity_reports.py tests/test_income_versus_spending.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen

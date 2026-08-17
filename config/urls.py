@@ -32,6 +32,7 @@ from apps.reports.views import (
     AccountReportView,
     CardReportView,
     MerchantReportView,
+    OverviewReportView,
     SpendingReportView,
 )
 from apps.transactions.views import (
@@ -118,6 +119,7 @@ urlpatterns = [
         MatchActionView.as_view(),
         name="match-action",
     ),
+    path("reports/", OverviewReportView.as_view(), name="report-overview"),
     path("reports/categories/", SpendingReportView.as_view(), name="report-categories"),
     path("reports/merchants/", MerchantReportView.as_view(), name="report-merchants"),
     path("reports/accounts/", AccountReportView.as_view(), name="report-accounts"),
