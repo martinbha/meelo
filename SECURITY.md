@@ -1,3 +1,5 @@
+# Encryption and Search
+
 # Field Encryption
 
 How a financial value is stored, and what that buys.
@@ -71,7 +73,55 @@ Rows written before encryption reached a model are still readable in clear (#163
 re-encrypts them). One module owns that distinction so no caller has to know
 about it.
 
+# Blind Indexes
+
+An encrypted column cannot be queried. A blind index is what makes exact matching
+possible anyway: a keyed digest of the normalized value, stored beside the
+ciphertext, that the database compares without ever holding the value.
+
+The word doing the work is **keyed**. A plain digest of a low-entropy value is
+not an index, it is a lookup table waiting to be built — there are only so many
+amounts a coffee costs, only so many dates in a year, and a six-digit approval
+code has a million possibilities. An attacker holding the database can hash all
+of them in seconds. HMAC with a key they do not have removes that entirely.
+
+## Three properties
+
+- **Domain separation.** A merchant named `4200` and an approval code of `4200`
+  produce different tokens, so a match in one column cannot imply a match in
+  another. Domains are a named set: a typo would otherwise create a second,
+  incompatible index that matches nothing and reports no error.
+- **Per-user scoping.** Two people who shop at the same café get different
+  tokens, so the database cannot reveal that they have anything in common.
+- **A visible version.** Every token is `<version>:<digest>`. The version sits
+  outside the digest deliberately — a reindex has to find old tokens *without*
+  the key, and the version is not a secret. A token with no version reports
+  version 0, which means "rebuild me" rather than raising mid-migration.
+
+## The search key
+
+Derived from the user's data key by `derive_blind_index_key`, never stored. Kept
+apart from the encryption key so an index leak does not hand over the plaintext,
+and derived rather than stored so no second secret has to be wrapped, rotated,
+and backed up alongside the first.
+
+It is a secret of the same standing as the encryption key.
+
+## Where they are used
+
+- **Merchant lookup** — the alias and rule matching in `CATEGORIES.md`, built from
+  the normalized name so three spellings share one token.
+- **Duplicate grouping** — `deterministic_key` covers an approval code, or the
+  instrument, date, amount, currency, and direction. Every one of those is low
+  entropy, which is exactly why it is keyed.
+
 ## Testing
+
+```bash
+uv run pytest tests/test_blind_indexes.py
+```
+
+## Field encryption testing
 
 ```bash
 uv run pytest tests/test_field_encryption.py tests/test_crypto.py
