@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.core.crypto import decrypt_model_field, is_encrypted_value
+from apps.core.crypto import is_encrypted_value
 from apps.core.value_objects import Money
-from apps.ledger.posting import deserialize_money
+from apps.transactions.money import read_money
 
 
 def is_encrypted(value: str) -> bool:
@@ -31,14 +31,11 @@ def is_encrypted(value: str) -> bool:
 def transaction_amount(transaction: Any, *, data_key: bytes | None = None) -> Money:
     """The amount on one transaction, decrypting only when it has to.
 
-    Raises rather than guessing when a row is encrypted and no key was supplied:
-    a missing key is a caller mistake, and answering zero would quietly shrink
-    a month.
+    Delegates to :func:`apps.transactions.money.read_money`, which owns the rule.
+    Two implementations of "how do I read an amount" is one too many for
+    something every total depends on — and it raises rather than guessing when a
+    row is encrypted and no key was supplied, because answering zero would
+    quietly shrink a month.
     """
 
-    stored = transaction.amount_encrypted
-    if not is_encrypted(stored):
-        return deserialize_money(stored)
-    if data_key is None:
-        raise ValueError("This transaction's amount is encrypted and no data key was supplied.")
-    return deserialize_money(decrypt_model_field(transaction, "amount_encrypted", key=data_key))
+    return read_money(transaction, "amount_encrypted", data_key=data_key)
