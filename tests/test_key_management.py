@@ -79,3 +79,33 @@ def test_user_key_access_rejects_other_users_and_wrong_master(user: Any) -> None
         get_user_data_key(user=user, actor=other, master_key=master_key)
     with pytest.raises(KeyManagementError, match="authentication"):
         get_user_data_key(user=user, actor=user, master_key=os.urandom(32))
+
+
+def test_the_search_key_is_derived_rather_than_stored() -> None:
+    """Every caller holding the data key reaches the same search key."""
+
+    from apps.core.key_management import derive_blind_index_key
+
+    data_key = os.urandom(32)
+
+    assert derive_blind_index_key(data_key) == derive_blind_index_key(data_key)
+
+
+def test_the_search_key_is_not_the_data_key() -> None:
+    """An index leak must not hand over the plaintext with it."""
+
+    from apps.core.key_management import derive_blind_index_key
+
+    data_key = os.urandom(32)
+    derived = derive_blind_index_key(data_key)
+
+    assert derived != data_key
+    assert len(derived) == 32
+    assert derived != derive_blind_index_key(os.urandom(32))
+
+
+def test_a_malformed_data_key_cannot_derive_a_search_key() -> None:
+    from apps.core.key_management import KeyManagementError, derive_blind_index_key
+
+    with pytest.raises(KeyManagementError):
+        derive_blind_index_key(b"short")

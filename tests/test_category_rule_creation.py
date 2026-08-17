@@ -122,8 +122,9 @@ def test_the_preview_counts_what_the_rule_would_reach(owner: Any) -> None:
     preview = preview_rule(user=owner, transaction=transaction, scope=RuleScope.MERCHANT)
 
     assert preview.pending_observations == 2
-    # Both drafts: the one being corrected and the other from the same merchant.
-    assert preview.draft_transactions == 2
+    # One: the other draft from this merchant. The transaction being corrected
+    # is handled by the correction itself, not by the rule.
+    assert preview.draft_transactions == 1
     assert preview.writes_a_rule
 
 
@@ -139,8 +140,9 @@ def test_the_preview_shows_the_history_that_stays_as_it_is(owner: Any) -> None:
 
     assert preview.confirmed_transactions == 1
     assert preview.manually_categorized == 1
-    # Neither is offered up for reclassification.
-    assert preview.draft_transactions == 1
+    # Neither is offered up for reclassification, and neither is the row being
+    # corrected.
+    assert preview.draft_transactions == 0
 
 
 def test_a_card_scope_counts_only_that_card(owner: Any) -> None:
@@ -150,9 +152,12 @@ def test_a_card_scope_counts_only_that_card(owner: Any) -> None:
     transaction = make_transaction(owner, account, payment_instrument=instrument)
     make_transaction(owner, account, payment_instrument=other)
 
+    same_card = make_transaction(owner, account, payment_instrument=instrument)
+
     narrow = preview_rule(user=owner, transaction=transaction, scope=RuleScope.MERCHANT_AND_CARD)
     wide = preview_rule(user=owner, transaction=transaction, scope=RuleScope.MERCHANT)
 
+    assert same_card.payment_instrument_id == instrument.pk
     assert narrow.draft_transactions == 1
     assert wide.draft_transactions == 2
 
@@ -382,3 +387,42 @@ def test_another_users_transaction_is_not_reachable(web_owner: Any) -> None:
     response = client.get(reverse("transaction-category", kwargs={"pk": transaction.pk}))
 
     assert response.status_code == 404
+
+
+def test_a_rule_written_from_review_fires_on_the_row_that_produced_it(
+    web_owner: Any, master_key: bytes
+) -> None:
+    """The rule and the transaction have to agree on one search key."""
+
+    from apps.categorization.services import categorize_transaction
+    from apps.core.key_management import derive_blind_index_key
+
+    account = make_account(web_owner, name_blind_index="rule-web-fires")
+    data_key = get_user_data_key(user=web_owner, actor=web_owner, master_key=master_key)
+    search_key = derive_blind_index_key(data_key)
+    corrected = make_transaction(
+        web_owner,
+        account,
+        merchant_blind_index=merchant_blind_index(MERCHANT, user_id=web_owner.pk, key=search_key),
+    )
+    later = make_transaction(
+        web_owner,
+        account,
+        merchant_blind_index=merchant_blind_index(MERCHANT, user_id=web_owner.pk, key=search_key),
+    )
+    coffee = make_category(web_owner, "coffee")
+    client = Client()
+    client.force_login(web_owner)
+
+    response = client.post(
+        reverse("transaction-category", kwargs={"pk": corrected.pk}),
+        data={
+            "category": str(coffee.pk),
+            "scope": RuleScope.MERCHANT.value,
+        },
+    )
+
+    assert response.status_code == 302
+    decision = categorize_transaction(transaction_id=later.pk, user=web_owner)
+    assert decision.category == coffee
+    assert decision.source == CategorySource.USER_RULE
