@@ -38,9 +38,26 @@ INCOME_TYPES: frozenset[str] = frozenset({_Type.INCOME})
 #: (specification 7.5, 17.4). It subtracts from the category it came from.
 REFUND_TYPES: frozenset[str] = frozenset({_Type.REFUND})
 
-#: Movements between accounts the user already owns. They change where the
-#: money sits and nothing else, so they belong to neither total.
-NEUTRAL_TYPES: frozenset[str] = frozenset({_Type.INTERNAL_TRANSFER})
+#: Money that moved without being earned or consumed. Every one of these is a
+#: change of location: between the user's own accounts, out to a card issuer for
+#: purchases already counted, from an account into a wallet, or against a loan
+#: principal. Counting any of them would inflate a month by the size of a
+#: movement the user did not make (specification 2.3, 25.1-25.2).
+NEUTRAL_TYPES: frozenset[str] = frozenset(
+    {
+        _Type.INTERNAL_TRANSFER,
+        _Type.BANK_TRANSFER,
+        _Type.CREDIT_CARD_PAYMENT,
+        _Type.CASH_WITHDRAWAL,
+        _Type.LOAN_PAYMENT,
+    }
+)
+
+#: Types nobody has decided about yet. Deliberately their own bucket rather than
+#: folded into any total: an adjustment of unknown sign added to spending is a
+#: wrong number, and one silently dropped is a number that does not add up.
+#: Reporting shows these separately (specification 25, #87).
+UNRESOLVED_TYPES: frozenset[str] = frozenset({_Type.ADJUSTMENT, _Type.UNKNOWN})
 
 
 def is_spending(transaction_type: str) -> bool:
@@ -74,3 +91,30 @@ def is_neutral(transaction_type: str) -> bool:
     """
 
     return transaction_type in NEUTRAL_TYPES
+
+
+def is_unresolved(transaction_type: str) -> bool:
+    """Whether this type is still waiting for someone to say what it was."""
+
+    return transaction_type in UNRESOLVED_TYPES
+
+
+#: Every transaction type, in exactly one bucket. A type missing from all of
+#: them would vanish from every total without anything saying so, and a type in
+#: two would be counted twice; the completeness test holds this shut.
+BUCKETS: dict[str, frozenset[str]] = {
+    "spending": SPENDING_TYPES,
+    "income": INCOME_TYPES,
+    "refund": REFUND_TYPES,
+    "neutral": NEUTRAL_TYPES,
+    "unresolved": UNRESOLVED_TYPES,
+}
+
+
+def bucket_of(transaction_type: str) -> str:
+    """Which bucket a type belongs to, for reporting to add it up once."""
+
+    for name, members in BUCKETS.items():
+        if transaction_type in members:
+            return name
+    raise ValueError(f"Transaction type {transaction_type!r} is in no reporting bucket.")
