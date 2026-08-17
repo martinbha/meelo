@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,15 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 FORMAT_VERSION = "v1"
+#: 96-bit nonces, drawn from ``os.urandom`` for every single encryption. Never a
+#: counter: a counter has to be persisted, and a counter that is restored from a
+#: backup repeats — which for GCM is not a degraded cipher but a broken one, since
+#: two messages under one key and nonce leak their XOR and the authentication key.
+#: Random 96-bit nonces instead carry a birthday bound: the chance of a collision
+#: stays below 2^-32 up to roughly 2^32 encryptions *per key*. Keys here are
+#: per-user and per-version, so that bound is four billion field writes for one
+#: person before rotation — far past anything this system will see, and #94 rotates
+#: long before it matters.
 NONCE_SIZE = 12
 TAG_SIZE = 16
 
@@ -100,16 +110,24 @@ def decrypt_value(envelope: str, *, key: bytes, context: FieldContext) -> str:
         raise InvalidCiphertextError("Encrypted field authentication failed.") from exc
 
 
-def model_field_context(instance: Any, field: str) -> FieldContext:
+def model_field_context(instance: Any, field: str, *, user_id: Any = None) -> FieldContext:
+    """The associated data binding one value to one field of one row.
+
+    ``user_id`` may be supplied for records that hold no owner of their own —
+    a ledger entry belongs to whoever owns its transaction. Passing it keeps the
+    ciphertext bound to a person without inventing a column, and the reader has
+    to pass the same one, so a value cannot be opened under the wrong owner.
+    """
+
     record_id = getattr(instance, "pk", None)
-    user_id = getattr(instance, "user_id", None)
-    if record_id is None or user_id is None:
+    owner = user_id if user_id is not None else getattr(instance, "user_id", None)
+    if record_id is None or owner is None:
         raise EncryptionError("Encrypted model fields require record and user identifiers.")
     return FieldContext(
         model=f"{instance._meta.app_label}.{instance._meta.model_name}",
         record_id=str(record_id),
         field=field,
-        user_id=str(user_id),
+        user_id=str(owner),
     )
 
 
@@ -129,11 +147,43 @@ def encrypt_model_field(
     )
 
 
-def decrypt_model_field(instance: Any, field: str, *, key: bytes) -> str:
+def encrypt_model_fields(
+    instance: Any,
+    values: Mapping[str, str],
+    *,
+    key: bytes,
+    key_version: int,
+    user_id: Any = None,
+) -> None:
+    """Encrypt several fields onto an instance in place.
+
+    Called after the instance has an identity, because the associated data binds
+    each value to its record: a ciphertext moved to another row, or another
+    field, or another user, fails to open rather than decrypting into the wrong
+    place. An empty value is left alone — encrypting "" would store a ciphertext
+    where the absence of a value is the value.
+    """
+
+    for field, plaintext in values.items():
+        if not plaintext:
+            continue
+        setattr(
+            instance,
+            field,
+            encrypt_value(
+                plaintext,
+                key=key,
+                context=model_field_context(instance, field, user_id=user_id),
+                key_version=key_version,
+            ),
+        )
+
+
+def decrypt_model_field(instance: Any, field: str, *, key: bytes, user_id: Any = None) -> str:
     return decrypt_value(
         getattr(instance, field),
         key=key,
-        context=model_field_context(instance, field),
+        context=model_field_context(instance, field, user_id=user_id),
     )
 
 
@@ -150,7 +200,9 @@ def is_encrypted_value(value: str) -> bool:
     return value.startswith(f"{FORMAT_VERSION}.")
 
 
-def read_model_field(instance: Any, field: str, *, key: bytes | None = None) -> str:
+def read_model_field(
+    instance: Any, field: str, *, key: bytes | None = None, user_id: Any = None
+) -> str:
     """Read a field that may or may not be encrypted yet.
 
     Raises when the field is encrypted and no key was supplied, rather than
@@ -163,4 +215,4 @@ def read_model_field(instance: Any, field: str, *, key: bytes | None = None) -> 
         return value
     if key is None:
         raise EncryptionError(f"Field {field!r} is encrypted and no key was supplied.")
-    return decrypt_model_field(instance, field, key=key)
+    return decrypt_model_field(instance, field, key=key, user_id=user_id)
