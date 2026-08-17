@@ -9,6 +9,14 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": ":memory:",
-    }
+    },
+    # Kept here as well as in production so the two aliases are exercised. The
+    # mirror stops Django building a second test database for what is one
+    # database reached by two roles.
+    "migration": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+        "TEST": {"MIRROR": "default"},
+    },
 }
 DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-tests")

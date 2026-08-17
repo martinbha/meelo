@@ -69,17 +69,38 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+_DATABASE_COMMON = {
+    "ENGINE": os.getenv("DATABASE_ENGINE", "django.db.backends.postgresql"),
+    "NAME": os.getenv("POSTGRES_DB", "finance_ocr"),
+    "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+    "PORT": os.getenv("POSTGRES_PORT", "5432"),
+}
+
 DATABASES = {
+    # What the web and worker processes use. This role can read and write rows
+    # and nothing else: it cannot create a table, drop one, or grant itself more.
     "default": {
-        "ENGINE": os.getenv("DATABASE_ENGINE", "django.db.backends.postgresql"),
-        "NAME": os.getenv("POSTGRES_DB", "finance_ocr"),
+        **_DATABASE_COMMON,
         "USER": os.getenv("POSTGRES_USER", "finance_app"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
         "CONN_MAX_AGE": int(os.getenv("DATABASE_CONN_MAX_AGE", "60")),
-    }
+    },
+    # Schema changes only, and only while a deploy is running. Kept apart so the
+    # process that is exposed to the network is never the one that can drop a
+    # table (specification 21).
+    "migration": {
+        **_DATABASE_COMMON,
+        "USER": os.getenv("POSTGRES_MIGRATION_USER", os.getenv("POSTGRES_USER", "finance_app")),
+        "PASSWORD": os.getenv("POSTGRES_MIGRATION_PASSWORD", os.getenv("POSTGRES_PASSWORD", "")),
+        # A deploy is short. Holding connections open afterwards would leave the
+        # privileged role connected for the life of the container.
+        "CONN_MAX_AGE": 0,
+    },
 }
+
+#: Both aliases point at one database, so Django must not try to create a second
+#: test database or run migrations twice.
+DATABASES["migration"]["TEST"] = {"MIRROR": "default"}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = os.getenv("DJANGO_TIME_ZONE", "Asia/Seoul")
