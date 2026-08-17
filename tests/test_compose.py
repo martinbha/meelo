@@ -71,12 +71,38 @@ def test_the_role_bootstrap_grants_least_privilege() -> None:
     assert script.count("ALTER DEFAULT PRIVILEGES") == 3
 
 
+def test_role_passwords_are_never_interpolated_into_sql() -> None:
+    """An apostrophe in a password would otherwise be accepted as SQL."""
+
+    script = (PROJECT_ROOT / "deploy" / "postgres" / "init" / "10-roles.sh").read_text()
+
+    for name in (
+        "POSTGRES_APP_PASSWORD",
+        "POSTGRES_MIGRATION_PASSWORD",
+        "POSTGRES_BACKUP_PASSWORD",
+    ):
+        # Passed as a psql variable, never pasted into the statement text.
+        assert f"${{{name}}}" not in script
+        assert f'--set {name.split("_")[1].lower()}_password="${name}"' in script
+    # And quoted by psql with %L rather than by hand.
+    assert script.count("PASSWORD %L") == 3
+
+
+def test_django_reads_the_application_role_outside_compose() -> None:
+    """Running without Docker still has to connect as something."""
+
+    env = (PROJECT_ROOT / ".env.example").read_text()
+
+    assert "POSTGRES_USER=finance_app" in env
+    assert "POSTGRES_PASSWORD=" in env
+
+
 def test_the_bootstrap_is_idempotent() -> None:
     """A container restart over an existing volume must not fail."""
 
     script = (PROJECT_ROOT / "deploy" / "postgres" / "init" / "10-roles.sh").read_text()
 
-    assert script.count("IF NOT EXISTS (SELECT FROM pg_roles") == 3
+    assert script.count("WHERE NOT EXISTS (SELECT FROM pg_roles") == 3
 
 
 def test_every_role_password_is_required_rather_than_defaulted() -> None:

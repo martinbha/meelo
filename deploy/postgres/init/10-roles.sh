@@ -21,20 +21,20 @@ set -eu
 : "${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD must be set}"
 : "${POSTGRES_BACKUP_PASSWORD:?POSTGRES_BACKUP_PASSWORD must be set}"
 
-psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set ON_ERROR_STOP=1 <<SQL
-DO \$\$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_migrate') THEN
-        CREATE ROLE finance_migrate LOGIN PASSWORD '${POSTGRES_MIGRATION_PASSWORD}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_app') THEN
-        CREATE ROLE finance_app LOGIN PASSWORD '${POSTGRES_APP_PASSWORD}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_backup') THEN
-        CREATE ROLE finance_backup LOGIN PASSWORD '${POSTGRES_BACKUP_PASSWORD}';
-    END IF;
-END
-\$\$;
+# Passwords are passed as psql variables and quoted with :'name', which escapes
+# them properly. Interpolating them into the SQL text with the shell would break
+# on an apostrophe and would accept one as SQL.
+psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    --set ON_ERROR_STOP=1 \
+    --set app_password="$POSTGRES_APP_PASSWORD" \
+    --set migration_password="$POSTGRES_MIGRATION_PASSWORD" \
+    --set backup_password="$POSTGRES_BACKUP_PASSWORD" <<SQL
+SELECT format('CREATE ROLE finance_migrate LOGIN PASSWORD %L', :'migration_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_migrate') \gexec
+SELECT format('CREATE ROLE finance_app LOGIN PASSWORD %L', :'app_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_app') \gexec
+SELECT format('CREATE ROLE finance_backup LOGIN PASSWORD %L', :'backup_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_backup') \gexec
 
 -- Nobody connects to anything they were not given.
 REVOKE ALL ON DATABASE ${POSTGRES_DB} FROM PUBLIC;
