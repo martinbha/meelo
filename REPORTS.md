@@ -187,6 +187,33 @@ contradicts the currency encoded in its amount. Every report goes through it. Th
 check was written three times before it lived in one place, and a drifting copy
 would have had one report refuse a row while another quietly lost it.
 
+## Outstanding work
+
+Every other report answers "what did I spend". `apps.reports.workload` answers the
+question that has to come first: **is what I am looking at complete?** A month's
+total is only as trustworthy as the pile of unreviewed screenshots behind it, and
+a user who cannot see that pile has no way to tell a small month from an
+unfinished one.
+
+Four groupings, plus a per-screenshot list:
+
+- **By review status** — waiting, accepted, corrected, rejected, merged.
+- **By confidence** — bands, not an average. One row parsed at 0.2 among fifty at
+  0.98 is the row that matters, and an average of 0.96 hides it. High-risk rows
+  are counted separately, since those refuse acceptance without explicit
+  confirmation.
+- **By what needs checking** — read straight from `queue_counts`, so this page and
+  the review queue can never disagree about how many rows are waiting.
+- **By reconciliation status** — proposed, confirmed, dismissed.
+
+**Every count is a link.** A number a user cannot act on tells them they have work
+without telling them where it is, which is worse than not showing it: they now
+know the total is incomplete and still cannot fix it.
+
+**Rejected rows stay visible.** A rejection is a decision the user made, so it is
+shown with the note that it is never counted in a total — and it genuinely cannot
+be, because reports read canonical transactions and a rejected row has none.
+
 ## Nothing is cached
 
 Every figure on a report page is derived from amounts encrypted per user. A
@@ -200,6 +227,7 @@ the trade (specification 22.5).
 ```bash
 uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
 uv run pytest tests/test_activity_reports.py tests/test_income_versus_spending.py
+uv run pytest tests/test_workload_report.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen
