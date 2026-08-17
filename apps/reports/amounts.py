@@ -17,17 +17,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.core.crypto import FORMAT_VERSION, decrypt_model_field
+from apps.core.crypto import decrypt_model_field, is_encrypted_value
 from apps.core.value_objects import Money
 from apps.ledger.posting import deserialize_money
-
-_ENVELOPE_PREFIX = f"{FORMAT_VERSION}."
 
 
 def is_encrypted(value: str) -> bool:
     """Whether a stored amount is a ciphertext envelope rather than plaintext."""
 
-    return value.startswith(_ENVELOPE_PREFIX)
+    return is_encrypted_value(value)
 
 
 def transaction_amount(transaction: Any, *, data_key: bytes | None = None) -> Money:
