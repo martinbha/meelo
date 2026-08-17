@@ -18,6 +18,7 @@ from django.db import IntegrityError
 from django.db import transaction as db_transaction
 
 from apps.core.errors import ForbiddenError
+from apps.core.models import AuditEvent
 from apps.ledger.models import LedgerEntry
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation
@@ -297,6 +298,15 @@ def test_an_acceptance_that_lost_the_race_still_links_the_row(owner: Any) -> Non
     assert rows[0].canonical_transaction_id == winner.pk
     assert rows[0].review_status == ImportedObservation.ReviewStatus.ACCEPTED
     assert CanonicalTransaction.objects.filter(user=owner).count() == 1
+
+    # Linking the row changed state, so it is audited like any other decision —
+    # and the log describes the transaction that exists, not the one this
+    # attempt tried to make.
+    event = AuditEvent.objects.filter(user=owner, event_type="observation_accepted").first()
+    assert event is not None
+    assert event.metadata["canonical_transaction_id"] == str(winner.pk)
+    assert event.metadata["converged"] is True
+    assert event.metadata["posted"] is False
 
 
 def test_a_retried_transfer_converges_on_one_event(owner: Any) -> None:
