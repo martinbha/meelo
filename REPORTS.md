@@ -214,6 +214,52 @@ know the total is incomplete and still cannot fix it.
 shown with the note that it is never counted in a total — and it genuinely cannot
 be, because reports read canonical transactions and a rejected row has none.
 
+## Exports
+
+An export is the one point where financial history leaves the encrypted store in
+readable form, so three things matter more here than anywhere else.
+
+**Amounts stay in minor units.** `42900`, never `429.00`. KRW has no minor unit,
+so a decimal point would be a lie — and a spreadsheet opening the file would round
+it again. The currency is on every row so a reader can divide if they want to.
+
+**The field list is fixed and documented** (`EXPORT_FIELDS`). An export whose
+columns move between versions cannot be diffed against last month's, which is
+most of why people export.
+
+**A plaintext file is temporary.** CSV and JSON exports are deleted an hour after
+generation whether or not anybody downloaded them. The reason they exist — so a
+person can save the data elsewhere — is finished within minutes; the risk is not.
+`purge_expired_exports`, wired to the `purge_expired_exports` management command,
+runs without a user, because the file that matters is the one the user forgot
+about.
+
+### The encrypted archive
+
+The one form safe to keep. A passphrase is stretched with **Argon2id** (64 MiB,
+3 passes) into an AES-256-GCM key; the salt and nonce travel with the ciphertext
+and the format header is authenticated as associated data, so an edited header
+fails to open rather than being read the wrong way. Two archives of identical data
+differ, because the salt and nonce are fresh each time.
+
+The passphrase is never stored. An archive whose passphrase is lost cannot be
+opened by anyone, including the user — said on the page rather than discovered
+later.
+
+### Getting one
+
+`create_export` requires a **recent sign-in**, measured from `last_login`. An
+abandoned session must not be enough to turn a whole financial history into a
+file. That is blunt until an explicit re-authentication prompt exists (#175): it
+currently means a sign-in within the window rather than a re-entered password.
+
+Downloads resolve through the owner's own queryset, so another user's export is
+indistinguishable from one that never existed. The export root is `0700` and each
+file `0600`.
+
+The audit log records the format, row count, byte size, and date range — never an
+amount, a merchant, or the passphrase.
+
 ## Nothing is cached
 
 Every figure on a report page is derived from amounts encrypted per user. A
@@ -227,7 +273,7 @@ the trade (specification 22.5).
 ```bash
 uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
 uv run pytest tests/test_activity_reports.py tests/test_income_versus_spending.py
-uv run pytest tests/test_workload_report.py
+uv run pytest tests/test_workload_report.py tests/test_exports.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen
