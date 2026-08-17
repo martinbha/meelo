@@ -124,6 +124,35 @@ Rules worth knowing before you extend any of them:
 Reconciliation resolves several views of one real event. It **proposes**;
 it never decides.
 
+### The candidate queue
+
+Every proposal arrives with its reasons attached. A score alone would leave a
+reviewer nothing to check but the number, and deferring to the number is the one
+thing this queue exists to prevent. `match_features_json_encrypted` stores the
+feature *names* that produced the score — never values, so a match row cannot
+become a second unencrypted copy of the data it describes — and
+`apps.reconciliation.explanations` turns them into sentences.
+
+`tests/test_reconciliation_queue.py` reads the feature literals out of the
+scoring modules with `ast` and fails if any lacks a sentence, so a new signal
+cannot quietly reach a reviewer as a bare identifier.
+
+The queue also names what confirming would produce: an internal transfer becomes
+`internal_transfer`, a refund match becomes `refund`, and so on. A duplicate
+names nothing, because merging two views of one event does not decide what the
+event was.
+
+`link_observations` records a relationship the matcher missed — a refund whose
+merchant OCR'd badly, a transfer one app dated a week late. It scores 100 with a
+single `manual_link` reason, so the queue says the evidence is the user's own
+judgement rather than implying the matcher noticed something. Linking creates a
+candidate; confirming it is still a separate step through the same workflow as
+any other.
+
+A manual link is also the **only** thing that reopens a rejected pairing.
+`record_match` leaves decided candidates alone, so re-running detection can never
+resurrect one — but the person who dismissed it may change their mind.
+
 ### Duplicates
 
 Two mechanisms, deliberately separate:
