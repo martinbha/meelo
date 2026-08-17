@@ -45,9 +45,10 @@ class WorkItem:
     key: str
     label: str
     count: int
-    #: Query string for the review queue, or empty when the link is elsewhere.
+    #: Query string appended to the link, or empty for the unfiltered view.
     query: str = ""
-    #: Named URL this count links to.
+    #: Named URL this count links to. The template resolves it, so a count and
+    #: its destination stay together rather than the page deciding per section.
     url_name: str = "review-queue"
     note: str = ""
 
