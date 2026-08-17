@@ -101,6 +101,25 @@ def test_different_merchants_keep_different_keys(left: str, right: str) -> None:
     assert normalize_merchant(left) != normalize_merchant(right)
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["Baltdrop", "Vinci", "Incheon", "Corporate Coffee", "결제단"],
+)
+def test_a_company_form_inside_a_name_is_left_alone(name: str) -> None:
+    """Stripping these as substrings would turn "Baltdrop" into "ba rop"."""
+
+    normalized = normalize_merchant(name)
+
+    assert normalized == normalize_merchant(name.casefold())
+    assert len(normalized) >= len(name.replace(" ", "")) - 1
+
+
+def test_a_company_form_standing_alone_is_removed() -> None:
+    assert normalize_merchant("Corner Shop Ltd") == normalize_merchant("Corner Shop")
+    assert normalize_merchant("주식회사 이마트") == normalize_merchant("이마트")
+    assert normalize_merchant("이마트주식회사") == normalize_merchant("이마트")
+
+
 def test_a_name_that_normalizes_to_nothing_is_refused() -> None:
     """An empty key would collide with every other empty key."""
 
