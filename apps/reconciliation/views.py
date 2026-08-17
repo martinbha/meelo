@@ -22,6 +22,7 @@ from apps.observations.review import decrypt_observation
 
 from .models import ReconciliationMatch
 from .services import confirm_duplicate_match, confirm_match, open_matches, reject_match
+from .transfers import confirm_internal_transfer
 
 
 class MatchQueueView(LoginRequiredMixin, View):
@@ -95,6 +96,15 @@ class MatchActionView(LoginRequiredMixin, View):
                     return redirect("match-detail", pk=match.pk)
                 confirm_duplicate_match(match.pk, user=request.user, winner_id=winner_id)
                 messages.success(request, "The duplicate was merged.")
+            elif match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
+                confirm_internal_transfer(
+                    match.pk,
+                    user=request.user,
+                    data_key=get_user_data_key(
+                        user=request.user, actor=request.user, master_key=load_master_key()
+                    ),
+                )
+                messages.success(request, "The transfer was recorded as one event.")
             else:
                 confirm_match(match.pk, user=request.user)
                 messages.success(request, "The match was confirmed.")

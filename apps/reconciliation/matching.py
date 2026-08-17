@@ -28,6 +28,8 @@ CARD_BANK_WINDOW = timedelta(days=3)
 SETTLEMENT_WINDOW = timedelta(days=45)
 #: Two sides of an internal transfer are recorded within a day of each other.
 TRANSFER_WINDOW = timedelta(days=1)
+#: How far a reviewer may relax that window when two apps disagree on the date.
+TRANSFER_REVIEW_WINDOW = timedelta(days=5)
 #: A refund can follow its purchase by a long time.
 REFUND_WINDOW = timedelta(days=120)
 
@@ -95,6 +97,14 @@ def _same_amount(left: ObservationFacts, right: ObservationFacts) -> bool:
         and left.amount_minor == right.amount_minor
         and left.currency == right.currency
     )
+
+
+def _close_amount(left: ObservationFacts, right: ObservationFacts, tolerance_minor: int) -> bool:
+    if left.amount_minor is None or right.amount_minor is None:
+        return False
+    if left.currency != right.currency:
+        return False
+    return abs(left.amount_minor - right.amount_minor) <= tolerance_minor
 
 
 def _contains(text: str, markers: Sequence[str]) -> bool:
@@ -299,10 +309,39 @@ def summarize_settlement(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class TransferTolerance:
+    """How far apart a reviewer will let the two sides of one move drift.
+
+    Two apps routinely disagree about the date a transfer landed, and a wire
+    fee can shave a few hundred won off the arriving side. A tolerant search
+    finds those pairs, but everything it returns scores below
+    :data:`STRONG_MATCH_SCORE`, so a person still has to confirm it.
+    """
+
+    amount_minor: int = 0
+    window: timedelta = TRANSFER_REVIEW_WINDOW
+
+    def __post_init__(self) -> None:
+        if self.amount_minor < 0:
+            raise ValueError("An amount tolerance cannot be negative.")
+        if self.window < timedelta(0):
+            raise ValueError("A date window cannot be negative.")
+
+
 def match_internal_transfer(
-    outgoing: ObservationFacts, incoming: ObservationFacts
+    outgoing: ObservationFacts,
+    incoming: ObservationFacts,
+    *,
+    tolerance: TransferTolerance | None = None,
 ) -> MatchProposal | None:
-    """Propose a transfer when two owned accounts show opposite sides of one move."""
+    """Propose a transfer when two owned accounts show opposite sides of one move.
+
+    Without a ``tolerance`` only an exact amount within
+    :data:`TRANSFER_WINDOW` pairs. Supplying one widens the search for a
+    reviewer who already believes two rows are the same move, at a score that
+    always needs their confirmation.
+    """
 
     if outgoing.user_id != incoming.user_id:
         return None
@@ -312,27 +351,58 @@ def match_internal_transfer(
         return None
     if incoming.direction != ImportedObservation.Direction.CREDIT:
         return None
-    if not _same_amount(outgoing, incoming):
-        return None
-    if not _within(outgoing.occurred_at, incoming.occurred_at, TRANSFER_WINDOW):
-        return None
-    # Both sides must be owned accounts, and they must be different ones:
-    # a row cannot transfer to itself.
+    # Both sides must be owned accounts, and they must be different ones.
+    # Money leaving for someone else's account has no owned counterpart to
+    # arrive in, which is what keeps an external payment from being read as an
+    # internal move; and a row cannot transfer to itself.
     if outgoing.account_id is None or incoming.account_id is None:
         return None
     if outgoing.account_id == incoming.account_id:
         return None
 
-    score = 70
-    features = ["opposite_directions", "exact_amount", "nearby_date", "both_accounts_owned"]
-    if outgoing.occurred_at == incoming.occurred_at:
+    exact_amount = _same_amount(outgoing, incoming)
+    if exact_amount and _within(outgoing.occurred_at, incoming.occurred_at, TRANSFER_WINDOW):
+        score = 70
+        features = ["opposite_directions", "exact_amount", "nearby_date", "both_accounts_owned"]
+        if outgoing.occurred_at == incoming.occurred_at:
+            score += 15
+            features.append("same_date")
+        return MatchProposal(
+            outgoing.observation_id,
+            incoming.observation_id,
+            "internal_transfer",
+            min(100, score),
+            tuple(features),
+        )
+
+    if tolerance is None:
+        return None
+    if not _within(outgoing.occurred_at, incoming.occurred_at, tolerance.window):
+        return None
+    if not _close_amount(outgoing, incoming, tolerance.amount_minor):
+        return None
+
+    # Deliberately capped below STRONG_MATCH_SCORE: a pair found only because
+    # the reviewer widened the search is evidence of their intent, not of the
+    # transfer.
+    score = 40
+    features = ["opposite_directions", "both_accounts_owned", "reviewer_tolerance"]
+    if exact_amount:
         score += 15
+        features.append("exact_amount")
+    else:
+        features.append("approximate_amount")
+    if outgoing.occurred_at == incoming.occurred_at:
+        score += 10
         features.append("same_date")
+    elif _within(outgoing.occurred_at, incoming.occurred_at, TRANSFER_WINDOW):
+        score += 5
+        features.append("nearby_date")
     return MatchProposal(
         outgoing.observation_id,
         incoming.observation_id,
         "internal_transfer",
-        min(100, score),
+        score,
         tuple(features),
     )
 

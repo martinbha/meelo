@@ -264,7 +264,7 @@ def confirm_duplicate_match(match_id: Any, *, user: Any, winner_id: Any) -> Reco
     confirmation is a no-op rather than a second merge.
     """
 
-    match = _lock_match(match_id, user)
+    match = lock_match(match_id, user)
     if match.match_type != ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION:
         raise ReconciliationError("Only duplicate candidates can be merged.")
 
@@ -307,9 +307,14 @@ def confirm_duplicate_match(match_id: Any, *, user: Any, winner_id: Any) -> Reco
 def confirm_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     """Confirm a non-duplicate relationship, such as a settlement or transfer."""
 
-    match = _lock_match(match_id, user)
+    match = lock_match(match_id, user)
     if match.match_type == ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION:
         raise ReconciliationError("Duplicate candidates are confirmed through the merge workflow.")
+    if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
+        # A transfer confirmed here would leave both sides free to be accepted
+        # separately, which is exactly the double count the match exists to
+        # prevent. It goes through apps.reconciliation.transfers instead.
+        raise ReconciliationError("Internal transfers are confirmed through the transfer workflow.")
     if match.status == ReconciliationMatch.Status.CONFIRMED:
         return match
     if match.status == ReconciliationMatch.Status.REJECTED:
@@ -332,7 +337,7 @@ def confirm_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
 def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     """Dismiss a candidate. Both observations stay exactly as they were."""
 
-    match = _lock_match(match_id, user)
+    match = lock_match(match_id, user)
     if match.status == ReconciliationMatch.Status.REJECTED:
         return match
     if match.status == ReconciliationMatch.Status.CONFIRMED:
@@ -351,7 +356,9 @@ def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     return match
 
 
-def _lock_match(match_id: Any, user: Any) -> ReconciliationMatch:
+def lock_match(match_id: Any, user: Any) -> ReconciliationMatch:
+    """Take a row lock on one candidate, refusing another user's."""
+
     match = (
         ReconciliationMatch.objects.select_for_update().filter(pk=match_id, user_id=user.pk).first()
     )
