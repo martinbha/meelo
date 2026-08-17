@@ -20,7 +20,7 @@ from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
@@ -134,6 +134,45 @@ def unmatched_refunds(user: Any) -> QuerySet[ImportedObservation]:
         .exclude(pk__in=claimed_ids)
         .order_by("-occurred_at", "row_index", "pk")
     )
+
+
+def _dismiss_competing_candidates(
+    confirmed: ReconciliationMatch, *, refund: ImportedObservation, user: Any
+) -> list[ReconciliationMatch]:
+    """Close the other purchases this refund was also paired with.
+
+    One refund can resemble several purchases at once — the same shop, the same
+    amount, a fortnight apart. Once the user has said which one it reverses the
+    rest are answered, and leaving them open would ask the same question again
+    every time the queue is opened.
+    """
+
+    competing = list(
+        ReconciliationMatch.objects.select_for_update()
+        .filter(
+            user_id=user.pk,
+            match_type=ReconciliationMatch.MatchType.REFUND_MATCH,
+            status=ReconciliationMatch.Status.PROPOSED,
+        )
+        .filter(Q(left_observation_id=refund.pk) | Q(right_observation_id=refund.pk))
+        .exclude(pk=confirmed.pk)
+    )
+    for candidate in competing:
+        candidate.status = ReconciliationMatch.Status.REJECTED
+        candidate.reviewed_by = user
+        candidate.reviewed_at = confirmed.reviewed_at
+        candidate.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        record_audit_event(
+            user=user,
+            event_type="reconciliation_match_rejected",
+            obj=candidate,
+            metadata={
+                "match_type": candidate.match_type,
+                "score": candidate.match_score,
+                "superseded_by": str(confirmed.pk),
+            },
+        )
+    return competing
 
 
 def _purchase_category(purchase: ImportedObservation) -> Any:
@@ -260,6 +299,7 @@ def confirm_refund_match(
     match.reviewed_by = user
     match.reviewed_at = refund.reviewed_at
     match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+    superseded = _dismiss_competing_candidates(match, refund=refund, user=user)
 
     record_audit_event(
         user=user,
@@ -270,6 +310,7 @@ def confirm_refund_match(
             "refund_observation_id": str(refund.pk),
             "purchase_observation_id": str(purchase.pk),
             "category_inherited": canonical.category_id is not None,
+            "superseded_candidates": len(superseded),
             "score": match.match_score,
             "posted": ledger_accounts is not None,
         },
