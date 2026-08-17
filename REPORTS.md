@@ -268,12 +268,72 @@ encrypted store, so the report views carry `never_cache` and write nothing of
 their own. The pages are cheap to rebuild and expensive to leak, which settles
 the trade (specification 22.5).
 
+## What a report costs
+
+The database cannot add encrypted amounts up, so the application decrypts row by
+row. The obvious fix is to cache the totals, and that is the one thing this design
+cannot afford: a cached total is a plaintext copy of somebody's finances sitting
+outside the encrypted store.
+
+So `apps.reports.benchmark` measures rather than guesses, splitting a report into
+the three costs that behave differently:
+
+| Stage | What it is | How you fix it |
+| --- | --- | --- |
+| `query` | Fetching rows | Indexes, narrower predicates |
+| `decrypt` | One AES-GCM open per row | Decrypt fewer rows |
+| `aggregate` | The arithmetic | Never the problem |
+
+`ReportTimings.dominant_cost` names which one leads, so a slow report says what to
+fix instead of inviting a guess.
+
+### The budget
+
+Milliseconds per 1,000 transactions, enforced by
+`tests/test_report_performance.py` over a fixture month of 600 genuinely
+encrypted rows in a realistic type mix:
+
+| Stage | Budget |
+| --- | --- |
+| `query_ms` | 250 |
+| `decrypt_ms` | 750 |
+| `aggregate_ms` | 100 |
+| `total_ms` | 1000 |
+
+Generous on purpose. These numbers decide whether to add a cache, and a tight
+budget would argue for one prematurely.
+
+### When a snapshot would be justified
+
+Two conditions, both required (`snapshots_would_help`):
+
+1. **At least 50,000 transactions** in the period. Below that, decrypting per
+   request is cheaper than the risk a stored total introduces.
+2. **Decryption is the dominant cost.** A slow query is fixed with an index, not
+   with a second copy of the data.
+
+Even then a snapshot would have to be encrypted itself, and it would have to be
+invalidated by every correction — which is most of what a review queue does. The
+bar is deliberately high.
+
+### Correctness under encryption
+
+The same fixture asserts that the buckets *partition* the money: their sum equals
+the plain total of every decrypted amount, so a row counted twice or dropped moves
+a figure. Amounts are distinct (1000, 1001, 1002…) precisely so that it does.
+
+Totals are also asserted unchanged after re-encrypting every amount under a new
+key version — and a month where only *some* rows were rotated raises rather than
+reporting a smaller total, because half-reading a month is the failure that would
+otherwise look like a quiet month.
+
 ## Testing
 
 ```bash
 uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
 uv run pytest tests/test_activity_reports.py tests/test_income_versus_spending.py
 uv run pytest tests/test_workload_report.py tests/test_exports.py
+uv run pytest tests/test_report_performance.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen
