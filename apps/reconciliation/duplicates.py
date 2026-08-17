@@ -21,6 +21,7 @@ from typing import Any
 
 from rapidfuzz.fuzz import ratio
 
+from apps.core.blind_index import blind_index
 from apps.observations.models import ImportedObservation
 
 #: Feature weights from specification 16.3.
@@ -101,12 +102,19 @@ class DuplicateScore:
         return {"score": self.score, "matched": list(self.features)}
 
 
-def deterministic_key(facts: ObservationFacts) -> str:
+def deterministic_key(facts: ObservationFacts, *, search_key: bytes | None = None) -> str:
     """A stable key for the rows that can be matched without judgement.
 
     An approval code identifies one authorisation exactly, so it takes
     precedence. Otherwise the key is the tuple a bank statement would use to
     identify a line: instrument, date, signed amount.
+
+    Keyed with the user's search key when one is supplied, and that is how it
+    should always be called. Everything in this key is low entropy — a six-digit
+    approval code, a date, an amount a coffee might cost — so a plain digest of
+    it is a lookup table an attacker can build in seconds. Without a key the
+    grouping still works in memory for one request, but the value must never be
+    stored (specification 22.4).
     """
 
     if facts.approval_code:
@@ -125,15 +133,19 @@ def deterministic_key(facts: ObservationFacts) -> str:
                 facts.direction,
             )
         )
+    if search_key is not None:
+        return blind_index("observation_row", payload, user_id=facts.user_id, key=search_key)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def group_by_key(facts: Iterable[ObservationFacts]) -> dict[str, list[ObservationFacts]]:
+def group_by_key(
+    facts: Iterable[ObservationFacts], *, search_key: bytes | None = None
+) -> dict[str, list[ObservationFacts]]:
     """Group observations that share a deterministic key."""
 
     grouped: dict[str, list[ObservationFacts]] = {}
     for item in facts:
-        key = deterministic_key(item)
+        key = deterministic_key(item, search_key=search_key)
         if not key:
             continue
         grouped.setdefault(key, []).append(item)
@@ -224,6 +236,7 @@ def find_duplicate_candidates(
     facts: Sequence[ObservationFacts],
     *,
     minimum_score: int = REVIEW_CANDIDATE_SCORE,
+    search_key: bytes | None = None,
 ) -> tuple[DuplicateCandidate, ...]:
     """Pair up observations that may be the same transaction.
 
@@ -233,7 +246,7 @@ def find_duplicate_candidates(
     """
 
     keyed_pairs: set[tuple[Any, Any]] = set()
-    for group in group_by_key(facts).values():
+    for group in group_by_key(facts, search_key=search_key).values():
         for index, left in enumerate(group):
             for right in group[index + 1 :]:
                 keyed_pairs.add((left.observation_id, right.observation_id))
