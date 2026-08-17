@@ -72,6 +72,13 @@ class CanonicalTransaction(models.Model):
         null=True,
     )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    #: Deterministic key of whatever produced this transaction, so a retried
+    #: worker or a double-clicked button converges on one row instead of
+    #: creating a second. Blank for manual entry, which has no natural origin —
+    #: two identical manual entries are a legitimate thing for a person to make.
+    #: Stored in clear, so it carries an origin and an identifier and nothing
+    #: a database reader should not learn.
+    source_idempotency_key = models.CharField(max_length=128, blank=True)
     notes_encrypted = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -90,6 +97,15 @@ class CanonicalTransaction(models.Model):
 
     class Meta:
         ordering = ("-occurred_at", "-created_at")
+        constraints = [
+            # The backstop behind the row locks: even a caller that never took
+            # one cannot produce a second transaction for the same origin.
+            models.UniqueConstraint(
+                fields=("user", "source_idempotency_key"),
+                condition=~models.Q(source_idempotency_key=""),
+                name="transaction_source_idempotency_unique",
+            ),
+        ]
         indexes = [
             models.Index(fields=("user", "occurred_at"), name="transaction_user_date_idx"),
             models.Index(fields=("user", "status"), name="transaction_user_status_idx"),
