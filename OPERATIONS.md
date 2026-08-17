@@ -234,3 +234,59 @@ is not testing what will happen.
 
 Step 4 is the one that matters. Rows restored without the master key load fine and
 stay unreadable, which looks like success until somebody opens a report.
+
+## Metrics and observability
+
+```bash
+uv run python manage.py operational_status
+uv run python manage.py operational_status --json
+uv run python manage.py operational_status --emit-metrics
+```
+
+Reports queue depth, in-flight documents, failures, cleanup failures, unreviewed
+observations, and database latency. Queue depth counts what has **not started** —
+a queue that looks empty because everything is mid-OCR is not an empty queue.
+
+### What a metric may carry
+
+Operational metrics and financial privacy pull in opposite directions: the useful
+label is always the specific one, and the specific one is what turns a metrics
+pipeline into an unencrypted copy of somebody's finances, sitting wherever metrics
+go and outliving the database's retention.
+
+`apps.core.metrics` refuses those labels rather than asking callers to avoid them:
+
+- **Metric names come from a fixed list.** One added ad hoc is one nobody has
+  checked.
+- **Label names come from an allow-list** — identifiers, statuses, parser names.
+  So `merchant` cannot arrive by being spelled slightly differently.
+- **Label values must look like identifiers.** Anything with a space, a currency
+  symbol, or non-Latin text is refused, because that is how a merchant name or an
+  amount would arrive.
+
+The structured log formatter redacts sensitive keys as well, so a value that got
+past the allow-list still does not reach a log line.
+
+### Correlating a failure
+
+Every log line and every metric carries `request_id` and `task_id`. The worker
+sets the task identifier for each job it picks up, so a failure there can be
+joined to the request that queued the work. Without that pair, "why did this
+document never finish" is answered by reading timestamps and guessing.
+
+### Optional error reporting
+
+If an error-reporting service is ever added, it must follow the same rules and one
+more:
+
+1. **No request bodies, no form data, no query strings.** An upload body is a
+   screenshot of somebody's bank account.
+2. **No local variables in stack frames.** That is where decrypted amounts and
+   merchant names live at the moment something raises.
+3. **Scrub by allow-list, not by denylist.** Send the exception type, the module,
+   the line, the request id, and the task id. Nothing else.
+4. **Self-hosted, or not at all.** Sending financial stack traces to a third party
+   is a decision the deployment's owner makes deliberately, not a default.
+
+Until such an integration exists, the structured logs are the record, and they
+stay on the machine that produced them.

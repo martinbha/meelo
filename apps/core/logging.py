@@ -6,7 +6,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .context import request_id_context
+from .context import request_id_context, task_id_context
 
 SENSITIVE_FIELD_NAMES = (
     "ocr_text",
@@ -62,8 +62,16 @@ def redact_sensitive(value: str) -> str:
 
 
 class RequestContextFilter(logging.Filter):
+    """Stamp every line with the identifiers that let two halves be joined.
+
+    The worker and the web process log to different places and fail at different
+    times. Without a shared request and task identifier, "why did this document
+    never finish" is answered by reading timestamps and guessing.
+    """
+
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_context.get()
+        record.task_id = task_id_context.get()
         return True
 
 
@@ -77,7 +85,14 @@ class StructuredFormatter(logging.Formatter):
             "logger": record.name,
             "message": redact_sensitive(record.getMessage()),
             "request_id": getattr(record, "request_id", request_id_context.get()),
+            "task_id": getattr(record, "task_id", task_id_context.get()),
         }
+        metric = getattr(record, "metric", None)
+        if isinstance(metric, dict):
+            # Metric labels are already allow-listed by apps.core.metrics, so
+            # they pass through as structured fields rather than being flattened
+            # into a message a dashboard would have to parse back out.
+            payload["metric"] = _redact_json(metric)
         if record.exc_info:
             payload["exception"] = redact_sensitive(self.formatException(record.exc_info))
         return json.dumps(payload, default=str, sort_keys=True)
