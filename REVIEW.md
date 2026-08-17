@@ -177,6 +177,10 @@ a caller that could sum them would report a larger total than either.
 as open ones, because a refund usually arrives weeks after its purchase was
 reviewed; requiring both sides to be open would miss almost every real case.
 
+One refund can resemble several purchases at once — the same shop, the same
+amount, a fortnight apart. Confirming one pairing dismisses the others for that
+refund, so the queue does not keep asking a question the user has answered.
+
 Refunds nothing claims are not hidden. `unmatched_refunds` lists the credit rows
 no candidate speaks for, and they stay in the review queue — an unmatched credit
 might be a refund whose purchase was never screenshotted, and it might genuinely
