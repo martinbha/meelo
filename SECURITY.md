@@ -198,3 +198,37 @@ unfindable, and nothing would report it.
 ```bash
 uv run pytest tests/test_key_rotation.py
 ```
+
+## The regression sweep
+
+`tests/test_security_regression.py` holds the claims this document makes to
+being true, and it does it by enumeration rather than by sampling.
+
+Every named route in the project's own URL tree is walked without a session, and
+any route that answers with something other than a redirect to the login page is
+a failure. Nothing has to be added to a list when a route is added — the list is
+`get_resolver()`. The same applies to the cross-user sweep: one of every
+addressable object is created for a second user, and each object route is
+requested by the first. The expected answer is 404 rather than 403, because a
+403 confirms the row exists.
+
+That test found a real defect the first time it ran. `ManualTransactionUpdateView`
+overrode `dispatch` to look up the row it was editing, and an override on the
+subclass runs *before* `LoginRequiredMixin.dispatch` in the MRO. An anonymous
+request therefore reached a database query and died on an assertion — a 500
+where a redirect belonged. The fix is three lines; finding it without a sweep
+would have taken somebody reading every view.
+
+The rest of the file covers what the sweeps cannot: that a POST without a CSRF
+token is refused, that a deletion route refuses a GET (a destructive action
+behind a link is one a crawler can trigger), that nothing readable is stored for
+an amount or a merchant, that the log formatter redacts what reaches it, and
+that `config.settings.production` refuses to import at all when a secret is
+missing. A settings module that quietly substitutes a working default is the one
+that ships signing everybody's sessions with a key that is also in the
+repository.
+
+Upload-specific defences — path traversal, executable content, oversized images,
+MIME sniffing — stay in `tests/test_uploads.py`, and login throttling and
+session expiry stay in `tests/test_authentication.py`, next to the code they
+constrain.

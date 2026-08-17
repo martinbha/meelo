@@ -45,7 +45,12 @@ class ManualTransactionUpdateView(LoginRequiredMixin, FormView):  # type: ignore
     instance: CanonicalTransaction | None = None
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        assert request.user.pk is not None
+        # The authentication check has to come first. ``LoginRequiredMixin`` does
+        # it inside its own ``dispatch``, which this override precedes in the
+        # MRO — so looking the row up here would run a database query for an
+        # anonymous request and fail on the assertion rather than redirecting.
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
         self.instance = get_owned_object_or_404(CanonicalTransaction, request.user, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)  # type: ignore[return-value]
 
