@@ -278,13 +278,13 @@ def _documents(user: Any, *, limit: int = 25) -> tuple[DocumentBacklog, ...]:
             ),
         )
         .filter(total__gt=0)
-        .order_by("-unreviewed", "-created_at")[:limit]
+        .order_by("-unreviewed", "-uploaded_at")[:limit]
     )
     return tuple(
         DocumentBacklog(
             document_id=document.pk,
             source_type=document.source_type,
-            uploaded_at=document.created_at,
+            uploaded_at=document.uploaded_at,
             total=document.total,
             unreviewed=document.unreviewed,
             accepted=document.accepted,
