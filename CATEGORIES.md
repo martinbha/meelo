@@ -37,9 +37,18 @@ returns the stored category without consulting a single rule. Re-running
 classification across a user's history would otherwise undo their work on a
 schedule.
 
+That holds when the answer was "none of these". Clearing a category by hand is
+recorded as a manual override too, so the next run does not quietly re-file the
+row into the category the user just removed.
+
 The same marker feeds the `prior_confirmation` tier: a manual correction on one
 transaction becomes the default for the *next* transaction from that merchant.
 One correction, applied forward, without the user having to write a rule.
+
+A category the parser guessed at import is recorded as `parser` when the
+transaction is created, not left blank. A report asking for uncategorised rows
+must not count a row that has a category, and the engine has to know how weak
+that evidence is before it decides whether to replace it.
 
 ## Two entry points, deliberately different
 
