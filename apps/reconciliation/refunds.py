@@ -28,6 +28,7 @@ from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
 from apps.observations.review import decrypt_observation
+from apps.transactions.idempotency import REFUND_SOURCE, save_once, source_key
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
 
@@ -265,12 +266,17 @@ def confirm_refund_match(
         # would produce a value nothing can ever read back.
         merchant_encrypted=values.merchant,
         status=CanonicalTransaction.Status.DRAFT,
+        source_idempotency_key=source_key(REFUND_SOURCE, match.pk),
     )
     try:
         validate_transaction_invariants(canonical)
     except ValidationError as exc:
         raise ReconciliationError(f"The refund event is invalid: {exc}") from exc
-    canonical.save()
+    canonical, created = save_once(canonical)
+    if not created:
+        # An earlier attempt already recorded this refund; posting again would
+        # double its ledger entries.
+        ledger_accounts = None
 
     if ledger_accounts is not None:
         canonical.status = CanonicalTransaction.Status.CONFIRMED

@@ -29,6 +29,7 @@ from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.ledger.models import LedgerEntry
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
+from apps.transactions.idempotency import OBSERVATION_SOURCE, save_once, source_key
 from apps.transactions.models import CanonicalTransaction
 
 from .models import ImportedObservation
@@ -346,6 +347,30 @@ def _apply_correction(
     return True
 
 
+def _link_accepted(
+    observation: ImportedObservation, canonical: CanonicalTransaction, *, user: Any
+) -> None:
+    """Point a reviewed row at the transaction it produced."""
+
+    observation.canonical_transaction = canonical
+    observation.review_status = (
+        ImportedObservation.ReviewStatus.CORRECTED
+        if observation.corrected_fields
+        else ImportedObservation.ReviewStatus.ACCEPTED
+    )
+    observation.reviewed_by = user
+    observation.reviewed_at = timezone.now()
+    observation.save(
+        update_fields=[
+            "canonical_transaction",
+            "review_status",
+            "reviewed_by",
+            "reviewed_at",
+            "updated_at",
+        ]
+    )
+
+
 def _requires_confirmation(observation: ImportedObservation) -> bool:
     """Whether accepting this row should demand a second, explicit confirmation."""
 
@@ -423,12 +448,18 @@ def accept_observation(
         category=observation.category_guess,
         merchant_encrypted=_decrypt(observation, "merchant_raw_encrypted", data_key=data_key),
         status=CanonicalTransaction.Status.DRAFT,
+        source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),
     )
     try:
         canonical.full_clean()
     except ValidationError as exc:
         raise ObservationActionError(f"The canonical transaction is invalid: {exc}") from exc
-    canonical.save()
+    canonical, created = save_once(canonical)
+    if not created:
+        # Another attempt got there first and its transaction is the one that
+        # counts. Link this row to it rather than posting a second time.
+        _link_accepted(observation, canonical, user=user)
+        return canonical
 
     if ledger_accounts is not None:
         # Confirm before posting: the ledger only accepts confirmed rows, and a
@@ -437,23 +468,7 @@ def accept_observation(
         canonical.save(update_fields=["status", "updated_at"])
         post_transaction_by_type(canonical, ledger_accounts)
 
-    observation.canonical_transaction = canonical
-    observation.review_status = (
-        ImportedObservation.ReviewStatus.CORRECTED
-        if observation.corrected_fields
-        else ImportedObservation.ReviewStatus.ACCEPTED
-    )
-    observation.reviewed_by = user
-    observation.reviewed_at = timezone.now()
-    observation.save(
-        update_fields=[
-            "canonical_transaction",
-            "review_status",
-            "reviewed_by",
-            "reviewed_at",
-            "updated_at",
-        ]
-    )
+    _link_accepted(observation, canonical, user=user)
 
     record_audit_event(
         user=user,
