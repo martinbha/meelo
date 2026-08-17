@@ -27,6 +27,7 @@ from apps.instruments.models import PaymentInstrument
 
 from .activity import account_activity, instrument_activity
 from .breakdown import category_breakdown, merchant_breakdown, reconciles
+from .overview import period_overview
 from .spending import month_bounds, monthly_spending
 
 DEFAULT_CURRENCY = "KRW"
@@ -183,3 +184,34 @@ class CardReportView(AccountReportView):
     """The same period, grouped by card instead."""
 
     grouping = "instrument"
+
+
+@method_decorator(never_cache, name="dispatch")
+class OverviewReportView(LoginRequiredMixin, View):
+    """Income against spending, with every exclusion named."""
+
+    template_name = "reports/overview_report.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        year, month = _month(request)
+        start, end = _range(request, year, month)
+        currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
+        data_key = get_user_data_key(
+            user=request.user, actor=request.user, master_key=load_master_key()
+        )
+        overview = period_overview(
+            request.user, start=start, end=end, currency=currency, data_key=data_key
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "overview": overview,
+                "figures": overview.figures(),
+                "year": year,
+                "month": month,
+                "start": start,
+                "end": end,
+                "currency": currency,
+            },
+        )

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Income and spending{% endblock %}
+
+{% block content %}
+<section class="overview-report">
+  <h1>Income and spending</h1>
+  <p class="report-period">{{ start }} to {{ end }} · {{ currency }}</p>
+
+  <nav class="queue-filters" aria-label="Reports">
+    <a href="{% url 'report-overview' %}?year={{ year }}&amp;month={{ month }}"
+       aria-current="page">Overview</a>
+    <a href="{% url 'report-categories' %}?year={{ year }}&amp;month={{ month }}">By category</a>
+    <a href="{% url 'report-merchants' %}?year={{ year }}&amp;month={{ month }}">By merchant</a>
+    <a href="{% url 'report-accounts' %}?year={{ year }}&amp;month={{ month }}">By account</a>
+    <a href="{% url 'report-cards' %}?year={{ year }}&amp;month={{ month }}">By card</a>
+  </nav>
+
+  <form method="get" class="report-filters" hx-boost="false">
+    <label>Year <input type="number" name="year" value="{{ year }}" min="2000" max="2100"></label>
+    <label>Month <input type="number" name="month" value="{{ month }}" min="1" max="12"></label>
+    <label>From <input type="date" name="start" value="{{ start|date:'Y-m-d' }}"></label>
+    <label>To <input type="date" name="end" value="{{ end|date:'Y-m-d' }}"></label>
+    <label>Currency <input type="text" name="currency" value="{{ currency }}" size="3"></label>
+    <button type="submit">Show</button>
+  </form>
+
+  <dl class="overview-headline">
+    <dt>Income</dt><dd>{{ overview.income_minor }}</dd>
+    <dt>Net spending</dt><dd>{{ overview.net_spending_minor }}</dd>
+    <dt>Difference</dt><dd>{{ overview.net_position_minor }}</dd>
+  </dl>
+
+  <table class="queue-table">
+    <caption class="visually-hidden">
+      Every figure in the period. Rows marked as context are deliberately not
+      part of net spending.
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Figure</th>
+        <th scope="col">Amount</th>
+        <th scope="col">Transactions</th>
+        <th scope="col">In the totals?</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for figure in figures %}
+        <tr {% if not figure.counted %}class="excluded"{% endif %}>
+          <th scope="row">
+            {{ figure.label }}
+            {% if figure.note %}<small>{{ figure.note }}</small>{% endif %}
+          </th>
+          <td>{{ figure.amount_minor }}</td>
+          <td>{{ figure.transaction_count }}</td>
+          <td>{% if figure.counted %}Yes{% else %}Shown for context{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="merge-help">
+    {{ overview.excluded_minor }} moved during this period without being earned
+    or spent — transfers between your own accounts, payments against balances,
+    and cash withdrawn. It is listed above so you can see it was left out
+    deliberately.
+  </p>
+
+  {% if overview.has_unresolved %}
+    <p class="empty-state">
+      {{ overview.unresolved_count }} transaction(s) worth
+      {{ overview.unresolved_minor }} have no type yet, and are in neither total.
+    </p>
+  {% endif %}
+</section>
+{% endblock %}
