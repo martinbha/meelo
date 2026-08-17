@@ -121,6 +121,20 @@ class ReconciliationMatch(models.Model):
         if errors:
             raise ValidationError(errors)
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Refuse to store a match that reaches across users.
+
+        The services already check this, but the check has to hold for every
+        caller: a match joining two people's rows would let one of them see the
+        other's screenshot through the comparison view. Cross-table ownership
+        is not something a database constraint can express, so it is enforced
+        here, on insert, where no caller can go around it.
+        """
+
+        if self._state.adding:
+            self.clean()
+        super().save(*args, **kwargs)
+
     @property
     def is_open(self) -> bool:
         return self.status == self.Status.PROPOSED
