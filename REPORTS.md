@@ -100,6 +100,11 @@ reconciliation the breakdown promises.
 is the first thing a user should see and the last thing to bury mid-list — it is
 a call to action, not a category.
 
+A `Breakdown` deliberately does **not** carry a `SpendingTotals`. Only two of
+its five buckets apply, and handing back one with `income_minor` sitting at zero
+would invite a caller to conclude there was no income — when income was never in
+scope. It reports its own gross, refunds, net, and count instead.
+
 `reconciles(breakdown, totals)` compares the lines against a total computed
 independently by `monthly_spending`. A breakdown checked only against its own
 sums checks nothing. It returns rather than raises: a disagreement has to be
