@@ -14,6 +14,7 @@ from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.transactions.models import CanonicalTransaction
 
+from .engine import CategoryDecision, CategorySource, classify
 from .models import Category, CategoryRule, MerchantAlias
 
 
@@ -182,7 +183,14 @@ def set_rule_active(*, user: Any, rule_id: Any, is_active: bool) -> CategoryRule
 
 
 @db_transaction.atomic
-def apply_category_rule(*, transaction_id: Any, user: Any) -> CategoryRule | MerchantAlias | None:
+def categorize_transaction(*, transaction_id: Any, user: Any) -> CategoryDecision:
+    """Apply the priority engine to one transaction and record what decided it.
+
+    Repeating the call is safe and cheap: a decision that matches what is
+    already stored writes nothing, so a bulk re-run does not churn every row's
+    ``updated_at``.
+    """
+
     transaction = (
         CanonicalTransaction.objects.select_for_update()
         .filter(user=user, pk=transaction_id)
@@ -193,69 +201,64 @@ def apply_category_rule(*, transaction_id: Any, user: Any) -> CategoryRule | Mer
     if transaction.status == CanonicalTransaction.Status.CONFIRMED:
         raise ConflictError("Confirmed transactions require explicit category correction.")
 
-    merchant_index = transaction.merchant_blind_index
-    if not merchant_index:
-        raise InvalidRequestError("Transaction merchant index is missing.")
-    rule = (
-        CategoryRule.objects.filter(
+    decision = classify(transaction, user=user)
+    if (
+        transaction.category_id == (decision.category.pk if decision.category else None)
+        and transaction.category_source == decision.source
+    ):
+        return decision
+
+    transaction.category = decision.category
+    transaction.category_source = decision.source
+    transaction.save(update_fields=("category", "category_source", "updated_at"))
+    if decision.is_categorized:
+        record_audit_event(
             user=user,
-            is_active=True,
-            rule_type=CategoryRule.RuleType.MERCHANT_EXACT,
-            merchant_pattern_blind_index=merchant_index,
+            event_type="category_rule_applied",
+            obj=transaction,
+            metadata={
+                "source": str(decision.source),
+                "rule_id": str(decision.rule_id) if decision.rule_id else "",
+            },
         )
-        .filter(
-            Q(payment_instrument__isnull=True)
-            | Q(payment_instrument=transaction.payment_instrument)
-        )
-        .filter(
-            Q(financial_account__isnull=True) | Q(financial_account=transaction.financial_account)
-        )
-        .annotate(
-            scope_rank=Case(
-                When(
-                    payment_instrument__isnull=False,
-                    payment_instrument=transaction.payment_instrument,
-                    then=Value(0),
-                ),
-                When(financial_account=transaction.financial_account, then=Value(1)),
-                default=Value(2),
-                output_field=IntegerField(),
-            )
-        )
-        .order_by("-priority", "scope_rank", "created_at")
+    return decision
+
+
+@db_transaction.atomic
+def set_category_manually(
+    *, transaction_id: Any, user: Any, category: Category | None
+) -> CategoryDecision:
+    """Record the category the user chose, and stop guessing at this row.
+
+    This is the explicit correction path a confirmed transaction is allowed to
+    take: the category is the one part of a confirmed row a person is expected
+    to keep refining, and refusing it would leave them with a total they know is
+    wrong and cannot fix.
+    """
+
+    transaction = (
+        CanonicalTransaction.objects.select_for_update()
+        .filter(user=user, pk=transaction_id)
         .first()
     )
-    match: CategoryRule | MerchantAlias | None = rule
-    category = rule.category if rule else None
-    if category is None:
-        # Avoid hashing plaintext again: transaction ingestion already stored the scoped index.
-        alias = (
-            MerchantAlias.objects.filter(user=user, alias_blind_index=merchant_index)
-            .filter(
-                Q(payment_instrument=transaction.payment_instrument)
-                | Q(payment_instrument__isnull=True)
-            )
-            .annotate(
-                scope_rank=Case(
-                    When(payment_instrument=transaction.payment_instrument, then=Value(0)),
-                    default=Value(1),
-                    output_field=IntegerField(),
-                )
-            )
-            .order_by("scope_rank", "created_at")
-            .first()
-        )
-        match = alias
-        category = alias.default_category if alias else None
-    if category is None:
-        return None
-    assert match is not None
+    if transaction is None:
+        raise InvalidRequestError("Transaction not found.")
+    _check_owned(user, category=category)
+
     transaction.category = category
-    transaction.save(update_fields=("category", "updated_at"))
+    transaction.category_source = (
+        CategorySource.MANUAL_OVERRIDE if category is not None else CategorySource.UNCATEGORIZED
+    )
+    transaction.save(update_fields=("category", "category_source", "updated_at"))
     record_audit_event(
         user=user,
-        event_type="category_rule_applied",
+        event_type="category_changed",
         obj=transaction,
-        metadata={"match_type": match._meta.model_name, "match_id": str(match.pk)},
+        metadata={
+            "source": transaction.category_source,
+            # The identifier, never the name: a category name is the user's own
+            # words about their spending.
+            "category_id": str(category.pk) if category is not None else "",
+        },
     )
-    return match
+    return CategoryDecision(category, CategorySource(transaction.category_source), transaction.pk)

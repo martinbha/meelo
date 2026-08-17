@@ -6,9 +6,10 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
+from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category, CategoryRule, MerchantAlias
 from apps.categorization.services import (
-    apply_category_rule,
+    categorize_transaction,
     create_exact_merchant_rule,
     create_merchant_alias,
     decrypt_normalized_merchant,
@@ -264,7 +265,9 @@ def test_rule_applies_to_draft_but_never_silently_rewrites_confirmed_transaction
         merchant_blind_index=merchant_index,
     )
 
-    assert apply_category_rule(transaction_id=draft.pk, user=user) == rule
+    decision = categorize_transaction(transaction_id=draft.pk, user=user)
+    assert decision.rule_id == rule.pk
+    assert decision.source == CategorySource.USER_RULE
     draft.refresh_from_db()
     assert draft.category_id == category.pk
 
@@ -272,7 +275,7 @@ def test_rule_applies_to_draft_but_never_silently_rewrites_confirmed_transaction
     draft.category = None
     draft.save(update_fields=("status", "category"))
     with pytest.raises(ConflictError, match="explicit category correction"):
-        apply_category_rule(transaction_id=draft.pk, user=user)
+        categorize_transaction(transaction_id=draft.pk, user=user)
     draft.refresh_from_db()
     assert draft.category_id is None
 
@@ -323,6 +326,7 @@ def test_card_scoped_rule_wins_over_generic_rule_at_same_priority(
         merchant_blind_index=merchant_blind_index("Cafe", user_id=user.pk, key=BLIND_INDEX_KEY),
     )
 
-    assert apply_category_rule(transaction_id=transaction_record.pk, user=user) == card_rule
+    decision = categorize_transaction(transaction_id=transaction_record.pk, user=user)
+    assert decision.rule_id == card_rule.pk
     transaction_record.refresh_from_db()
     assert transaction_record.category_id == card_category.pk
