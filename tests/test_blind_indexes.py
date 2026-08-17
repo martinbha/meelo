@@ -197,16 +197,18 @@ def test_a_merchant_index_matches_across_spellings() -> None:
     assert is_current(first)
 
 
-def test_duplicate_grouping_is_keyed_when_a_search_key_is_supplied() -> None:
+def test_duplicate_grouping_has_no_unkeyed_path() -> None:
     """Everything in this key is low entropy: a date, an amount, a six-digit code."""
 
     row = facts()
     keyed = deterministic_key(row, search_key=KEY)
-    unkeyed = deterministic_key(row)
 
-    assert keyed != unkeyed
     assert is_current(keyed)
-    assert hashlib.sha256(b"approval|1|300142").hexdigest() == unkeyed
+    # The plain digest an attacker would precompute appears nowhere in it, and
+    # there is no call that would have produced one.
+    assert hashlib.sha256(b"approval|1|300142").hexdigest() not in keyed
+    with pytest.raises(TypeError):
+        deterministic_key(row)  # type: ignore[call-arg]
 
 
 def test_keyed_grouping_still_finds_the_same_pairs() -> None:

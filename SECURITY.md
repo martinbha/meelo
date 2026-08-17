@@ -113,7 +113,10 @@ It is a secret of the same standing as the encryption key.
   the normalized name so three spellings share one token.
 - **Duplicate grouping** — `deterministic_key` covers an approval code, or the
   instrument, date, amount, currency, and direction. Every one of those is low
-  entropy, which is exactly why it is keyed.
+  entropy, which is exactly why the search key is **required** rather than
+  optional. An unkeyed path left available is a path one caller reaches, and the
+  resulting value is indistinguishable from a keyed one at the point where the
+  difference matters.
 
 ## Testing
 

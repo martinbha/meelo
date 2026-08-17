@@ -13,7 +13,6 @@ disabled for the initial release, so both paths only ever produce candidates.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -102,19 +101,19 @@ class DuplicateScore:
         return {"score": self.score, "matched": list(self.features)}
 
 
-def deterministic_key(facts: ObservationFacts, *, search_key: bytes | None = None) -> str:
+def deterministic_key(facts: ObservationFacts, *, search_key: bytes) -> str:
     """A stable key for the rows that can be matched without judgement.
 
     An approval code identifies one authorisation exactly, so it takes
     precedence. Otherwise the key is the tuple a bank statement would use to
     identify a line: instrument, date, signed amount.
 
-    Keyed with the user's search key when one is supplied, and that is how it
-    should always be called. Everything in this key is low entropy — a six-digit
-    approval code, a date, an amount a coffee might cost — so a plain digest of
-    it is a lookup table an attacker can build in seconds. Without a key the
-    grouping still works in memory for one request, but the value must never be
-    stored (specification 22.4).
+    The search key is required, not optional. Everything this covers is low
+    entropy — a six-digit approval code, a date, an amount a coffee might cost —
+    so an unkeyed digest of it is a lookup table an attacker can build in
+    seconds. Leaving an unkeyed path available would mean one caller could reach
+    it, and the value would then be indistinguishable from a keyed one at the
+    point where it mattered (specification 22.4).
     """
 
     if facts.approval_code:
@@ -133,13 +132,11 @@ def deterministic_key(facts: ObservationFacts, *, search_key: bytes | None = Non
                 facts.direction,
             )
         )
-    if search_key is not None:
-        return blind_index("observation_row", payload, user_id=facts.user_id, key=search_key)
-    return hashlib.sha256(payload.encode()).hexdigest()
+    return blind_index("observation_row", payload, user_id=facts.user_id, key=search_key)
 
 
 def group_by_key(
-    facts: Iterable[ObservationFacts], *, search_key: bytes | None = None
+    facts: Iterable[ObservationFacts], *, search_key: bytes
 ) -> dict[str, list[ObservationFacts]]:
     """Group observations that share a deterministic key."""
 
@@ -235,8 +232,8 @@ class DuplicateCandidate:
 def find_duplicate_candidates(
     facts: Sequence[ObservationFacts],
     *,
+    search_key: bytes,
     minimum_score: int = REVIEW_CANDIDATE_SCORE,
-    search_key: bytes | None = None,
 ) -> tuple[DuplicateCandidate, ...]:
     """Pair up observations that may be the same transaction.
 

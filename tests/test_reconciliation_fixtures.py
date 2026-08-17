@@ -65,6 +65,8 @@ from tests.factories import (
 pytestmark = pytest.mark.django_db
 
 KEY = os.urandom(32)
+#: Duplicate grouping is keyed; the value is low entropy without one.
+SEARCH_KEY = os.urandom(32)
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "reconciliation"
 
@@ -152,7 +154,7 @@ def detect(scenario: ReconciliationScenario, world: dict[str, Any], user: Any) -
     if scenario.detect == "duplicates":
         return record_duplicate_candidates(
             user=user,
-            candidates=find_duplicate_candidates(list(facts.values())),
+            candidates=find_duplicate_candidates(list(facts.values()), search_key=SEARCH_KEY),
             data_key=KEY,
         )
 

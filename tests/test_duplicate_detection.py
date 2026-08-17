@@ -1,3 +1,4 @@
+import os
 from datetime import date
 from typing import Any
 
@@ -15,6 +16,10 @@ from apps.reconciliation.duplicates import (
 
 DEBIT = ImportedObservation.Direction.DEBIT
 CREDIT = ImportedObservation.Direction.CREDIT
+
+
+#: Duplicate grouping is keyed; every low-entropy value in it needs one.
+SEARCH_KEY = os.urandom(32)
 
 
 def facts(**overrides: Any) -> ObservationFacts:
@@ -52,7 +57,9 @@ def test_an_identical_approval_code_produces_one_key() -> None:
         source_document_id="doc-2",
     )
 
-    assert deterministic_key(left) == deterministic_key(right)
+    assert deterministic_key(left, search_key=SEARCH_KEY) == deterministic_key(
+        right, search_key=SEARCH_KEY
+    )
 
 
 def test_the_row_key_uses_instrument_date_amount_and_direction() -> None:
@@ -60,22 +67,30 @@ def test_the_row_key_uses_instrument_date_amount_and_direction() -> None:
     same = facts(observation_id="row-2", merchant="다른 이름", source_document_id="doc-2")
     different_amount = facts(observation_id="row-3", amount_minor=4300)
 
-    assert deterministic_key(left) == deterministic_key(same)
-    assert deterministic_key(left) != deterministic_key(different_amount)
-
-
-def test_keys_never_collide_across_users() -> None:
-    assert deterministic_key(facts()) != deterministic_key(facts(user_id=2))
-    assert deterministic_key(facts(approval_code="1234")) != deterministic_key(
-        facts(user_id=2, approval_code="1234")
+    assert deterministic_key(left, search_key=SEARCH_KEY) == deterministic_key(
+        same, search_key=SEARCH_KEY
+    )
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
+        different_amount, search_key=SEARCH_KEY
     )
 
 
+def test_keys_never_collide_across_users() -> None:
+    assert deterministic_key(facts(), search_key=SEARCH_KEY) != deterministic_key(
+        facts(user_id=2), search_key=SEARCH_KEY
+    )
+    assert deterministic_key(
+        facts(approval_code="1234"), search_key=SEARCH_KEY
+    ) != deterministic_key(facts(user_id=2, approval_code="1234"), search_key=SEARCH_KEY)
+
+
 def test_a_row_without_an_amount_or_date_has_no_key() -> None:
-    assert deterministic_key(facts(amount_minor=None)) == ""
-    assert deterministic_key(facts(occurred_at=None)) == ""
+    assert deterministic_key(facts(amount_minor=None), search_key=SEARCH_KEY) == ""
+    assert deterministic_key(facts(occurred_at=None), search_key=SEARCH_KEY) == ""
     # An approval code still identifies the row even without the rest.
-    assert deterministic_key(facts(amount_minor=None, approval_code="99")) != ""
+    assert (
+        deterministic_key(facts(amount_minor=None, approval_code="99"), search_key=SEARCH_KEY) != ""
+    )
 
 
 def test_grouping_returns_only_keys_with_more_than_one_row() -> None:
@@ -84,7 +99,8 @@ def test_grouping_returns_only_keys_with_more_than_one_row() -> None:
             facts(),
             facts(observation_id="row-2", source_document_id="doc-2"),
             facts(observation_id="row-3", amount_minor=9999),
-        ]
+        ],
+        search_key=SEARCH_KEY,
     )
 
     assert len(grouped) == 1
@@ -181,7 +197,7 @@ def test_duplicates_across_overlapping_screenshots_stay_traceable() -> None:
     left = facts(source_document_id="doc-1")
     right = facts(observation_id="row-2", source_document_id="doc-2")
 
-    candidates = find_duplicate_candidates([left, right])
+    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY)
 
     assert len(candidates) == 1
     candidate = candidates[0]
@@ -205,7 +221,7 @@ def test_a_deterministic_pair_is_always_returned_whatever_it_scores() -> None:
         source_type="bank_transaction_list",
     )
 
-    candidates = find_duplicate_candidates([left, right])
+    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY)
 
     assert len(candidates) == 1
     assert candidates[0].from_deterministic_key is True
@@ -223,7 +239,7 @@ def test_weak_pairs_are_not_proposed() -> None:
         source_type="",
     )
 
-    assert find_duplicate_candidates([left, right]) == ()
+    assert find_duplicate_candidates([left, right], search_key=SEARCH_KEY) == ()
 
 
 def test_candidates_are_ordered_by_score() -> None:
@@ -236,7 +252,7 @@ def test_candidates_are_ordered_by_score() -> None:
         source_type="",
     )
 
-    candidates = find_duplicate_candidates([base, strong, weaker])
+    candidates = find_duplicate_candidates([base, strong, weaker], search_key=SEARCH_KEY)
     scores = [item.score.score for item in candidates]
 
     assert scores == sorted(scores, reverse=True)
