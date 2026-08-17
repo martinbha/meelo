@@ -184,7 +184,19 @@ def link_observations(
     if match_type not in ReconciliationMatch.MatchType.values:
         raise ReconciliationError("Unknown match type.")
     features = ("manual_link",)
-    match = record_match(
+    left_id, right_id = _ordered(left_observation_id, right_observation_id)
+    existing = (
+        ReconciliationMatch.objects.select_for_update()
+        .filter(left_observation_id=left_id, right_observation_id=right_id, match_type=match_type)
+        .first()
+    )
+    if existing is not None and existing.status != ReconciliationMatch.Status.REJECTED:
+        # Detection already found this pair, or the user already applied it.
+        # Overwriting it with "you linked these yourself" would replace real
+        # evidence with a weaker claim about the same relationship.
+        return existing
+
+    match = existing or record_match(
         user=user,
         left_observation_id=left_observation_id,
         right_observation_id=right_observation_id,
