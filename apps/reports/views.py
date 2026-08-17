@@ -11,15 +11,17 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django.views.generic import View
 
 from apps.categorization.models import Category
+from apps.core.errors import ApplicationError
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import owned_queryset
 from apps.financial_accounts.models import FinancialAccount
@@ -28,7 +30,10 @@ from apps.reconciliation.services import queue_match_ids
 
 from .activity import account_activity, instrument_activity
 from .breakdown import category_breakdown, merchant_breakdown, reconciles
+from .forms import ExportRequestForm
+from .models import TransactionExport
 from .overview import period_overview
+from .services import available_exports, create_export, delete_export, read_export
 from .spending import month_bounds, monthly_spending
 from .workload import outstanding_work
 
@@ -230,3 +235,77 @@ class WorkloadReportView(LoginRequiredMixin, View):
         # is how the observations app stays unaware of this one.
         workload = outstanding_work(request.user, match_ids=queue_match_ids(request.user))
         return render(request, self.template_name, {"workload": workload})
+
+
+@method_decorator(never_cache, name="dispatch")
+class ExportView(LoginRequiredMixin, View):
+    """Generate an export, and list the ones still downloadable."""
+
+    template_name = "reports/exports.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        return render(request, self.template_name, self._context(request, ExportRequestForm()))
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        form = ExportRequestForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, self._context(request, form), status=400)
+        try:
+            record = create_export(
+                user=request.user,
+                export_format=form.cleaned_data["export_format"],
+                start=form.cleaned_data.get("start"),
+                end=form.cleaned_data.get("end"),
+                data_key=get_user_data_key(
+                    user=request.user, actor=request.user, master_key=load_master_key()
+                ),
+                passphrase=form.cleaned_data.get("passphrase") or "",
+            )
+        except ApplicationError as error:
+            messages.error(request, error.message)
+            return render(request, self.template_name, self._context(request, form), status=400)
+        messages.success(
+            request,
+            f"{record.row_count} transaction(s) exported. The file is deleted "
+            f"automatically at {record.expires_at:%H:%M}.",
+        )
+        return redirect("report-exports")
+
+    def _context(self, request: HttpRequest, form: Any) -> dict[str, Any]:
+        return {"form": form, "exports": available_exports(request.user)}
+
+
+@method_decorator(never_cache, name="dispatch")
+class ExportDownloadView(LoginRequiredMixin, View):
+    """Stream one export to its owner."""
+
+    def get(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        try:
+            record, payload = read_export(pk, user=request.user)
+        except ApplicationError as error:
+            messages.error(request, error.message)
+            return redirect("report-exports")
+        content_type = {
+            TransactionExport.Format.CSV: "text/csv",
+            TransactionExport.Format.JSON: "application/json",
+            TransactionExport.Format.ENCRYPTED: "application/octet-stream",
+        }[TransactionExport.Format(record.export_format)]
+        response = HttpResponse(payload, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{record.filename}"'
+        # Never cached anywhere: this body is the user's financial history in
+        # readable form.
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+@method_decorator(never_cache, name="dispatch")
+class ExportDeleteView(LoginRequiredMixin, View):
+    """Delete one export's file now rather than waiting for its expiry."""
+
+    def post(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        try:
+            delete_export(pk, user=request.user)
+            messages.success(request, "The export file was deleted.")
+        except ApplicationError as error:
+            messages.error(request, error.message)
+        return redirect("report-exports")
