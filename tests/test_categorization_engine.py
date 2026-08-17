@@ -348,7 +348,7 @@ def test_applying_stores_both_the_category_and_its_source(owner: Any) -> None:
     decision = categorize_transaction(transaction_id=transaction.pk, user=owner)
 
     transaction.refresh_from_db()
-    assert decision.rule_id == rule.pk
+    assert decision.source_id == rule.pk
     assert transaction.category_id == food.pk
     assert transaction.category_source == CategorySource.USER_RULE
 
@@ -392,15 +392,26 @@ def test_a_manual_correction_is_allowed_on_a_confirmed_transaction(owner: Any) -
         categorize_transaction(transaction_id=transaction.pk, user=owner)
 
 
-def test_clearing_a_category_by_hand_returns_it_to_uncategorized(owner: Any) -> None:
+def test_clearing_a_category_by_hand_sticks(owner: Any) -> None:
+    """ "None of these" is an answer, and re-filing the row would undo it."""
+
     account = make_account(owner, name_blind_index="engine-account")
+    create_exact_merchant_rule(
+        user=owner,
+        merchant=MERCHANT,
+        category=make_category(owner, "food"),
+        encryption_key=ENCRYPTION_KEY,
+        blind_index_key=BLIND_INDEX_KEY,
+        key_version=1,
+    )
     transaction = make_transaction(owner, account, category=make_category(owner, "wrong"))
 
     set_category_manually(transaction_id=transaction.pk, user=owner, category=None)
+    categorize_transaction(transaction_id=transaction.pk, user=owner)
 
     transaction.refresh_from_db()
     assert transaction.category_id is None
-    assert transaction.category_source == CategorySource.UNCATEGORIZED
+    assert transaction.category_source == CategorySource.MANUAL_OVERRIDE
 
 
 def test_a_manual_correction_is_audited_without_naming_the_category(owner: Any) -> None:
