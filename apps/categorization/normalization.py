@@ -31,7 +31,7 @@ import hashlib
 import hmac
 import re
 import unicodedata
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,31 +40,42 @@ from rapidfuzz.fuzz import ratio
 from apps.core.errors import InvalidRequestError
 
 #: Company forms that say how a business is incorporated, not which one it is.
-COMPANY_FORMS: tuple[str, ...] = (
-    "주식회사",
-    "유한회사",
-    "합자회사",
-    "(주)",
-    "㈜",
-    "co ltd",
-    "co,ltd",
-    "coltd",
-    "ltd",
-    "inc",
-    "llc",
-    "corp",
-    "corporation",
+#: Matched as whole tokens, never as substrings: a shop called "Baltdrop" is not
+#: a limited company, and treating it as one would leave "ba rop" as its key.
+COMPANY_FORMS: frozenset[str] = frozenset(
+    {
+        "주식회사",
+        "유한회사",
+        "합자회사",
+        "co",
+        "coltd",
+        "ltd",
+        "inc",
+        "llc",
+        "corp",
+        "corporation",
+    }
 )
 
-#: Prefixes card and bank apps prepend to the merchant on a statement line.
-PAYMENT_PREFIXES: tuple[str, ...] = (
-    "체크카드",
-    "신용카드",
-    "카드결제",
-    "일시불",
-    "할부",
-    "승인",
-    "결제",
+#: Korean company forms written flush against the name, with no space to split
+#: on. Stripped from the ends only, so one inside a name survives.
+GLUED_COMPANY_FORMS: tuple[str, ...] = ("주식회사", "유한회사", "합자회사")
+
+#: Symbols that mark a company form on their own. Removed before punctuation
+#: stripping, which would otherwise leave a bare "주" behind.
+COMPANY_SYMBOLS: tuple[str, ...] = ("㈜", "(주)", "（주）")
+
+#: Words card and bank apps put on the statement line beside the merchant.
+PAYMENT_TOKENS: frozenset[str] = frozenset(
+    {
+        "체크카드",
+        "신용카드",
+        "카드결제",
+        "일시불",
+        "할부",
+        "승인",
+        "결제",
+    }
 )
 
 #: Branch markers. A branch is a place, not a merchant: two Starbucks branches
@@ -73,12 +84,17 @@ BRANCH_SUFFIX = re.compile(r"(지점|점포|점|본점|영업소)$")
 
 #: Everything that is punctuation or a symbol, once the string is decomposed.
 _PUNCTUATION = re.compile(r"[^\w\s]", flags=re.UNICODE)
-_DIGIT_RUN = re.compile(r"\b\d{4,}\b")
+_DIGIT_RUN = re.compile(r"\d{4,}")
 
 
-def _strip_tokens(value: str, tokens: Sequence[str]) -> str:
-    for token in tokens:
-        value = value.replace(token, " ")
+def _strip_glued_forms(value: str) -> str:
+    """Remove a company form written flush against the name, at either end."""
+
+    for form in GLUED_COMPANY_FORMS:
+        if value.startswith(form) and len(value) > len(form):
+            value = value[len(form) :]
+        if value.endswith(form) and len(value) > len(form):
+            value = value[: -len(form)]
     return value
 
 
@@ -92,18 +108,26 @@ def normalize_merchant(value: str) -> str:
     # NFKC first, so a full-width or compatibility form of a character becomes
     # the same character its plain spelling would produce.
     folded = unicodedata.normalize("NFKC", value).casefold()
-    folded = _strip_tokens(folded, COMPANY_FORMS)
-    folded = _strip_tokens(folded, PAYMENT_PREFIXES)
-    # Long digit runs are approval and terminal numbers riding along with the
-    # name; they differ per transaction and would defeat every lookup.
-    folded = _DIGIT_RUN.sub(" ", folded)
+    for symbol in COMPANY_SYMBOLS:
+        # Before punctuation stripping, which would leave a bare "주" behind.
+        folded = folded.replace(symbol, " ")
     folded = _PUNCTUATION.sub(" ", folded)
-    collapsed = " ".join(folded.split())
-    # The branch marker is stripped after collapsing, so "강남 점" and "강남점"
-    # end the same way.
-    without_spaces = collapsed.replace(" ", "")
-    stripped = BRANCH_SUFFIX.sub("", without_spaces)
-    normalized = stripped or without_spaces
+
+    # Token by token, never by substring. Dropping "ltd" wherever it appeared
+    # would turn a shop called "Baltdrop" into "ba rop".
+    kept = [
+        token
+        for token in folded.split()
+        if token not in COMPANY_FORMS
+        and token not in PAYMENT_TOKENS
+        # Approval and terminal numbers ride along with the name and differ per
+        # transaction, so they would defeat every lookup.
+        and not _DIGIT_RUN.fullmatch(token)
+    ]
+    joined = _strip_glued_forms("".join(kept))
+    # The branch marker goes last, once spacing can no longer hide it, so
+    # "강남 점" and "강남점" end the same way.
+    normalized = BRANCH_SUFFIX.sub("", joined) or joined
     if not normalized:
         raise InvalidRequestError("Merchant text cannot be empty.")
     return normalized
