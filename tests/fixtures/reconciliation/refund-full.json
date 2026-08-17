@@ -1,0 +1,50 @@
+{
+  "name": "refund-full",
+  "description": "A coat bought and returned. The user is back where they started, so the category ends at nothing — and the credit must not become income.",
+  "detect": "refunds",
+  "accounts": ["card-account"],
+  "documents": [
+    {
+      "key": "card-app",
+      "source_type": "card_transaction_list",
+      "parser": "hyundai_card",
+      "rows": [
+        {
+          "key": "purchase",
+          "date": "2026-08-10",
+          "amount_minor": 200000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "무신사",
+          "account": "card-account"
+        },
+        {
+          "key": "refund",
+          "date": "2026-08-20",
+          "amount_minor": 200000,
+          "currency": "KRW",
+          "direction": "credit",
+          "merchant": "무신사",
+          "account": "card-account"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "refund_match",
+      "left": "refund",
+      "right": "purchase",
+      "minimum_score": 80,
+      "features": ["exact_amount", "similar_merchant", "refund_after_purchase"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "confirm"}],
+  "accept": [{"row": "purchase", "type": "purchase"}],
+  "expected": {
+    "canonical_events": 2,
+    "spending_minor": 200000,
+    "refund_minor": 200000,
+    "income_minor": 0
+  }
+}

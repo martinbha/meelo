@@ -1,0 +1,56 @@
+{
+  "name": "internal-transfer",
+  "description": "Half a million won moved from checking to savings. Two rows, one move, and no change in what the user is worth: neither spending nor income.",
+  "detect": "transfers",
+  "accounts": ["checking", "savings"],
+  "documents": [
+    {
+      "key": "checking-app",
+      "source_type": "bank_transaction_list",
+      "parser": "toss_bank",
+      "rows": [
+        {
+          "key": "out",
+          "date": "2026-08-15",
+          "amount_minor": 500000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "정기이체",
+          "account": "checking"
+        }
+      ]
+    },
+    {
+      "key": "savings-app",
+      "source_type": "bank_transaction_list",
+      "parser": "kakao_bank",
+      "rows": [
+        {
+          "key": "in",
+          "date": "2026-08-15",
+          "amount_minor": 500000,
+          "currency": "KRW",
+          "direction": "credit",
+          "merchant": "정기이체",
+          "account": "savings"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "internal_transfer",
+      "left": "out",
+      "right": "in",
+      "minimum_score": 80,
+      "features": ["exact_amount", "both_accounts_owned", "same_date"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "confirm"}],
+  "expected": {
+    "canonical_events": 1,
+    "spending_minor": 0,
+    "income_minor": 0,
+    "neutral_minor": 500000
+  }
+}

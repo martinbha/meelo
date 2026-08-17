@@ -1,0 +1,58 @@
+{
+  "name": "duplicate-card-and-bank",
+  "description": "One debit-card purchase photographed in the card app and again in the bank app. Two rows, one purchase; counting both would double the month.",
+  "detect": "duplicates",
+  "accounts": ["checking"],
+  "documents": [
+    {
+      "key": "card-app",
+      "source_type": "card_transaction_list",
+      "parser": "hyundai_card",
+      "rows": [
+        {
+          "key": "card",
+          "date": "2026-08-15",
+          "amount_minor": 42900,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "이마트 성수점",
+          "approval_code": "300142",
+          "account": "checking"
+        }
+      ]
+    },
+    {
+      "key": "bank-app",
+      "source_type": "bank_transaction_list",
+      "parser": "toss_bank",
+      "rows": [
+        {
+          "key": "bank",
+          "date": "2026-08-15",
+          "amount_minor": 42900,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "이마트 성수점",
+          "approval_code": "300142",
+          "account": "checking"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "duplicate_observation",
+      "left": "card",
+      "right": "bank",
+      "minimum_score": 90,
+      "features": ["exact_amount", "same_approval_code", "same_mapped_instrument"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "merge", "winner": "bank"}],
+  "accept": [{"row": "bank", "type": "purchase"}],
+  "expected": {
+    "canonical_events": 1,
+    "ledger_entries": 2,
+    "spending_minor": 42900
+  }
+}

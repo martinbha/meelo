@@ -1,0 +1,51 @@
+{
+  "name": "rejected-duplicate-stays-separate",
+  "description": "Two coffees on one morning at the same shop for the same price. Detection proposes a duplicate; the user knows they bought two, and rejecting must leave both.",
+  "detect": "duplicates",
+  "accounts": ["checking"],
+  "documents": [
+    {
+      "key": "bank-app",
+      "source_type": "bank_transaction_list",
+      "parser": "toss_bank",
+      "rows": [
+        {
+          "key": "first",
+          "date": "2026-08-15",
+          "amount_minor": 4200,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "스타벅스 강남점",
+          "account": "checking"
+        },
+        {
+          "key": "second",
+          "date": "2026-08-15",
+          "amount_minor": 4200,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "스타벅스 강남점",
+          "account": "checking"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "duplicate_observation",
+      "left": "first",
+      "right": "second",
+      "minimum_score": 65,
+      "features": ["exact_amount", "same_mapped_instrument"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "reject"}],
+  "accept": [
+    {"row": "first", "type": "purchase"},
+    {"row": "second", "type": "purchase"}
+  ],
+  "expected": {
+    "canonical_events": 2,
+    "spending_minor": 8400
+  }
+}

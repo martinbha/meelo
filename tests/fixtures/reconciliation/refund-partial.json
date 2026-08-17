@@ -1,0 +1,51 @@
+{
+  "name": "refund-partial",
+  "description": "One item of three returned. The category keeps what was really spent, and the reduction is the size of the refund rather than the size of the order.",
+  "detect": "refunds",
+  "accounts": ["card-account"],
+  "documents": [
+    {
+      "key": "card-app",
+      "source_type": "card_transaction_list",
+      "parser": "samsung_card",
+      "rows": [
+        {
+          "key": "purchase",
+          "date": "2026-08-10",
+          "amount_minor": 180000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "무신사",
+          "account": "card-account"
+        },
+        {
+          "key": "refund",
+          "date": "2026-08-18",
+          "amount_minor": 60000,
+          "currency": "KRW",
+          "direction": "credit",
+          "merchant": "무신사",
+          "account": "card-account"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "type": "refund_match",
+      "left": "refund",
+      "right": "purchase",
+      "minimum_score": 60,
+      "maximum_score": 89,
+      "features": ["partial_refund", "similar_merchant"]
+    }
+  ],
+  "resolution": [{"candidate": 0, "action": "confirm"}],
+  "accept": [{"row": "purchase", "type": "purchase"}],
+  "expected": {
+    "canonical_events": 2,
+    "spending_minor": 180000,
+    "refund_minor": 60000,
+    "income_minor": 0
+  }
+}

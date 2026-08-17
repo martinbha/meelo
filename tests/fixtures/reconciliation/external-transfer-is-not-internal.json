@@ -1,0 +1,36 @@
+{
+  "name": "external-transfer-is-not-internal",
+  "description": "Rent paid to a landlord on the same day a friend repays the same amount. Two rows that look like a transfer and are not: the outgoing side has no counterpart in an account the user owns.",
+  "detect": "transfers",
+  "accounts": ["checking"],
+  "documents": [
+    {
+      "key": "checking-app",
+      "source_type": "bank_transaction_list",
+      "parser": "toss_bank",
+      "rows": [
+        {
+          "key": "rent",
+          "date": "2026-08-15",
+          "amount_minor": 700000,
+          "currency": "KRW",
+          "direction": "debit",
+          "merchant": "김대성",
+          "account": "checking"
+        },
+        {
+          "key": "repayment",
+          "date": "2026-08-15",
+          "amount_minor": 700000,
+          "currency": "KRW",
+          "direction": "credit",
+          "merchant": "박지훈"
+        }
+      ]
+    }
+  ],
+  "candidates": [],
+  "expected": {
+    "canonical_events": 0
+  }
+}
