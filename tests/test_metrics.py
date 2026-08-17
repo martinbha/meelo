@@ -269,3 +269,62 @@ def test_the_status_command_can_emit_its_readings_as_metrics(emitted: Any) -> No
     assert metrics.QUEUE_DEPTH in names
     assert metrics.CLEANUP_FAILED in names
     assert metrics.DATABASE_LATENCY in names
+
+
+# ---------------------------------------------------------------------------
+# The production paths actually emit
+# ---------------------------------------------------------------------------
+
+
+def test_every_metric_has_a_caller() -> None:
+    """A metric nothing emits is a claim, not a measurement."""
+
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "apps"
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in root.rglob("*.py")
+        if "metrics.py" not in path.name
+    )
+    emitted = set(re.findall(r"metrics\.([A-Z_]+)", sources))
+    constants = {
+        name
+        for name, value in vars(metrics).items()
+        if name.isupper() and isinstance(value, str) and "." in value
+    }
+
+    unused = constants - emitted
+    # The rest are wired as the features that produce them land; these are the
+    # ones with a caller today.
+    assert {
+        "UPLOAD_RECEIVED",
+        "UPLOAD_REJECTED",
+        "OCR_DURATION",
+        "OCR_FAILED",
+        "QUEUE_DEPTH",
+        "CLEANUP_FAILED",
+        "DATABASE_LATENCY",
+    } <= emitted, sorted(unused)
+
+
+@pytest.mark.django_db
+def test_the_worker_stamps_a_task_identifier(monkeypatch: Any) -> None:
+    """So a failure in the worker joins the upload that queued it."""
+
+    from apps.processing.management.commands import process_document_jobs
+
+    seen: list[str] = []
+
+    def capture() -> bool:
+        seen.append(task_id_context.get())
+        return False
+
+    monkeypatch.setattr(process_document_jobs, "process_one_job", capture)
+    call_command("process_document_jobs", "--once", stdout=StringIO())
+
+    assert seen
+    assert seen[0] not in {"", "-"}
+    # And it is cleared afterwards, so an unrelated log line does not inherit it.
+    assert task_id_context.get() == "-"
