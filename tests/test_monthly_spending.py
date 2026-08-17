@@ -350,3 +350,25 @@ def test_an_encrypted_amount_without_a_key_raises_rather_than_counting_zero(
 
     with pytest.raises(ValueError):
         transaction_amount(transaction)
+
+
+def test_a_row_whose_currencies_disagree_is_refused(owner: Any, account: Any) -> None:
+    """Filing it under either would put a real number in the wrong total."""
+
+    transaction = add(owner, account, amount_minor=42_900, transaction_type=_Type.PURCHASE)
+    CanonicalTransaction.objects.filter(pk=transaction.pk).update(currency="USD")
+
+    with pytest.raises(ValueError, match="but its amount is encoded as"):
+        monthly_spending(owner, year=2026, month=8)
+
+
+def test_every_bucket_maps_to_a_field_on_the_totals() -> None:
+    """A bucket with no field would fail at runtime on the first month using it."""
+
+    from dataclasses import fields
+
+    from apps.reports.spending import _BUCKET_FIELDS, SpendingTotals
+
+    assert set(_BUCKET_FIELDS) == set(BUCKETS)
+    available = {item.name for item in fields(SpendingTotals)}
+    assert set(_BUCKET_FIELDS.values()) <= available
