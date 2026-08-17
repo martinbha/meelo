@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Spending by {{ grouping }}{% endblock %}
+
+{% block content %}
+<section class="spending-report">
+  <h1>Spending by {{ grouping }}</h1>
+  <p class="report-period">
+    {{ start }} to {{ end }} · {{ currency }}
+  </p>
+
+  <nav class="queue-filters" aria-label="Grouping">
+    <a href="{% url 'report-categories' %}?year={{ year }}&amp;month={{ month }}"
+       {% if grouping == 'category' %}aria-current="page"{% endif %}>By category</a>
+    <a href="{% url 'report-merchants' %}?year={{ year }}&amp;month={{ month }}"
+       {% if grouping == 'merchant' %}aria-current="page"{% endif %}>By merchant</a>
+  </nav>
+
+  <form method="get" class="report-filters" hx-boost="false">
+    <label>Year <input type="number" name="year" value="{{ year }}" min="2000" max="2100"></label>
+    <label>Month <input type="number" name="month" value="{{ month }}" min="1" max="12"></label>
+    <label>From <input type="date" name="start" value="{{ start|date:'Y-m-d' }}"></label>
+    <label>To <input type="date" name="end" value="{{ end|date:'Y-m-d' }}"></label>
+    <label>Currency <input type="text" name="currency" value="{{ currency }}" size="3"></label>
+    <label>Category
+      <select name="category">
+        <option value="">All categories</option>
+        {% for category in categories %}
+          <option value="{{ category.pk }}"
+            {% if selected_category == category.pk %}selected{% endif %}>
+            {{ category.name_blind_index }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Show</button>
+  </form>
+
+  {% if breakdown.lines %}
+    <table class="queue-table">
+      <caption class="visually-hidden">Spending by {{ grouping }}, largest first</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ grouping|capfirst }}</th>
+          <th scope="col">Spent</th>
+          <th scope="col">Refunded</th>
+          <th scope="col">Net</th>
+          <th scope="col">Transactions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in breakdown.lines %}
+          <tr {% if not line.key %}class="unassigned"{% endif %}>
+            <th scope="row">{{ line.label }}</th>
+            <td>{{ line.gross_spending_minor }}</td>
+            <td>{% if line.has_refunds %}−{{ line.refunds_minor }}{% else %}—{% endif %}</td>
+            <td>{{ line.net_spending_minor }}</td>
+            <td>{{ line.transaction_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          <td>{{ breakdown.totals.gross_spending_minor }}</td>
+          <td>−{{ breakdown.totals.refunds_minor }}</td>
+          <td>{{ breakdown.net_spending_minor }}</td>
+          <td>{{ breakdown.totals.transaction_count }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {% if reconciles is False %}
+      <p class="error-state">
+        These subtotals do not add up to the month's total of
+        {{ month_totals.net_spending_minor }}. Something is wrong with the
+        figures above; do not rely on them.
+      </p>
+    {% endif %}
+
+    {% if breakdown.unassigned %}
+      <p class="empty-state">
+        {{ breakdown.unassigned.net_spending_minor }} is not assigned to a
+        {{ grouping }} yet. Categorising it will move it into the list above.
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="empty-state">Nothing was spent in this period.</p>
+  {% endif %}
+</section>
+{% endblock %}
