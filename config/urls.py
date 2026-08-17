@@ -28,7 +28,12 @@ from apps.reconciliation.views import (
     MatchLinkView,
     MatchQueueView,
 )
-from apps.reports.views import MerchantReportView, SpendingReportView
+from apps.reports.views import (
+    AccountReportView,
+    CardReportView,
+    MerchantReportView,
+    SpendingReportView,
+)
 from apps.transactions.views import (
     ManualTransactionCreateView,
     ManualTransactionUpdateView,
@@ -115,6 +120,8 @@ urlpatterns = [
     ),
     path("reports/categories/", SpendingReportView.as_view(), name="report-categories"),
     path("reports/merchants/", MerchantReportView.as_view(), name="report-merchants"),
+    path("reports/accounts/", AccountReportView.as_view(), name="report-accounts"),
+    path("reports/cards/", CardReportView.as_view(), name="report-cards"),
     path("uploads/", UploadListView.as_view(), name="upload-list"),
     path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),
     path("uploads/<uuid:pk>/", UploadDetailView.as_view(), name="upload-detail"),

@@ -112,6 +112,28 @@ visible on the page, not an error in front of someone who only wanted to look at
 their month. The page only claims reconciliation when it is showing a whole
 unfiltered month, because a narrowed range is *expected* to differ.
 
+## Account and card activity
+
+`apps.reports.activity` answers "what happened on this card" without the double
+count that would make the answer useless. Two dangers, both specific:
+
+- **One purchase, two screenshots.** A debit-card purchase appears in the card
+  app and again in the bank app. Reconciliation merges those, and reports read
+  only `CanonicalTransaction`, so a merged pair contributes once however many
+  screenshots it came from.
+- **A card payment is not card spending.** It gets its own `settlements_minor`
+  column rather than being folded into the spending figure *or* hidden among
+  other movement — "you paid your card 380,000" is a number a person goes
+  looking for, and "you moved 380,000 around" is not.
+
+`SETTLEMENT_TYPES` (credit-card payment, loan payment) is a sub-classification of
+`neutral`, not a bucket of its own: a settlement really is neutral, and giving it
+a bucket would have broken the completeness invariant. `settlements_minor +
+movement_minor` equals the month's `neutral_minor`, which the tests assert.
+
+**Activity with no card is a line, sorted last.** Unmapped activity is the thing
+a user needs to go and map, so it is named rather than dropped.
+
 ## Nothing is cached
 
 Every figure on a report page is derived from amounts encrypted per user. A
@@ -124,6 +146,7 @@ the trade (specification 22.5).
 
 ```bash
 uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
+uv run pytest tests/test_activity_reports.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen

@@ -53,6 +53,12 @@ NEUTRAL_TYPES: frozenset[str] = frozenset(
     }
 )
 
+#: The subset of neutral types that settle a card balance. Not a bucket of its
+#: own — a settlement really is neutral — but reporting shows it apart from other
+#: movement, because "you paid your card 380,000" is a figure a person looks for
+#: and "you moved 380,000 around" is not (specification 25.3).
+SETTLEMENT_TYPES: frozenset[str] = frozenset({_Type.CREDIT_CARD_PAYMENT, _Type.LOAN_PAYMENT})
+
 #: Types nobody has decided about yet. Deliberately their own bucket rather than
 #: folded into any total: an adjustment of unknown sign added to spending is a
 #: wrong number, and one silently dropped is a number that does not add up.
@@ -91,6 +97,12 @@ def is_neutral(transaction_type: str) -> bool:
     """
 
     return transaction_type in NEUTRAL_TYPES
+
+
+def is_settlement(transaction_type: str) -> bool:
+    """Whether this type pays down a balance rather than buying anything."""
+
+    return transaction_type in SETTLEMENT_TYPES
 
 
 def is_unresolved(transaction_type: str) -> bool:
