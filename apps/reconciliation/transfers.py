@@ -127,12 +127,21 @@ def confirm_internal_transfer(
     if outgoing.occurred_at is None:
         raise ReconciliationError("A transfer without a date cannot be confirmed.")
 
+    # Two apps routinely disagree about the day, and either side may carry the
+    # earlier one — banks show an arrival before the withdrawal clears often
+    # enough. The move began when the first side recorded it and completed when
+    # the last did, which is also the only ordering the model accepts.
+    known_dates = sorted(
+        value for value in (outgoing.occurred_at, incoming.occurred_at) if value is not None
+    )
+    occurred_at, posted_at = known_dates[0], known_dates[-1]
+
     canonical = CanonicalTransaction(
         user_id=user.pk,
         created_by=user,
         reviewed_by=user,
-        occurred_at=outgoing.occurred_at,
-        posted_at=incoming.occurred_at,
+        occurred_at=occurred_at,
+        posted_at=posted_at,
         amount_encrypted=f"{amount.amount_minor}:{amount.resolved_currency.code}",
         currency=amount.resolved_currency.code,
         transaction_type=CanonicalTransaction.TransactionType.INTERNAL_TRANSFER,
@@ -154,8 +163,10 @@ def confirm_internal_transfer(
 
     reviewed_at = timezone.now()
     for side in (outgoing, incoming):
+        # ``transaction_type_guess`` stays as the parser left it. It is
+        # provenance, and overwriting it with the confirmed answer would erase
+        # the record of what the parser got wrong.
         side.canonical_transaction = canonical
-        side.transaction_type_guess = CanonicalTransaction.TransactionType.INTERNAL_TRANSFER
         side.review_status = (
             ImportedObservation.ReviewStatus.CORRECTED
             if side.corrected_fields
@@ -166,7 +177,6 @@ def confirm_internal_transfer(
         side.save(
             update_fields=[
                 "canonical_transaction",
-                "transaction_type_guess",
                 "review_status",
                 "reviewed_by",
                 "reviewed_at",
