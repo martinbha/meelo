@@ -64,17 +64,34 @@ class BreakdownLine:
 
 @dataclass(frozen=True, slots=True)
 class Breakdown:
-    """Lines that add up to the period's net spending, and the total they meet."""
+    """Lines that add up to the period's net spending.
+
+    Deliberately does not carry a :class:`~apps.reports.spending.SpendingTotals`.
+    Only two of its five buckets apply here, and handing back one with
+    ``income_minor`` sitting at zero would invite a caller to conclude there was
+    no income — when in fact income was never in scope.
+    """
 
     currency: str
     start: date
     end: date
     lines: tuple[BreakdownLine, ...]
-    totals: SpendingTotals
+
+    @property
+    def gross_spending_minor(self) -> int:
+        return sum(line.gross_spending_minor for line in self.lines)
+
+    @property
+    def refunds_minor(self) -> int:
+        return sum(line.refunds_minor for line in self.lines)
 
     @property
     def net_spending_minor(self) -> int:
-        return self.totals.net_spending_minor
+        return self.gross_spending_minor - self.refunds_minor
+
+    @property
+    def transaction_count(self) -> int:
+        return sum(line.transaction_count for line in self.lines)
 
     @property
     def unassigned(self) -> BreakdownLine | None:
@@ -136,7 +153,13 @@ def _group(
     for transaction in transactions:
         amount = transaction_amount(transaction, data_key=data_key)
         if amount.resolved_currency.code != currency:
-            continue
+            # The caller already filtered on the queryable currency column, so
+            # reaching here means the column and the encoded amount disagree.
+            # Skipping it would drop a real number out of a total silently.
+            raise ValueError(
+                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
+                f"but its amount is encoded as {amount.resolved_currency.code}."
+            )
         key = key_of(transaction)
         bucket = grouped.setdefault(
             key,
@@ -170,17 +193,7 @@ def _build(
     grouped = _group(
         transactions, data_key=data_key, key_of=key_of, label_of=label_of, currency=currency
     )
-    lines = _lines(grouped)
-    # Built from the same sums the lines came from, so the two cannot disagree
-    # about a row. ``reconciles`` then checks the arithmetic rather than the
-    # bookkeeping, which is the part that actually goes wrong.
-    totals = SpendingTotals(
-        currency=currency,
-        gross_spending_minor=sum(line.gross_spending_minor for line in lines),
-        refunds_minor=sum(line.refunds_minor for line in lines),
-        transaction_count=sum(line.transaction_count for line in lines),
-    )
-    return Breakdown(currency=currency, start=start, end=end, lines=lines, totals=totals)
+    return Breakdown(currency=currency, start=start, end=end, lines=_lines(grouped))
 
 
 def reconciles(breakdown: Breakdown, totals: SpendingTotals) -> bool:
@@ -208,6 +221,9 @@ def category_breakdown(
     """Spending grouped by category over a date range."""
 
     queryset = reportable_transactions(user, start=start, end=end).select_related("category")
+    # Filtered in the database: the currency column is queryable, so rows in
+    # another currency are never fetched, let alone decrypted.
+    queryset = queryset.filter(currency=currency.upper())
     if category_id is not None:
         queryset = queryset.filter(category_id=category_id)
     rows = _spending_rows(queryset)
@@ -242,7 +258,7 @@ def merchant_breakdown(
     every row in it.
     """
 
-    queryset = reportable_transactions(user, start=start, end=end)
+    queryset = reportable_transactions(user, start=start, end=end).filter(currency=currency.upper())
     if category_id is not None:
         queryset = queryset.filter(category_id=category_id)
     rows = _spending_rows(queryset)
