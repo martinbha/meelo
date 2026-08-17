@@ -38,6 +38,7 @@ class QueueFilter(StrEnum):
     DUPLICATE = "duplicate"
     TRANSFER = "transfer"
     SETTLEMENT = "settlement"
+    REFUND = "refund"
     MISSING_FIELDS = "missing_fields"
     BALANCE_MISMATCH = "balance_mismatch"
 
@@ -49,6 +50,7 @@ MATCH_DERIVED_FILTERS: tuple[QueueFilter, ...] = (
     QueueFilter.DUPLICATE,
     QueueFilter.TRANSFER,
     QueueFilter.SETTLEMENT,
+    QueueFilter.REFUND,
 )
 
 #: Risk contributed by a reconciliation candidate attached to a row.
@@ -56,6 +58,7 @@ MATCH_RISK: Mapping[QueueFilter, int] = {
     QueueFilter.DUPLICATE: 88,
     QueueFilter.SETTLEMENT: 60,
     QueueFilter.TRANSFER: 55,
+    QueueFilter.REFUND: 50,
 }
 
 

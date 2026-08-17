@@ -35,6 +35,7 @@ from .models import NearDuplicateDocument, ReconciliationMatch
 QUEUE_FILTER_BY_MATCH_TYPE: Mapping[str, str] = {
     ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION: "duplicate",
     ReconciliationMatch.MatchType.INTERNAL_TRANSFER: "transfer",
+    ReconciliationMatch.MatchType.REFUND_MATCH: "refund",
     ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT: "settlement",
     ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP: "settlement",
 }
@@ -315,6 +316,10 @@ def confirm_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
         # separately, which is exactly the double count the match exists to
         # prevent. It goes through apps.reconciliation.transfers instead.
         raise ReconciliationError("Internal transfers are confirmed through the transfer workflow.")
+    if match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
+        # Confirming here would leave the credit row free to be accepted as
+        # income, which is the one outcome a refund must never have.
+        raise ReconciliationError("Refunds are confirmed through the refund workflow.")
     if match.status == ReconciliationMatch.Status.CONFIRMED:
         return match
     if match.status == ReconciliationMatch.Status.REJECTED:
