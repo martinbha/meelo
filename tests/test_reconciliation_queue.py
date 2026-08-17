@@ -352,6 +352,69 @@ def test_detection_still_does_not_revive_a_rejected_pairing(owner: Any, data_key
     assert ReconciliationMatch.objects.filter(user=owner).count() == 1
 
 
+def test_linking_a_pair_detection_already_found_keeps_its_evidence(
+    owner: Any, data_key: bytes
+) -> None:
+    """Real evidence must not be replaced by a weaker claim about the same pair."""
+
+    rows = seed(owner, data_key)
+    detected = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        score=95,
+        features=("exact_amount", "same_approval_code"),
+        data_key=data_key,
+    )
+
+    linked = link_observations(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        data_key=data_key,
+    )
+
+    assert linked.pk == detected.pk
+    assert linked.match_score == 95
+    assert set(decrypt_match_features(linked, data_key=data_key)) == {
+        "exact_amount",
+        "same_approval_code",
+    }
+
+
+def test_the_queue_pages_rather_than_decrypting_every_candidate(
+    owner: Any, data_key: bytes, client_for: Client, monkeypatch: Any
+) -> None:
+    """Reading the evidence costs a decryption per candidate."""
+
+    from apps.reconciliation import views
+
+    monkeypatch.setattr(views, "MATCH_PAGE_SIZE", 3)
+    rows = seed(owner, data_key, count=8)
+    for index in range(1, len(rows)):
+        record_match(
+            user=owner,
+            left_observation_id=rows[0].pk,
+            right_observation_id=rows[index].pk,
+            match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+            score=90,
+            features=("exact_amount",),
+            data_key=data_key,
+        )
+
+    first = client_for.get(reverse("match-queue"), {"page": 1})
+    last = client_for.get(reverse("match-queue"), {"page": 3})
+    past_the_end = client_for.get(reverse("match-queue"), {"page": 99})
+
+    assert first.context["page"].paginator.count == 7
+    assert len(first.context["rows"]) == 3
+    assert len(last.context["rows"]) == 1
+    # A page number nobody can reach clamps to the last rather than erroring.
+    assert past_the_end.context["page"].number == 3
+
+
 def test_an_unknown_relationship_cannot_be_linked(owner: Any, data_key: bytes) -> None:
     rows = seed(owner, data_key)
 
