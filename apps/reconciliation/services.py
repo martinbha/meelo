@@ -310,6 +310,11 @@ def confirm_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     match = lock_match(match_id, user)
     if match.match_type == ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION:
         raise ReconciliationError("Duplicate candidates are confirmed through the merge workflow.")
+    if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
+        # A transfer confirmed here would leave both sides free to be accepted
+        # separately, which is exactly the double count the match exists to
+        # prevent. It goes through apps.reconciliation.transfers instead.
+        raise ReconciliationError("Internal transfers are confirmed through the transfer workflow.")
     if match.status == ReconciliationMatch.Status.CONFIRMED:
         return match
     if match.status == ReconciliationMatch.Status.REJECTED:
