@@ -287,6 +287,11 @@ the three costs that behave differently:
 `ReportTimings.dominant_cost` names which one leads, so a slow report says what to
 fix instead of inviting a guess.
 
+Each row is decrypted **once**. `accumulate_amounts` exists so the arithmetic can
+be timed over amounts that have already been read — a benchmark that decrypted
+inside its own "aggregate" stage would charge the cheap stage for the expensive
+one and hide exactly what it was built to expose.
+
 ### The budget
 
 Milliseconds per 1,000 transactions, enforced by
