@@ -85,9 +85,13 @@ def scenario_ids() -> list[str]:
 def build_world(scenario: ReconciliationScenario, user: Any) -> dict[str, Any]:
     """Create the accounts, screenshots, and observations a scenario describes."""
 
+    # Short, unique prefixes: LedgerAccount.code is varchar(32), and a scenario
+    # name plus an account name overflows it on PostgreSQL. SQLite would have
+    # accepted it silently, which is exactly why the suite also runs on the
+    # database production uses.
+    prefix = f"s{abs(hash(scenario.name)) % 10_000:04d}"
     accounts = {
-        name: make_account(user, name_blind_index=f"{scenario.name}-{name}")
-        for name in scenario.accounts
+        name: make_account(user, name_blind_index=f"{prefix}-{name}") for name in scenario.accounts
     }
     rows: dict[str, ImportedObservation] = {}
     for index, document in enumerate(scenario.documents):
@@ -113,7 +117,7 @@ def build_world(scenario: ReconciliationScenario, user: Any) -> dict[str, Any]:
     # rather than create a second chart with the same name.
     ledger = (
         {
-            account.pk: make_ledger_accounts(user, account, prefix=f"{scenario.name}-{name}")
+            account.pk: make_ledger_accounts(user, account, prefix=f"{prefix}-{name}")
             for name, account in accounts.items()
         }
         if scenario.expected.ledger_entries

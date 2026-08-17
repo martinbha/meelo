@@ -37,5 +37,14 @@ docker compose --env-file .env.example up -d
 docker compose --env-file .env.example --profile processing up -d
 ```
 
+The suite runs on in-memory SQLite locally because it is fast, and again on
+PostgreSQL in CI because that is what production uses — `select_for_update` is a
+no-op on SQLite, and constraints and JSON lookups take different paths. Run it
+against PostgreSQL yourself with:
+
+```bash
+DJANGO_SETTINGS_MODULE=config.settings.ci uv run pytest
+```
+
 The application processes financial screenshots locally. Do not add screenshots,
 OCR output, credentials, or other sensitive data to the repository.

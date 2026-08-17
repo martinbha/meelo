@@ -412,3 +412,24 @@ def test_card_installment_and_approval_metadata_is_preserved() -> None:
     assert observation.instrument_suffix == "1234"
     assert observation.amount_minor == 480000
     assert observation.direction is TransactionDirection.DEBIT
+
+
+def test_every_supported_institution_has_fixture_coverage() -> None:
+    """A parser with no fixture is a parser nothing would notice breaking."""
+
+    from pathlib import Path
+
+    from apps.ocr.pipeline import build_parser_registry
+    from apps.parsing.registry import ParserRegistry
+
+    root = Path(__file__).resolve().parent / "fixtures" / "parsers"
+    covered = {path.name for path in root.iterdir() if path.is_dir()}
+    registry: ParserRegistry = build_parser_registry()
+    institutions = {
+        parser.metadata.name for parser in registry.parsers() if parser.metadata.name != "generic"
+    }
+
+    assert institutions <= covered, sorted(institutions - covered)
+    # And every fixture directory actually holds a case.
+    for name in covered:
+        assert list((root / name).glob("*.json")), name
