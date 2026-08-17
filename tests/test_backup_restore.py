@@ -408,3 +408,26 @@ def test_the_verify_command_fails_loudly_on_a_bad_archive(
 
     with pytest.raises(BackupError):
         run("verify_backup", str(archive))
+
+
+def test_an_archive_is_decrypted_once_per_operation(
+    owner: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Opening one costs an Argon2id derivation. Doing it twice is a waste."""
+
+    from apps.core import backup as backup_module
+
+    archive = tmp_path / "backup.enc"
+    create_backup(archive, passphrase=PASSPHRASE)
+    opens = {"count": 0}
+    original = backup_module._open
+
+    def counted(path: Path, *, passphrase: str) -> bytes:
+        opens["count"] += 1
+        return original(path, passphrase=passphrase)
+
+    monkeypatch.setattr(backup_module, "_open", counted)
+
+    unpack_backup(archive, passphrase=PASSPHRASE, destination=tmp_path / "out")
+
+    assert opens["count"] == 1
