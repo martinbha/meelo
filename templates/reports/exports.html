@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Export your data{% endblock %}
+
+{% block content %}
+<section class="exports">
+  <h1>Export your data</h1>
+  <p>
+    Exports contain your confirmed transactions with amounts in integer minor
+    units — 42900, not 429.00 — so nothing is rounded on the way out. The
+    currency is on every row.
+  </p>
+  <p class="merge-help">
+    A CSV or JSON file is deleted automatically an hour after it is generated,
+    whether or not you downloaded it. Choose the encrypted archive if you want
+    something safe to keep.
+  </p>
+
+  <nav class="queue-filters" aria-label="Reports">
+    <a href="{% url 'report-overview' %}">Overview</a>
+    <a href="{% url 'report-categories' %}">By category</a>
+    <a href="{% url 'report-merchants' %}">By merchant</a>
+    <a href="{% url 'report-accounts' %}">By account</a>
+    <a href="{% url 'report-cards' %}">By card</a>
+    <a href="{% url 'report-outstanding' %}">Outstanding</a>
+    <a href="{% url 'report-exports' %}" aria-current="page">Export</a>
+  </nav>
+
+  <form method="post" hx-boost="false">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Generate the export</button>
+  </form>
+
+  <h2>Ready to download</h2>
+  {% if exports %}
+    <table class="queue-table">
+      <caption class="visually-hidden">Exports that have not expired</caption>
+      <thead>
+        <tr>
+          <th scope="col">Generated</th>
+          <th scope="col">Format</th>
+          <th scope="col">Rows</th>
+          <th scope="col">Size</th>
+          <th scope="col">Deleted at</th>
+          <th scope="col"></th>
+          <th scope="col"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for export in exports %}
+          <tr>
+            <td>{{ export.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ export.get_export_format_display }}</td>
+            <td>{{ export.row_count }}</td>
+            <td>{{ export.file_size }} bytes</td>
+            <td>{{ export.expires_at|date:"H:i" }}</td>
+            <td><a href="{% url 'export-download' pk=export.pk %}">Download</a></td>
+            <td>
+              <form method="post" action="{% url 'export-delete' pk=export.pk %}"
+                    hx-boost="false">
+                {% csrf_token %}
+                <button type="submit" class="secondary">Delete now</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No exports are waiting. Generate one above.</p>
+  {% endif %}
+</section>
+{% endblock %}

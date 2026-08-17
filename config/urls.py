@@ -31,6 +31,9 @@ from apps.reconciliation.views import (
 from apps.reports.views import (
     AccountReportView,
     CardReportView,
+    ExportDeleteView,
+    ExportDownloadView,
+    ExportView,
     MerchantReportView,
     OverviewReportView,
     SpendingReportView,
@@ -125,6 +128,17 @@ urlpatterns = [
     path("reports/merchants/", MerchantReportView.as_view(), name="report-merchants"),
     path("reports/accounts/", AccountReportView.as_view(), name="report-accounts"),
     path("reports/outstanding/", WorkloadReportView.as_view(), name="report-outstanding"),
+    path("reports/exports/", ExportView.as_view(), name="report-exports"),
+    path(
+        "reports/exports/<uuid:pk>/download/",
+        ExportDownloadView.as_view(),
+        name="export-download",
+    ),
+    path(
+        "reports/exports/<uuid:pk>/delete/",
+        ExportDeleteView.as_view(),
+        name="export-delete",
+    ),
     path("reports/cards/", CardReportView.as_view(), name="report-cards"),
     path("uploads/", UploadListView.as_view(), name="upload-list"),
     path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),

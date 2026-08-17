@@ -131,3 +131,16 @@ environment:
 HSTS defaults to one year and includes subdomains with preload enabled. Only use
 that configuration after every subdomain is permanently available over HTTPS;
 otherwise set a shorter `DJANGO_HSTS_SECONDS` during deployment validation.
+
+## Expired exports
+
+Generated CSV and JSON exports are plaintext copies of a user's confirmed
+financial history. They expire an hour after generation and must be removed on a
+schedule, because the file that matters is the one the user forgot about:
+
+```bash
+uv run python manage.py purge_expired_exports
+```
+
+Run it at least hourly alongside the other maintenance commands. The database row
+survives so the audit trail keeps its shape; only the file goes.
