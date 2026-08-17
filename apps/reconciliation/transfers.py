@@ -28,8 +28,9 @@ from apps.observations.review import decrypt_observation
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
 
+from .matching import MatchProposal, TransferTolerance, match_internal_transfer
 from .models import ReconciliationMatch
-from .services import ReconciliationError, lock_match
+from .services import ReconciliationError, facts_from, lock_match, record_proposals
 
 
 def _lock_observation(observation_id: Any, user: Any) -> ImportedObservation:
@@ -60,6 +61,54 @@ def _split_sides(
         return second, first
     raise ReconciliationError(
         "An internal transfer needs one row leaving an account and one arriving."
+    )
+
+
+def propose_internal_transfers(
+    *,
+    user: Any,
+    data_key: bytes,
+    key_version: int = 1,
+    tolerance: TransferTolerance | None = None,
+) -> tuple[ReconciliationMatch, ...]:
+    """Scan a user's undecided rows for the two sides of one move.
+
+    Only rows still awaiting review and already mapped to an owned account are
+    considered: an unmapped row has no account to transfer between, and a row
+    somebody already decided is not reopened. A pair the reviewer previously
+    rejected is left alone by :func:`record_match`, so re-running detection
+    does not resurrect it.
+    """
+
+    rows = list(
+        ImportedObservation.objects.filter(
+            user_id=user.pk,
+            review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
+            canonical_transaction__isnull=True,
+            financial_account_guess__isnull=False,
+            occurred_at__isnull=False,
+        ).exclude(direction=ImportedObservation.Direction.UNKNOWN)
+    )
+    facts = {
+        row.pk: facts_from(
+            row,
+            amount_minor=decrypt_observation(row, user=user, data_key=data_key).amount_minor,
+        )
+        for row in rows
+    }
+    outgoing_rows = [row for row in rows if row.direction == ImportedObservation.Direction.DEBIT]
+    incoming_rows = [row for row in rows if row.direction == ImportedObservation.Direction.CREDIT]
+
+    proposals: list[MatchProposal] = []
+    for outgoing in outgoing_rows:
+        for incoming in incoming_rows:
+            proposal = match_internal_transfer(
+                facts[outgoing.pk], facts[incoming.pk], tolerance=tolerance
+            )
+            if proposal is not None:
+                proposals.append(proposal)
+    return record_proposals(
+        user=user, proposals=proposals, data_key=data_key, key_version=key_version
     )
 
 
