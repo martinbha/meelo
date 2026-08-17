@@ -28,6 +28,7 @@ from apps.observations.review import decrypt_observation
 from apps.transactions.idempotency import TRANSFER_SOURCE, save_once, source_key
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import store_money
 
 from .matching import MatchProposal, TransferTolerance, match_internal_transfer
 from .models import ReconciliationMatch
@@ -120,6 +121,7 @@ def confirm_internal_transfer(
     user: Any,
     data_key: bytes,
     ledger_accounts: PostingRuleAccounts | None = None,
+    key_version: int = 1,
 ) -> CanonicalTransaction:
     """Confirm one internal-transfer candidate as a single canonical event.
 
@@ -192,15 +194,18 @@ def confirm_internal_transfer(
         reviewed_by=user,
         occurred_at=occurred_at,
         posted_at=posted_at,
-        amount_encrypted=f"{amount.amount_minor}:{amount.resolved_currency.code}",
         currency=amount.resolved_currency.code,
         transaction_type=CanonicalTransaction.TransactionType.INTERNAL_TRANSFER,
         financial_account=source,
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(TRANSFER_SOURCE, match.pk),
     )
+    # Encrypted under this row's identity before anything is written: the
+    # observations these came from held their values encrypted, and copying them
+    # out in clear would undo that at the moment they became history.
+    store_money(canonical, "amount_encrypted", amount, data_key=data_key, key_version=key_version)
     try:
-        validate_transaction_invariants(canonical)
+        validate_transaction_invariants(canonical, data_key=data_key)
     except ValidationError as exc:
         raise ReconciliationError(f"The transfer event is invalid: {exc}") from exc
     canonical, created = save_once(canonical)
@@ -214,7 +219,9 @@ def confirm_internal_transfer(
         # failure here rolls the whole confirmation back with it.
         canonical.status = CanonicalTransaction.Status.CONFIRMED
         canonical.save(update_fields=["status", "updated_at"])
-        post_transaction_by_type(canonical, ledger_accounts)
+        post_transaction_by_type(
+            canonical, ledger_accounts, data_key=data_key, key_version=key_version
+        )
 
     reviewed_at = timezone.now()
     for side in (outgoing, incoming):

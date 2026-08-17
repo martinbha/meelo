@@ -24,7 +24,7 @@ from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category
 from apps.categorization.normalization import display_merchant
 from apps.core.audit import record_audit_event
-from apps.core.crypto import decrypt_model_field, encrypt_model_field
+from apps.core.crypto import decrypt_model_field, encrypt_model_field, encrypt_model_fields
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.core.value_objects import Currency, InvalidCurrencyError, Money
 from apps.financial_accounts.models import FinancialAccount
@@ -33,6 +33,7 @@ from apps.ledger.models import LedgerEntry
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.transactions.idempotency import OBSERVATION_SOURCE, save_once, source_key
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import store_money
 
 from .models import ImportedObservation
 from .risk import HIGH_RISK_THRESHOLD
@@ -399,6 +400,7 @@ def accept_observation(
     transaction_type: str | None = None,
     ledger_accounts: PostingRuleAccounts | None = None,
     confirmed: bool = False,
+    key_version: int = 1,
 ) -> CanonicalTransaction:
     """Turn one reviewed observation into a canonical transaction.
 
@@ -452,7 +454,6 @@ def accept_observation(
         reviewed_by=user,
         occurred_at=observation.occurred_at,
         posted_at=observation.posted_at,
-        amount_encrypted=f"{amount.amount_minor}:{amount.resolved_currency.code}",
         currency=amount.resolved_currency.code,
         transaction_type=resolved_type,
         financial_account=account,
@@ -466,13 +467,23 @@ def accept_observation(
             if observation.category_guess_id is not None
             else CategorySource.UNCATEGORIZED
         ),
-        merchant_encrypted=_decrypt(observation, "merchant_raw_encrypted", data_key=data_key),
         # Carried across rather than recomputed: the index was built from the
         # merchant this row actually carries, and rebuilding it here would need
         # the search key that acceptance has no reason to hold.
         merchant_blind_index=observation.merchant_blind_index,
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),
+    )
+    # Encrypted with the reviewer's own key, under this row's identity, before
+    # anything is written. The observation already held these values encrypted;
+    # copying them out in clear would undo that at the moment they became
+    # history.
+    store_money(canonical, "amount_encrypted", amount, data_key=data_key, key_version=key_version)
+    encrypt_model_fields(
+        canonical,
+        {"merchant_encrypted": _decrypt(observation, "merchant_raw_encrypted", data_key=data_key)},
+        key=data_key,
+        key_version=key_version,
     )
     try:
         # Constraint checks are left to the database: the idempotency key is
@@ -490,7 +501,9 @@ def accept_observation(
         # posting against it again would double the entries.
         canonical.status = CanonicalTransaction.Status.CONFIRMED
         canonical.save(update_fields=["status", "updated_at"])
-        post_transaction_by_type(canonical, ledger_accounts)
+        post_transaction_by_type(
+            canonical, ledger_accounts, data_key=data_key, key_version=key_version
+        )
 
     _link_accepted(observation, canonical, user=user)
 

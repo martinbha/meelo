@@ -9,10 +9,17 @@ from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.generic import FormView
 
+from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .forms import ManualTransactionForm
 from .models import CanonicalTransaction
+
+
+def _data_key(request: HttpRequest) -> bytes:
+    """The requesting user's own key. Manual entry is encrypted like everything else."""
+
+    return get_user_data_key(user=request.user, actor=request.user, master_key=load_master_key())
 
 
 class ManualTransactionCreateView(LoginRequiredMixin, FormView):  # type: ignore[type-arg]
@@ -26,7 +33,7 @@ class ManualTransactionCreateView(LoginRequiredMixin, FormView):  # type: ignore
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:
-        form.save()
+        form.save(data_key=_data_key(self.request))
         messages.success(self.request, "Transaction saved for review.")
         return super().form_valid(form)
 
@@ -49,7 +56,7 @@ class ManualTransactionUpdateView(LoginRequiredMixin, FormView):  # type: ignore
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:
-        form.save()
+        form.save(data_key=_data_key(self.request))
         messages.success(self.request, "Transaction updated.")
         return super().form_valid(form)
 

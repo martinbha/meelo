@@ -24,6 +24,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
+from apps.core.crypto import encrypt_model_fields
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
@@ -31,6 +32,7 @@ from apps.observations.review import decrypt_observation
 from apps.transactions.idempotency import REFUND_SOURCE, save_once, source_key
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import store_money
 
 from .matching import MatchProposal, match_refund_to_purchase
 from .models import ReconciliationMatch
@@ -195,6 +197,7 @@ def confirm_refund_match(
     user: Any,
     data_key: bytes,
     ledger_accounts: PostingRuleAccounts | None = None,
+    key_version: int = 1,
 ) -> CanonicalTransaction:
     """Confirm one refund candidate as a refund against its purchase's category."""
 
@@ -253,7 +256,6 @@ def confirm_refund_match(
         reviewed_by=user,
         occurred_at=refund.occurred_at,
         posted_at=posted_at,
-        amount_encrypted=f"{amount.amount_minor}:{amount.resolved_currency.code}",
         currency=amount.resolved_currency.code,
         # Always a refund, never income. The credit direction alone cannot tell
         # the two apart, and guessing wrong inflates income permanently.
@@ -261,15 +263,21 @@ def confirm_refund_match(
         financial_account=account,
         payment_instrument=instrument,
         category=_purchase_category(purchase),
-        # Decrypted, not copied: the observation's ciphertext is bound to that
-        # row's model, field, and identifier, so moving the envelope across
-        # would produce a value nothing can ever read back.
-        merchant_encrypted=values.merchant,
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(REFUND_SOURCE, match.pk),
     )
+    # Encrypted under this row's identity before anything is written: the
+    # observations these came from held their values encrypted, and copying them
+    # out in clear would undo that at the moment they became history.
+    store_money(canonical, "amount_encrypted", amount, data_key=data_key, key_version=key_version)
+    encrypt_model_fields(
+        canonical,
+        {"merchant_encrypted": values.merchant},
+        key=data_key,
+        key_version=key_version,
+    )
     try:
-        validate_transaction_invariants(canonical)
+        validate_transaction_invariants(canonical, data_key=data_key)
     except ValidationError as exc:
         raise ReconciliationError(f"The refund event is invalid: {exc}") from exc
     canonical, created = save_once(canonical)
@@ -281,7 +289,9 @@ def confirm_refund_match(
     if ledger_accounts is not None:
         canonical.status = CanonicalTransaction.Status.CONFIRMED
         canonical.save(update_fields=["status", "updated_at"])
-        post_transaction_by_type(canonical, ledger_accounts)
+        post_transaction_by_type(
+            canonical, ledger_accounts, data_key=data_key, key_version=key_version
+        )
 
     refund.canonical_transaction = canonical
     refund.review_status = (

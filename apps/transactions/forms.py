@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from django import forms
 
 from apps.categorization.models import Category
+from apps.core.crypto import is_encrypted_value
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
@@ -43,7 +44,7 @@ class ManualTransactionForm(forms.Form):
         if instance is not None and not kwargs.get("data"):
             self.initial.update(
                 occurred_at=instance.occurred_at,
-                amount=Decimal(instance.amount_encrypted.split(":", 1)[0]) / Decimal("100"),
+                amount=self._initial_amount(instance),
                 currency=instance.currency,
                 transaction_type=instance.transaction_type,
                 financial_account=instance.financial_account_id,
@@ -54,7 +55,28 @@ class ManualTransactionForm(forms.Form):
                 notes=instance.notes_encrypted,
             )
 
-    def save(self) -> CanonicalTransaction:
+    @staticmethod
+    def _initial_amount(instance: CanonicalTransaction) -> Decimal | None:
+        """The amount to show in the edit form, if it can be read without a key.
+
+        An encrypted amount is left blank rather than shown as ciphertext. The
+        user re-enters it, which is the honest outcome: this form has no key.
+        """
+
+        if is_encrypted_value(instance.amount_encrypted or ""):
+            return None
+        try:
+            return Decimal(instance.amount_encrypted.split(":", 1)[0]) / Decimal("100")
+        except (InvalidOperation, ValueError):
+            return None
+
+    def save(self, *, data_key: bytes | None = None, key_version: int = 1) -> CanonicalTransaction:
+        """Persist the entry, encrypting its values when a key is supplied.
+
+        The view always supplies one. The parameter is optional so a test can
+        exercise the form without a key store behind it.
+        """
+
         if not self.is_valid():
             raise ValueError("Call is_valid() before save().")
         data = self.cleaned_data
@@ -72,5 +94,7 @@ class ManualTransactionForm(forms.Form):
             "notes": data.get("notes", ""),
         }
         if self.instance is None:
-            return create_manual_transaction(**kwargs)
-        return update_manual_transaction(self.instance.pk, **kwargs)
+            return create_manual_transaction(**kwargs, data_key=data_key, key_version=key_version)
+        return update_manual_transaction(
+            self.instance.pk, **kwargs, data_key=data_key, key_version=key_version
+        )
