@@ -7,6 +7,7 @@ from typing import Any
 
 from django.conf import settings
 
+from apps.core import metrics
 from apps.core.crypto import decrypt_model_field
 from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.observations.services import import_parser_selection
@@ -256,11 +257,20 @@ def execute_document_ocr(
 ) -> tuple[OcrRun, ...]:
     master_key = load_master_key()
     data_key = get_user_data_key(user=user, actor=user, master_key=master_key)
-    return orchestrate_document_ocr(
-        document=document,
-        source_path=source_path,
-        user=user,
-        data_key=data_key,
-        key_version=user.encryption_key_version,
-        plans=default_engine_plans(),
-    )
+    # Timed here rather than per engine: this is the span a slow document is
+    # actually slow for, and the outcome label separates a fast failure from a
+    # fast success.
+    with metrics.timed(metrics.OCR_DURATION, document_id=str(document.pk)):
+        try:
+            runs = orchestrate_document_ocr(
+                document=document,
+                source_path=source_path,
+                user=user,
+                data_key=data_key,
+                key_version=user.encryption_key_version,
+                plans=default_engine_plans(),
+            )
+        except Exception:
+            metrics.record(metrics.OCR_FAILED, document_id=str(document.pk))
+            raise
+    return runs

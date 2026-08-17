@@ -6,6 +6,7 @@ from typing import Any
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
+from apps.core import metrics
 from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, InvalidRequestError
 
@@ -76,12 +77,15 @@ def create_uploaded_document(
                 obj=document,
                 metadata={"mime_type": content_type, "file_size": size},
             )
+            metrics.record(metrics.UPLOAD_RECEIVED, document_id=str(document.id))
     except IntegrityError as exc:
         path.unlink(missing_ok=True)
         path.parent.rmdir()
         existing = SourceDocument.objects.filter(user=user, file_sha256=stored_digest).first()
         if existing is not None:
+            metrics.record(metrics.UPLOAD_REJECTED, reason="duplicate")
             raise DuplicateUploadError(existing) from exc
+        metrics.record(metrics.UPLOAD_REJECTED, reason="integrity_error")
         raise
     except Exception:
         path.unlink(missing_ok=True)
