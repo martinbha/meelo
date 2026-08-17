@@ -17,6 +17,7 @@ import pytest
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.core.models import AuditEvent
 from apps.ledger.models import LedgerEntry
+from apps.ledger.posting import entry_amount
 from apps.ledger.rules import PostingRuleAccounts
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation
@@ -475,7 +476,9 @@ def test_confirming_posts_the_ledger_in_the_same_transaction(owner: Any) -> None
     assert transfer.status == CanonicalTransaction.Status.CONFIRMED
     entries = LedgerEntry.objects.filter(transaction=transfer)
     assert entries.count() == 2
-    assert {entry.amount_encrypted for entry in entries} == {"500000:KRW"}
+    assert {entry_amount(entry, data_key=KEY).amount_minor for entry in entries} == {500_000}
+    # Encrypted on disk: an entry amount is a second copy of the money.
+    assert all("500000" not in entry.amount_encrypted for entry in entries)
 
 
 def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None:

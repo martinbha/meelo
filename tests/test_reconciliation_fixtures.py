@@ -20,7 +20,6 @@ from typing import Any
 import pytest
 
 from apps.ledger.models import LedgerEntry
-from apps.ledger.posting import deserialize_money
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation, decrypt_observation
 from apps.observations.services import import_parser_selection
@@ -54,6 +53,7 @@ from apps.transactions.classification import (
     is_spending_reduction,
 )
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import read_money
 from tests.factories import (
     make_account,
     make_document,
@@ -235,9 +235,9 @@ def totals(user: Any) -> dict[str, int]:
 
     result = {"spending_minor": 0, "income_minor": 0, "refund_minor": 0, "neutral_minor": 0}
     for transaction in CanonicalTransaction.objects.filter(user=user):
-        # Read through the same decoder the ledger uses, rather than a second
-        # copy of the amount format that could drift away from it.
-        minor = deserialize_money(transaction.amount_encrypted).amount_minor
+        # Read through the same key-aware reader reporting uses. The amounts are
+        # encrypted now, so a plain decode would see ciphertext.
+        minor = read_money(transaction, "amount_encrypted", data_key=KEY).amount_minor
         kind = transaction.transaction_type
         if is_spending(kind):
             result["spending_minor"] += minor

@@ -27,6 +27,7 @@ from apps.parsing.contracts import (
 )
 from apps.parsing.registry import ParserSelection
 from apps.transactions.models import CanonicalTransaction
+from apps.transactions.money import read_money
 from tests.factories import (
     make_account,
     make_document,
@@ -270,7 +271,9 @@ def test_accepting_creates_exactly_one_canonical_transaction(owner: Any) -> None
     assert row.canonical_transaction_id == canonical.pk
     assert row.review_status == ImportedObservation.ReviewStatus.ACCEPTED
     assert row.feeds_reports is True
-    assert canonical.amount_encrypted == "4200:KRW"
+    assert read_money(canonical, "amount_encrypted", data_key=KEY).amount_minor == 4200
+    # The amount is stored encrypted, not as a readable string.
+    assert canonical.amount_encrypted != "4200:KRW"
     assert canonical.reviewed_by_id == owner.pk
 
 

@@ -15,9 +15,11 @@ from typing import Any
 import pytest
 
 from apps.categorization.models import Category
+from apps.core.crypto import decrypt_model_field
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.core.models import AuditEvent
 from apps.ledger.models import LedgerEntry
+from apps.ledger.posting import entry_amount
 from apps.ledger.rules import PostingRuleAccounts
 from apps.observations.models import ImportedObservation
 from apps.observations.queue import QueueFilter, review_queue
@@ -299,7 +301,7 @@ def test_another_users_refund_cannot_be_confirmed(owner: Any) -> None:
         confirm_refund_match(match.pk, user=intruder, data_key=KEY)
 
 
-def test_the_refund_merchant_is_readable_rather_than_a_copied_envelope(owner: Any) -> None:
+def test_the_refund_merchant_is_re_encrypted_rather_than_copied(owner: Any) -> None:
     """Ciphertext is bound to its own row, so it cannot be moved across models."""
 
     _, refund, _ = seed_refund(owner)
@@ -307,7 +309,10 @@ def test_the_refund_merchant_is_readable_rather_than_a_copied_envelope(owner: An
 
     event = confirm_refund_match(match.pk, user=owner, data_key=KEY)
 
-    assert event.merchant_encrypted == MERCHANT
+    # Readable with the key, unreadable without it, and not the observation's
+    # envelope: that one is bound to a different row.
+    assert decrypt_model_field(event, "merchant_encrypted", key=KEY) == MERCHANT
+    assert MERCHANT not in event.merchant_encrypted
     assert event.merchant_encrypted != refund.merchant_raw_encrypted
 
 
@@ -359,6 +364,9 @@ def test_confirming_posts_the_ledger_in_the_same_transaction(owner: Any) -> None
 
     assert event.status == CanonicalTransaction.Status.CONFIRMED
     assert LedgerEntry.objects.filter(transaction=event).count() == 2
+    for entry in LedgerEntry.objects.filter(transaction=event):
+        assert entry_amount(entry, data_key=KEY).amount_minor == 200_000
+        assert "200000" not in entry.amount_encrypted
 
 
 def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None:
