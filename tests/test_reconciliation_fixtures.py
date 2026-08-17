@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from apps.ledger.models import LedgerEntry
+from apps.ledger.posting import deserialize_money
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation, decrypt_observation
 from apps.observations.services import import_parser_selection
@@ -88,7 +89,7 @@ def build_world(scenario: ReconciliationScenario, user: Any) -> dict[str, Any]:
     }
     rows: dict[str, ImportedObservation] = {}
     for index, document in enumerate(scenario.documents):
-        stored = make_document(user, file_sha256=f"{index}" * 64)
+        stored = make_document(user, file_sha256=f"{index:064x}")
         run = make_ocr_run(user, stored)
         imported = import_parser_selection(
             document=stored,
@@ -156,16 +157,31 @@ def detect(scenario: ReconciliationScenario, world: dict[str, Any], user: Any) -
         )
 
     # Settlements: the caller pairs bank rows against statement rows, because
-    # the matcher does not know which screenshot a row came from.
+    # the matcher does not know which screenshot a row came from. Every
+    # combination is tried rather than only the ones the fixture names, so a
+    # proposal nobody expected still shows up and fails the count.
+    statements = [
+        row.key
+        for document in scenario.documents
+        if document.source_type == "card_statement"
+        for row in document.rows
+    ]
+    withdrawals = [
+        row.key
+        for document in scenario.documents
+        if document.source_type != "card_statement"
+        for row in document.rows
+    ]
     proposals = []
-    for candidate in scenario.expected_candidates:
-        proposal = match_credit_card_settlement(
-            facts[candidate.left],
-            facts[candidate.right],
-            statement_balance_minor=facts[candidate.right].amount_minor,
-        )
-        if proposal is not None:
-            proposals.append(proposal)
+    for withdrawal in withdrawals:
+        for statement in statements:
+            proposal = match_credit_card_settlement(
+                facts[withdrawal],
+                facts[statement],
+                statement_balance_minor=facts[statement].amount_minor,
+            )
+            if proposal is not None:
+                proposals.append(proposal)
     return record_proposals(user=user, proposals=proposals, data_key=KEY)
 
 
@@ -219,7 +235,9 @@ def totals(user: Any) -> dict[str, int]:
 
     result = {"spending_minor": 0, "income_minor": 0, "refund_minor": 0, "neutral_minor": 0}
     for transaction in CanonicalTransaction.objects.filter(user=user):
-        minor = int(transaction.amount_encrypted.split(":", maxsplit=1)[0])
+        # Read through the same decoder the ledger uses, rather than a second
+        # copy of the amount format that could drift away from it.
+        minor = deserialize_money(transaction.amount_encrypted).amount_minor
         kind = transaction.transaction_type
         if is_spending(kind):
             result["spending_minor"] += minor
