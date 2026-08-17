@@ -9,8 +9,8 @@ services:
       DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-Asia/Seoul}
       DATABASE_ENGINE: django.db.backends.postgresql
       POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
-      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_USER: ${POSTGRES_APP_USER:-finance_app}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       DOCUMENT_TMP_ROOT: /run/finance-ocr
@@ -23,6 +23,9 @@ services:
     secrets:
       - field_encryption_master_key
     read_only: true
+    networks:
+      - internal
+      - edge
     tmpfs:
       - /tmp:mode=1777,size=128m
     healthcheck:
@@ -48,8 +51,8 @@ services:
       DJANGO_TIME_ZONE: ${DJANGO_TIME_ZONE:-Asia/Seoul}
       DATABASE_ENGINE: django.db.backends.postgresql
       POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
-      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_USER: ${POSTGRES_APP_USER:-finance_app}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       DOCUMENT_TMP_ROOT: /run/finance-ocr
@@ -62,6 +65,8 @@ services:
     secrets:
       - field_encryption_master_key
     read_only: true
+    networks:
+      - internal
     tmpfs:
       - /tmp:mode=1777,size=128m
     healthcheck:
@@ -80,12 +85,23 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    # Deliberately no `ports:`. The database is reachable only from the internal
+    # network, so a misconfigured host firewall cannot expose it. Connect for
+    # maintenance with `docker compose exec postgres psql`.
+    networks:
+      - internal
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-finance_ocr}
-      POSTGRES_USER: ${POSTGRES_USER:-finance_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      # The bootstrap superuser. Used by the init script on first start and by
+      # nothing afterwards — the application connects as finance_app.
+      POSTGRES_USER: ${POSTGRES_OWNER_USER:-finance_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?POSTGRES_OWNER_PASSWORD must be set}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
+      POSTGRES_MIGRATION_PASSWORD: ${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD must be set}
+      POSTGRES_BACKUP_PASSWORD: ${POSTGRES_BACKUP_PASSWORD:?POSTGRES_BACKUP_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -103,6 +119,8 @@ services:
     depends_on:
       web:
         condition: service_healthy
+    networks:
+      - edge
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -113,6 +131,14 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+networks:
+  # Nothing on this network is published to the host. The database lives here
+  # and only here.
+  internal:
+    internal: true
+  # Only the proxy is reachable from outside.
+  edge:
 
 volumes:
   caddy_config:
