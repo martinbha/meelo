@@ -266,7 +266,7 @@ def test_rule_applies_to_draft_but_never_silently_rewrites_confirmed_transaction
     )
 
     decision = categorize_transaction(transaction_id=draft.pk, user=user)
-    assert decision.rule_id == rule.pk
+    assert decision.source_id == rule.pk
     assert decision.source == CategorySource.USER_RULE
     draft.refresh_from_db()
     assert draft.category_id == category.pk
@@ -327,6 +327,6 @@ def test_card_scoped_rule_wins_over_generic_rule_at_same_priority(
     )
 
     decision = categorize_transaction(transaction_id=transaction_record.pk, user=user)
-    assert decision.rule_id == card_rule.pk
+    assert decision.source_id == card_rule.pk
     transaction_record.refresh_from_db()
     assert transaction_record.category_id == card_category.pk

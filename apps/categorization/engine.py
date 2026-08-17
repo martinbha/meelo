@@ -75,11 +75,16 @@ USER_DECIDED: frozenset[str] = frozenset({CategorySource.MANUAL_OVERRIDE})
 
 @dataclass(frozen=True, slots=True)
 class CategoryDecision:
-    """A category and the reason it was chosen."""
+    """A category and the reason it was chosen.
+
+    ``source_id`` identifies whatever produced the answer, which is not always a
+    rule: a prior confirmation points at the transaction the user categorised,
+    and a manual override points at this one.
+    """
 
     category: Category | None
     source: CategorySource
-    rule_id: Any = None
+    source_id: Any = None
 
     @property
     def is_categorized(self) -> bool:
@@ -231,9 +236,11 @@ def classify(transaction: CanonicalTransaction, *, user: Any) -> CategoryDecisio
     preview the answer before applying it.
     """
 
-    if transaction.category_source in USER_DECIDED and transaction.category_id is not None:
+    if transaction.category_source in USER_DECIDED:
         # The user has already answered. Re-running classification over their
-        # answer would undo their work on a schedule.
+        # answer would undo their work on a schedule — and that holds when the
+        # answer was "none of these": clearing a category is a decision too, and
+        # re-filing the row afterwards would be the same mistake.
         return CategoryDecision(
             transaction.category, CategorySource.MANUAL_OVERRIDE, transaction.pk
         )

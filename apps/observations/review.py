@@ -20,6 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
+from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category
 from apps.core.audit import record_audit_event
 from apps.core.crypto import decrypt_model_field, encrypt_model_field
@@ -446,6 +447,14 @@ def accept_observation(
         financial_account=account,
         payment_instrument=observation.payment_instrument_guess,
         category=observation.category_guess,
+        # A guess carried over from the parser is recorded as one, so a report
+        # asking for uncategorised rows does not count a row that has a
+        # category, and so the priority engine knows how weak the evidence is.
+        category_source=(
+            CategorySource.PARSER
+            if observation.category_guess_id is not None
+            else CategorySource.UNCATEGORIZED
+        ),
         merchant_encrypted=_decrypt(observation, "merchant_raw_encrypted", data_key=data_key),
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),

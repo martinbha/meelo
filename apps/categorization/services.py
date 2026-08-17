@@ -218,7 +218,7 @@ def categorize_transaction(*, transaction_id: Any, user: Any) -> CategoryDecisio
             obj=transaction,
             metadata={
                 "source": str(decision.source),
-                "rule_id": str(decision.rule_id) if decision.rule_id else "",
+                "source_id": str(decision.source_id) if decision.source_id else "",
             },
         )
     return decision
@@ -246,9 +246,9 @@ def set_category_manually(
     _check_owned(user, category=category)
 
     transaction.category = category
-    transaction.category_source = (
-        CategorySource.MANUAL_OVERRIDE if category is not None else CategorySource.UNCATEGORIZED
-    )
+    # Recorded as the user's own decision even when they cleared it: "none of
+    # these" is an answer, and re-filing the row on the next run would undo it.
+    transaction.category_source = CategorySource.MANUAL_OVERRIDE
     transaction.save(update_fields=("category", "category_source", "updated_at"))
     record_audit_event(
         user=user,
