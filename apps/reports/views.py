@@ -61,14 +61,18 @@ def _range(request: HttpRequest, year: int, month: int) -> tuple[date, date]:
     return start, end
 
 
-def _category_filter(request: HttpRequest) -> Any:
-    """A category to narrow to, only ever one the requesting user owns."""
+def _owned_id(request: HttpRequest, model: Any, parameter: str) -> Any:
+    """An identifier from the query string, only ever one the user owns.
 
-    requested = request.GET.get("category")
+    An identifier the user does not own is dropped rather than applied. Applying
+    it would render an empty page implying they had spent nothing.
+    """
+
+    requested = request.GET.get(parameter)
     if not requested:
         return None
     return (
-        owned_queryset(Category, request.user)
+        owned_queryset(model, request.user)
         .filter(pk=requested)
         .values_list("pk", flat=True)
         .first()
@@ -89,7 +93,7 @@ class SpendingReportView(LoginRequiredMixin, View):
         data_key = get_user_data_key(
             user=request.user, actor=request.user, master_key=load_master_key()
         )
-        category_id = _category_filter(request)
+        category_id = _owned_id(request, Category, "category")
         build = category_breakdown if self.grouping == "category" else merchant_breakdown
         breakdown = build(
             request.user,
@@ -128,20 +132,6 @@ class MerchantReportView(SpendingReportView):
     """The same period, grouped by merchant instead."""
 
     grouping = "merchant"
-
-
-def _owned_id(request: HttpRequest, model: Any, parameter: str) -> Any:
-    """An identifier from the query string, only ever one the user owns."""
-
-    requested = request.GET.get(parameter)
-    if not requested:
-        return None
-    return (
-        owned_queryset(model, request.user)
-        .filter(pk=requested)
-        .values_list("pk", flat=True)
-        .first()
-    )
 
 
 @method_decorator(never_cache, name="dispatch")
