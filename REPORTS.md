@@ -82,10 +82,48 @@ than by attempting a decrypt and catching the failure, and **raises** when a row
 is encrypted and no key was given. A silently skipped row shrinks a month in the
 one direction nobody checks.
 
+## Category and merchant breakdowns
+
+The database cannot add encrypted amounts up — `SUM()` over a column of
+ciphertext is not a number — so the arithmetic happens in the application
+process, over rows decrypted one at a time and discarded.
+
+Grouping by merchant has the same shape of problem: the name is encrypted, so
+rows are grouped on their **blind index**, which is queryable, and exactly one
+representative name per group is decrypted for the label.
+
+Only the `spending` and `refund` buckets reach a line. Income and pure movement
+belong to the income-versus-spending view (#87); mixing them in would break the
+reconciliation the breakdown promises.
+
+**Uncategorised is a line, sorted last.** Money that fell out of every category
+is the first thing a user should see and the last thing to bury mid-list — it is
+a call to action, not a category.
+
+A `Breakdown` deliberately does **not** carry a `SpendingTotals`. Only two of
+its five buckets apply, and handing back one with `income_minor` sitting at zero
+would invite a caller to conclude there was no income — when income was never in
+scope. It reports its own gross, refunds, net, and count instead.
+
+`reconciles(breakdown, totals)` compares the lines against a total computed
+independently by `monthly_spending`. A breakdown checked only against its own
+sums checks nothing. It returns rather than raises: a disagreement has to be
+visible on the page, not an error in front of someone who only wanted to look at
+their month. The page only claims reconciliation when it is showing a whole
+unfiltered month, because a narrowed range is *expected* to differ.
+
+## Nothing is cached
+
+Every figure on a report page is derived from amounts encrypted per user. A
+cached total is a plaintext copy of somebody's finances living outside the
+encrypted store, so the report views carry `never_cache` and write nothing of
+their own. The pages are cheap to rebuild and expensive to leak, which settles
+the trade (specification 22.5).
+
 ## Testing
 
 ```bash
-uv run pytest tests/test_monthly_spending.py
+uv run pytest tests/test_monthly_spending.py tests/test_category_reports.py
 ```
 
 The month in `test_a_hand_calculated_month_adds_up` was worked out with a pen

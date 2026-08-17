@@ -135,3 +135,32 @@ def decrypt_model_field(instance: Any, field: str, *, key: bytes) -> str:
         key=key,
         context=model_field_context(instance, field),
     )
+
+
+def is_encrypted_value(value: str) -> bool:
+    """Whether a stored field holds a ciphertext envelope rather than plaintext.
+
+    Field encryption reached some models after their first rows were written, so
+    both forms exist side by side until those rows are re-encrypted (#163). The
+    envelope is recognised by its version prefix rather than by attempting a
+    decrypt and catching the failure: a genuine authentication failure has to
+    stay loud, and swallowing it would let a caller treat ciphertext as a value.
+    """
+
+    return value.startswith(f"{FORMAT_VERSION}.")
+
+
+def read_model_field(instance: Any, field: str, *, key: bytes | None = None) -> str:
+    """Read a field that may or may not be encrypted yet.
+
+    Raises when the field is encrypted and no key was supplied, rather than
+    returning the envelope. A caller that got ciphertext back would go on to
+    display it, index it, or add it up.
+    """
+
+    value = getattr(instance, field) or ""
+    if not value or not is_encrypted_value(value):
+        return value
+    if key is None:
+        raise EncryptionError(f"Field {field!r} is encrypted and no key was supplied.")
+    return decrypt_model_field(instance, field, key=key)

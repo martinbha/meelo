@@ -15,7 +15,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
-from apps.core.crypto import FORMAT_VERSION, decrypt_model_field
+from apps.core.crypto import read_model_field
 from apps.core.errors import ApplicationError
 from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404
@@ -39,12 +39,7 @@ def _merchant(transaction: CanonicalTransaction, *, data_key: bytes) -> str:
     would say so (#163).
     """
 
-    value = transaction.merchant_encrypted
-    if not value:
-        return ""
-    if not value.startswith(f"{FORMAT_VERSION}."):
-        return value
-    return decrypt_model_field(transaction, "merchant_encrypted", key=data_key)
+    return read_model_field(transaction, "merchant_encrypted", key=data_key)
 
 
 class CategoryCorrectionView(LoginRequiredMixin, View):
