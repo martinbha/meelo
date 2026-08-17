@@ -8,6 +8,10 @@ cached category total is a plaintext copy of the user's finances sitting outside
 the encrypted store, and an external cache is the one place it must never be
 (specification 22.5, 25.3-25.4).
 
+Only spending and refunds land on a line. Income and pure movement belong to the
+income-versus-spending view (#87), and mixing them in would break the
+reconciliation this module promises.
+
 Grouping by merchant has the same shape of problem: the name is encrypted, so
 rows are grouped by their **blind index**, which is queryable, and exactly one
 representative name per group is decrypted for the label.
@@ -19,7 +23,7 @@ no breakdown, because it looks like an answer.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -29,12 +33,8 @@ from apps.transactions.classification import bucket_of
 from apps.transactions.models import CanonicalTransaction
 
 from .grouping import group_rows, sorted_lines
+from .predicates import REFUNDS, SPENDING
 from .spending import SpendingTotals, reportable_transactions
-
-#: The two buckets that land on a category or a merchant. Income and pure
-#: movement belong to the income-versus-spending view (#87), not here, and
-#: mixing them in would break the reconciliation this module promises.
-SPENDING_BUCKETS: frozenset[str] = frozenset({"spending", "refund"})
 
 #: Shown for transactions nobody has categorised. Named rather than omitted:
 #: money that fell out of every category is the first thing a user should see.
@@ -100,14 +100,15 @@ class Breakdown:
         return next((line for line in self.lines if line.key == ""), None)
 
 
-def _spending_rows(
-    transactions: Iterable[CanonicalTransaction],
-) -> list[CanonicalTransaction]:
-    return [
-        transaction
-        for transaction in transactions
-        if bucket_of(transaction.transaction_type) in SPENDING_BUCKETS
-    ]
+def _spending_rows(queryset: Any) -> list[CanonicalTransaction]:
+    """Narrow to the rows that can land on a line, in the database.
+
+    Filtered in SQL rather than in Python: the alternative fetches a whole
+    month's transfers and card payments only to discard them, and fetching is
+    the part a report pays for.
+    """
+
+    return list(queryset.filter(SPENDING | REFUNDS))
 
 
 _FIELDS = ("gross_spending_minor", "refunds_minor", "transaction_count")
