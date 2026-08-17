@@ -124,9 +124,11 @@ def preview_rule(
     return RulePreview(
         scope=resolved,
         pending_observations=observations.count(),
-        draft_transactions=matching.filter(
-            status=CanonicalTransaction.Status.DRAFT,
-        )
+        # The transaction being corrected is excluded: it is handled by the
+        # correction itself, and counting it would promise one more move than
+        # applying the rule backwards actually makes.
+        draft_transactions=matching.filter(status=CanonicalTransaction.Status.DRAFT)
+        .exclude(pk=transaction.pk)
         .exclude(category_source=CategorySource.MANUAL_OVERRIDE)
         .count(),
         confirmed_transactions=matching.filter(
