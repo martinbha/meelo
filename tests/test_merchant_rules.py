@@ -134,7 +134,10 @@ def test_alias_service_encrypts_values_and_matches_by_scoped_blind_index(
     )
 
     assert "corner shop" not in alias.alias_encrypted.casefold()
-    assert decrypt_normalized_merchant(alias, encryption_key=ENCRYPTION_KEY) == "corner shop seoul"
+    # Spacing is stripped along with case: it is the least reliable part of an
+    # OCR'd merchant name, and the stored value is a lookup key rather than a
+    # label. The raw text a person reads is kept on the observation.
+    assert decrypt_normalized_merchant(alias, encryption_key=ENCRYPTION_KEY) == "cornershopseoul"
     assert (
         find_merchant_alias(user=user, merchant="corner shop", blind_index_key=BLIND_INDEX_KEY)
         == alias

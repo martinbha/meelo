@@ -71,7 +71,7 @@
 
           <dl class="row-values">
             <dt>Date</dt><dd>{{ row.observation.occurred_at|default:"—" }}</dd>
-            <dt>Merchant</dt><dd>{{ row.values.merchant|default:"—" }}</dd>
+            <dt>Merchant</dt><dd>{{ row.values.merchant_display|default:"—" }}</dd>
             <dt>Amount</dt><dd>{{ row.values.amount|default:"—" }}</dd>
             <dt>Direction</dt><dd>{{ row.observation.get_direction_display }}</dd>
             <dt>Account / card</dt>

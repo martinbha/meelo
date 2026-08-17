@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category
+from apps.categorization.normalization import display_merchant
 from apps.core.audit import record_audit_event
 from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
@@ -98,6 +99,16 @@ class DecryptedObservation:
     @property
     def amount_minor(self) -> int | None:
         return self.amount.amount_minor if self.amount is not None else None
+
+    @property
+    def merchant_display(self) -> str:
+        """The merchant as the source printed it, with spacing tidied.
+
+        Never the normalized form: that is a lookup key, and showing it would
+        name a shop the user has not seen on any receipt.
+        """
+
+        return display_merchant(self.merchant)
 
 
 def _decrypt(observation: ImportedObservation, field: str, *, data_key: bytes) -> str:
@@ -456,6 +467,10 @@ def accept_observation(
             else CategorySource.UNCATEGORIZED
         ),
         merchant_encrypted=_decrypt(observation, "merchant_raw_encrypted", data_key=data_key),
+        # Carried across rather than recomputed: the index was built from the
+        # merchant this row actually carries, and rebuilding it here would need
+        # the search key that acceptance has no reason to hold.
+        merchant_blind_index=observation.merchant_blind_index,
         status=CanonicalTransaction.Status.DRAFT,
         source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),
     )

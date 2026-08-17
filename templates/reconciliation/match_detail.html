@@ -39,7 +39,7 @@
           </header>
           <dl class="row-values">
             <dt>Date</dt><dd>{{ candidate.observation.occurred_at|default:"—" }}</dd>
-            <dt>Merchant</dt><dd>{{ candidate.values.merchant|default:"—" }}</dd>
+            <dt>Merchant</dt><dd>{{ candidate.values.merchant_display|default:"—" }}</dd>
             <dt>Amount</dt><dd>{{ candidate.values.amount|default:"—" }}</dd>
             <dt>Direction</dt><dd>{{ candidate.observation.get_direction_display }}</dd>
             {% if candidate.values.approval_code %}

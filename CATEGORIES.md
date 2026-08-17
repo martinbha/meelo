@@ -61,6 +61,52 @@ that evidence is before it decides whether to replace it.
 Re-applying a decision that matches what is already stored writes nothing, so a
 bulk re-run does not churn every row's `updated_at`.
 
+## Merchant normalization
+
+The same shop reaches this system under several names. A card app prints
+`(주)스타벅스코리아 강남점`, the bank prints `스타벅스강남`, and OCR turns one of
+them into `스타벅스 강남 점`. A rule the user wrote once has to fire on all
+three.
+
+`normalize_merchant` is what makes that work, and it is deliberately lossy. It
+strips, in order: compatibility forms (NFKC), case, company forms (`주식회사`,
+`(주)`, `ltd`), payment prefixes the statement line carries (`체크카드`, `승인`),
+long digit runs that are approval numbers rather than names, punctuation, all
+spacing, and finally a trailing branch marker (`점`, `지점`, `본점`). A branch is
+a place, not a merchant.
+
+Spacing goes because it is the least reliable part of an OCR'd Korean name —
+`스타벅스 강남 점` and `스타벅스강남점` are the same shop and differ only in where
+the engine decided a word ended.
+
+**What normalization must never do is replace the name the user sees.** The raw
+text is stored separately in `merchant_raw_encrypted` and shown unchanged;
+`display_merchant` tidies spacing and nothing else. Showing the normalized form
+would tell someone their coffee came from `스타벅스강남` when the receipt says
+otherwise.
+
+Normalization cannot know that `스타벅스코리아` and `스타벅스` are one company —
+that is a judgement, and judgements are what `MerchantAlias` records.
+
+## Matching in two tiers
+
+- **Exact**, on an HMAC blind index of the normalized form. One query, no
+  decryption, and the index reveals nothing: it is keyed and scoped per user, so
+  an attacker holding the database can neither confirm a guess by hashing a name
+  nor tell that two people shop at the same place.
+- **Fuzzy**, in application memory only. `suggest_merchant_aliases` decrypts the
+  user's own aliases and ranks them with `rapidfuzz`. Scoring in the database
+  would mean putting merchant plaintext there, which is the thing this system
+  exists not to do.
+
+Uncertain matches are returned rather than filtered out. A weak suggestion a
+reviewer can see is one they can correct; one that was silently discarded is a
+merchant that stays unlinked forever.
+
+> **Changing the normalization rules changes every blind index derived from
+> them.** Stored indexes do not update themselves, so a change here needs a
+> reindex (#168).
+
 ## What the blind index can and cannot do
 
 Rules are matched on HMAC blind indexes, so the engine finds a rule without
