@@ -7,6 +7,7 @@ from django.contrib.auth.views import (
 )
 from django.urls import path
 
+from apps.categorization.views import CategoryCorrectionView
 from apps.core.views import dashboard, health_check
 from apps.observations.views import (
     DocumentImageView,
@@ -80,6 +81,11 @@ urlpatterns = [
     ),
     path("transactions/", TransactionListView.as_view(), name="transaction-list"),
     path("transactions/new/", ManualTransactionCreateView.as_view(), name="transaction-new"),
+    path(
+        "transactions/<uuid:pk>/category/",
+        CategoryCorrectionView.as_view(),
+        name="transaction-category",
+    ),
     path(
         "transactions/<uuid:pk>/edit/",
         ManualTransactionUpdateView.as_view(),
