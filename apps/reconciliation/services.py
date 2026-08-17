@@ -16,7 +16,7 @@ from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import encrypt_model_field
+from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
@@ -39,6 +39,11 @@ QUEUE_FILTER_BY_MATCH_TYPE: Mapping[str, str] = {
     ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT: "settlement",
     ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP: "settlement",
 }
+
+
+#: A link the user made themselves carries no doubt about whether the two rows
+#: belong together, so it is scored at the top of the range.
+MANUAL_LINK_SCORE = 100
 
 
 class ReconciliationError(InvalidRequestError):
@@ -136,6 +141,89 @@ def _encrypted_features(
     return encrypt_model_field(
         match, "match_features_json_encrypted", payload, key=data_key, key_version=key_version
     )
+
+
+def decrypt_match_features(match: ReconciliationMatch, *, data_key: bytes) -> tuple[str, ...]:
+    """Read back the feature names that produced this candidate's score.
+
+    Returns nothing rather than raising when a candidate was stored without a
+    data key: a proposal with no recorded evidence should show no reasons, not
+    break the queue it sits in.
+    """
+
+    if not match.match_features_json_encrypted:
+        return ()
+    payload = decrypt_model_field(match, "match_features_json_encrypted", key=data_key)
+    try:
+        values = json.loads(payload)
+    except json.JSONDecodeError:
+        return ()
+    return tuple(str(value) for value in values)
+
+
+@db_transaction.atomic
+def link_observations(
+    *,
+    user: Any,
+    left_observation_id: Any,
+    right_observation_id: Any,
+    match_type: str,
+    data_key: bytes | None = None,
+    key_version: int = 1,
+) -> ReconciliationMatch:
+    """Record a relationship the user asserts, rather than one detection found.
+
+    Scored :data:`MANUAL_LINK_SCORE` with a single ``manual_link`` reason, so
+    the queue says the evidence is the user's own judgement instead of implying
+    the matcher noticed something.
+
+    A pair the user previously dismissed is reopened here. Detection must never
+    resurrect a rejected candidate; the person who rejected it may.
+    """
+
+    if match_type not in ReconciliationMatch.MatchType.values:
+        raise ReconciliationError("Unknown match type.")
+    features = ("manual_link",)
+    match = record_match(
+        user=user,
+        left_observation_id=left_observation_id,
+        right_observation_id=right_observation_id,
+        match_type=match_type,
+        score=MANUAL_LINK_SCORE,
+        features=features,
+        data_key=data_key,
+        key_version=key_version,
+    )
+    if match.status == ReconciliationMatch.Status.REJECTED:
+        match.status = ReconciliationMatch.Status.PROPOSED
+        match.match_score = MANUAL_LINK_SCORE
+        match.reviewed_by = None
+        match.reviewed_at = None
+        match.match_features_json_encrypted = _encrypted_features(
+            match, features, data_key=data_key, key_version=key_version
+        )
+        match.save(
+            update_fields=[
+                "status",
+                "match_score",
+                "match_features_json_encrypted",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
+        record_audit_event(
+            user=user,
+            event_type="reconciliation_match_created",
+            obj=match,
+            metadata={
+                "match_type": match_type,
+                "score": MANUAL_LINK_SCORE,
+                "features": list(features),
+                "reopened": True,
+            },
+        )
+    return match
 
 
 def record_duplicate_candidates(
