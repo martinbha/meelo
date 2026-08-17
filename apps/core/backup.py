@@ -168,8 +168,12 @@ def create_backup(
             MANIFEST_NAME,
             json.dumps(manifest.as_dict(), ensure_ascii=False, indent=2).encode(),
         )
-        rows = serializers.serialize("json", _all_objects(), indent=2)
-        _add_bytes(archive, DATABASE_NAME, rows.encode())
+        rows = io.StringIO()
+        # Streamed rather than returned as one string: the caller already holds
+        # the compressed archive in memory, and a second full copy of every row
+        # is the one that would decide how large a database can be backed up.
+        serializers.serialize("json", _all_objects(), indent=2, stream=rows)
+        _add_bytes(archive, DATABASE_NAME, rows.getvalue().encode())
         for path in documents:
             relative = path.relative_to(document_root) if document_root else path.name
             # Screenshots are already encrypted at rest; they travel as they are.
@@ -193,10 +197,17 @@ def _open(path: Path, *, passphrase: str) -> bytes:
         raise BackupError(str(error)) from error
 
 
-def read_manifest(path: Path, *, passphrase: str) -> BackupManifest:
-    """Read what an archive claims to contain, without unpacking the rest."""
+def manifest_from(body: bytes) -> BackupManifest:
+    """Read the manifest out of an already-opened archive body.
 
-    with tarfile.open(fileobj=io.BytesIO(_open(path, passphrase=passphrase))) as archive:
+    Split from :func:`read_manifest` so a caller that has decrypted the archive
+    does not pay for it twice. Opening one costs an Argon2id derivation —
+    deliberately expensive, since it is the only thing between the archive and a
+    reader — so doing it once per operation rather than once per question
+    matters.
+    """
+
+    with tarfile.open(fileobj=io.BytesIO(body)) as archive:
         member = archive.extractfile(MANIFEST_NAME)
         if member is None:
             raise BackupError("The archive has no manifest.")
@@ -213,6 +224,12 @@ def read_manifest(path: Path, *, passphrase: str) -> BackupManifest:
         row_counts=payload["row_counts"],
         document_count=payload["document_count"],
     )
+
+
+def read_manifest(path: Path, *, passphrase: str) -> BackupManifest:
+    """Read what an archive claims to contain, without unpacking the rest."""
+
+    return manifest_from(_open(path, passphrase=passphrase))
 
 
 @dataclass
@@ -238,9 +255,11 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     first step as a real one.
     """
 
-    manifest = read_manifest(path, passphrase=passphrase)
+    # One decryption for both the manifest and the contents.
+    body = _open(path, passphrase=passphrase)
+    manifest = manifest_from(body)
     destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(fileobj=io.BytesIO(_open(path, passphrase=passphrase))) as archive:
+    with tarfile.open(fileobj=io.BytesIO(body)) as archive:
         for member in archive.getmembers():
             # Refuse a path that would escape the destination. An archive is
             # untrusted input even when it is one we wrote.
