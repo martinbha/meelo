@@ -451,7 +451,11 @@ def accept_observation(
         source_idempotency_key=source_key(OBSERVATION_SOURCE, observation.pk),
     )
     try:
-        canonical.full_clean()
+        # Constraint checks are left to the database: the idempotency key is
+        # meant to collide when an attempt is repeated, and save_once resolves
+        # that collision. Refusing it here would turn a converged retry into an
+        # error the caller cannot act on.
+        canonical.full_clean(validate_constraints=False)
     except ValidationError as exc:
         raise ObservationActionError(f"The canonical transaction is invalid: {exc}") from exc
     canonical, created = save_once(canonical)
