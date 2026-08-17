@@ -50,6 +50,8 @@ from tests.factories import make_account, make_document, make_ocr_run, make_user
 pytestmark = pytest.mark.django_db
 
 KEY = os.urandom(32)
+#: Duplicate grouping is keyed; the value is low entropy without one.
+SEARCH_KEY = os.urandom(32)
 
 
 @pytest.fixture
@@ -207,7 +209,8 @@ def test_near_duplicates_of_another_users_document_are_refused(owner: Any) -> No
 def test_duplicate_candidates_are_stored_without_merging_anything(owner: Any) -> None:
     _, rows = seed(owner, parsed(), parsed())
     candidates = find_duplicate_candidates(
-        [facts_from(row, merchant="스타벅스", amount_minor=4200) for row in rows]
+        [facts_from(row, merchant="스타벅스", amount_minor=4200) for row in rows],
+        search_key=SEARCH_KEY,
     )
 
     stored = record_duplicate_candidates(user=owner, candidates=candidates, data_key=KEY)

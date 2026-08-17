@@ -170,7 +170,9 @@ def test_the_index_reveals_nothing_about_the_name(owner: Any) -> None:
     index = merchant_blind_index("스타벅스 강남점", user_id=owner.pk, key=BLIND_INDEX_KEY)
 
     assert "스타벅스" not in index
-    assert len(index) == 64
+    # "<version>:<sha256 hex>"
+    assert index.startswith("1:")
+    assert len(index.split(":", 1)[1]) == 64
     # And a different key gives a different answer, so a plain digest of the
     # name cannot be used to confirm a guess.
     assert index != merchant_blind_index("스타벅스 강남점", user_id=owner.pk, key=os.urandom(32))

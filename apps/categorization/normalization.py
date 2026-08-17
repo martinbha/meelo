@@ -27,8 +27,6 @@ indexes do not update themselves, so a change here needs a reindex (#168).
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -37,6 +35,7 @@ from typing import Any
 
 from rapidfuzz.fuzz import ratio
 
+from apps.core.blind_index import blind_index
 from apps.core.errors import InvalidRequestError
 
 #: Company forms that say how a business is incorporated, not which one it is.
@@ -146,16 +145,13 @@ def display_merchant(value: str) -> str:
 def merchant_blind_index(value: str, *, user_id: Any, key: bytes) -> str:
     """A searchable token for one merchant, revealing nothing about the name.
 
-    Keyed and scoped to the user, so an attacker holding the database cannot
-    confirm a guess by hashing it, and cannot tell that two people shop at the
-    same place. The index is built from the *normalized* form, which is what
-    lets three spellings of one shop share a category rule.
+    Built from the *normalized* form, which is what lets three spellings of one
+    shop share a category rule. The keying, domain separation, and versioning
+    come from :mod:`apps.core.blind_index`; this function only decides what the
+    value is.
     """
 
-    if len(key) < 32:
-        raise InvalidRequestError("Blind-index keys must contain at least 32 bytes.")
-    payload = f"merchant|{user_id}|{normalize_merchant(value)}".encode()
-    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+    return blind_index("merchant", normalize_merchant(value), user_id=user_id, key=key)
 
 
 #: Similarity at or above which two names are treated as the same merchant.
