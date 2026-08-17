@@ -15,6 +15,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
@@ -38,6 +39,9 @@ from .services import (
 )
 from .transfers import confirm_internal_transfer
 
+#: Candidates shown per page. Matches the review queue so the two feel alike.
+MATCH_PAGE_SIZE = 25
+
 
 def _data_key(request: HttpRequest) -> bytes:
     return get_user_data_key(user=request.user, actor=request.user, master_key=load_master_key())
@@ -50,23 +54,29 @@ class MatchQueueView(LoginRequiredMixin, View):
         requested = request.GET.get("type") or None
         if requested is not None and requested not in ReconciliationMatch.MatchType.values:
             requested = None
-        data_key = _data_key(request)
         matches = open_matches(request.user, match_type=requested).select_related(
             "left_observation", "right_observation"
         )
+        # Paginated before anything is decrypted: reading the evidence costs one
+        # decryption per candidate, and a user with a backlog would otherwise
+        # pay for the whole queue to render a screen they can only read a page
+        # of.
+        page = Paginator(matches, MATCH_PAGE_SIZE).get_page(request.GET.get("page"))
+        data_key = _data_key(request)
         rows = [
             {
                 "match": match,
                 "reasons": describe_features(decrypt_match_features(match, data_key=data_key)),
                 "proposed_type": proposed_transaction_type_label(match.match_type),
             }
-            for match in matches
+            for match in page.object_list
         ]
         return render(
             request,
             "reconciliation/match_queue.html",
             {
                 "rows": rows,
+                "page": page,
                 "selected_type": requested,
                 "match_types": list(ReconciliationMatch.MatchType),
             },

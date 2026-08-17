@@ -59,6 +59,17 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if page.has_other_pages %}
+      <nav class="pagination" aria-label="Candidate pages">
+        {% if page.has_previous %}
+          <a href="?{% if selected_type %}type={{ selected_type }}&amp;{% endif %}page={{ page.previous_page_number }}">Previous</a>
+        {% endif %}
+        <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}
+          <a href="?{% if selected_type %}type={{ selected_type }}&amp;{% endif %}page={{ page.next_page_number }}">Next</a>
+        {% endif %}
+      </nav>
+    {% endif %}
   {% else %}
     <p class="empty-state">No candidates are waiting.</p>
   {% endif %}
