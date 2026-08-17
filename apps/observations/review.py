@@ -459,15 +459,11 @@ def accept_observation(
     except ValidationError as exc:
         raise ObservationActionError(f"The canonical transaction is invalid: {exc}") from exc
     canonical, created = save_once(canonical)
-    if not created:
-        # Another attempt got there first and its transaction is the one that
-        # counts. Link this row to it rather than posting a second time.
-        _link_accepted(observation, canonical, user=user)
-        return canonical
-
-    if ledger_accounts is not None:
+    if created and ledger_accounts is not None:
         # Confirm before posting: the ledger only accepts confirmed rows, and a
-        # failure here rolls back the acceptance with it.
+        # failure here rolls back the acceptance with it. Skipped when another
+        # attempt won the race — its transaction is the one that counts, and
+        # posting against it again would double the entries.
         canonical.status = CanonicalTransaction.Status.CONFIRMED
         canonical.save(update_fields=["status", "updated_at"])
         post_transaction_by_type(canonical, ledger_accounts)
@@ -480,8 +476,11 @@ def accept_observation(
         obj=observation,
         metadata={
             "canonical_transaction_id": str(canonical.pk),
-            "transaction_type": resolved_type,
-            "posted": ledger_accounts is not None,
+            # The winner's type, not this attempt's: they can differ, and the
+            # log has to describe the transaction that actually exists.
+            "transaction_type": canonical.transaction_type,
+            "posted": created and ledger_accounts is not None,
+            "converged": not created,
         },
     )
     return canonical
