@@ -31,6 +31,7 @@ from typing import Any
 from django.db.models import QuerySet
 
 from apps.core.ownership import owned_queryset
+from apps.core.value_objects import Money
 from apps.transactions.classification import bucket_of
 from apps.transactions.models import CanonicalTransaction
 
@@ -134,19 +135,19 @@ _BUCKET_FIELDS: Mapping[str, str] = {
 }
 
 
-def accumulate(
-    transactions: Iterable[CanonicalTransaction], *, data_key: bytes | None = None
+def accumulate_amounts(
+    pairs: Iterable[tuple[CanonicalTransaction, Money]],
 ) -> dict[str, SpendingTotals]:
-    """Add up transactions by currency and by what their type means.
+    """Add up transactions whose amounts have already been read.
 
-    Pure arithmetic over rows the caller has already selected, so a report can
-    be assembled from a queryset it built for its own reasons without this
-    module deciding what belongs in it.
+    Split out from :func:`accumulate` so the arithmetic can be timed on its own.
+    A benchmark that decrypted inside its "aggregate" stage would attribute the
+    expensive part of a report to the cheap one, which is exactly the mistake the
+    benchmark exists to prevent (#90).
     """
 
     running: dict[str, dict[str, int]] = {}
-    for transaction in transactions:
-        amount = transaction_amount(transaction, data_key=data_key)
+    for transaction, amount in pairs:
         currency = amount.resolved_currency.code
         if transaction.currency and transaction.currency.upper() != currency:
             # The column and the encoded amount disagree, so there is no honest
@@ -166,6 +167,21 @@ def accumulate(
         currency: SpendingTotals(currency=currency, **values)
         for currency, values in running.items()
     }
+
+
+def accumulate(
+    transactions: Iterable[CanonicalTransaction], *, data_key: bytes | None = None
+) -> dict[str, SpendingTotals]:
+    """Read each amount and add them up by currency and by meaning.
+
+    Pure with respect to selection: a report can hand over a queryset it built
+    for its own reasons without this module deciding what belongs in it.
+    """
+
+    return accumulate_amounts(
+        (transaction, transaction_amount(transaction, data_key=data_key))
+        for transaction in transactions
+    )
 
 
 def monthly_spending(

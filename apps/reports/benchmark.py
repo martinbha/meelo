@@ -33,7 +33,7 @@ from apps.transactions.models import CanonicalTransaction
 
 from .amounts import transaction_amount
 from .grouping import amount_in
-from .spending import SpendingTotals, accumulate, reportable_transactions
+from .spending import SpendingTotals, accumulate_amounts, reportable_transactions
 
 #: What a month's report may cost before it needs attention, in milliseconds per
 #: 1,000 transactions. Generous on purpose: these are the numbers that decide
@@ -84,14 +84,7 @@ class ReportTimings:
 
     def within_budget(self, budget: dict[str, float] | None = None) -> bool:
         limits = budget or BUDGET
-        return (
-            all(
-                self.per_thousand(name) <= limit
-                for name, limit in limits.items()
-                if name != "total_ms"
-            )
-            and self.per_thousand("total_ms") <= limits["total_ms"]
-        )
+        return not self.exceeded(limits)
 
     def exceeded(self, budget: dict[str, float] | None = None) -> tuple[str, ...]:
         """Which budgets were exceeded, for a failure message worth reading."""
@@ -139,16 +132,17 @@ def measure_report(
     rows, query_ms = _elapsed_ms(
         lambda: list(reportable_transactions(user, start=start, end=end).filter(currency=resolved))
     )
-    # Decryption is measured on its own pass so its cost is visible. The
-    # aggregate pass below then works from already-read values.
-    amounts, decrypt_ms = _elapsed_ms(
-        lambda: [amount_in(row, data_key=data_key, currency=resolved) for row in rows]
+    # Decrypted exactly once. Timing the aggregation over rows it had to decrypt
+    # again would charge the arithmetic for the cryptography and hide the real
+    # cost — which is the one thing this module must not do.
+    pairs, decrypt_ms = _elapsed_ms(
+        lambda: [(row, amount_in(row, data_key=data_key, currency=resolved)) for row in rows]
     )
-    totals, aggregate_ms = _elapsed_ms(lambda: accumulate(rows, data_key=data_key))
+    totals, aggregate_ms = _elapsed_ms(lambda: accumulate_amounts(pairs))
     return (
         totals.get(resolved, SpendingTotals(resolved)),
         ReportTimings(
-            row_count=len(amounts),
+            row_count=len(pairs),
             query_ms=query_ms,
             decrypt_ms=decrypt_ms,
             aggregate_ms=aggregate_ms,
