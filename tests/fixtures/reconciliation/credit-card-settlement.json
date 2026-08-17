@@ -2,7 +2,9 @@
   "name": "credit-card-settlement",
   "description": "A card statement and the bank withdrawal that pays it. The purchases were already counted when they were made, so the payment is not spending — treating it as one would double every card purchase in the month.",
   "detect": "settlements",
-  "accounts": ["checking"],
+  "accounts": [
+    "checking"
+  ],
   "documents": [
     {
       "key": "card-statement",
@@ -43,14 +45,28 @@
       "left": "payment",
       "right": "statement",
       "minimum_score": 70,
-      "features": ["issuer_counterparty", "amount_matches_statement"]
+      "features": [
+        "issuer_counterparty",
+        "amount_matches_statement"
+      ]
     }
   ],
-  "resolution": [{"candidate": 0, "action": "confirm"}],
-  "accept": [{"row": "payment", "type": "credit_card_payment"}],
+  "resolution": [
+    {
+      "candidate": 0,
+      "action": "confirm"
+    }
+  ],
+  "accept": [
+    {
+      "row": "payment",
+      "type": "credit_card_payment"
+    }
+  ],
   "expected": {
     "canonical_events": 1,
     "spending_minor": 0,
-    "income_minor": 0
+    "income_minor": 0,
+    "neutral_minor": 380000
   }
 }
