@@ -21,6 +21,7 @@ from apps.core.ownership import get_owned_object_or_404
 from apps.observations.review import decrypt_observation
 
 from .models import ReconciliationMatch
+from .refunds import confirm_refund_match
 from .services import confirm_duplicate_match, confirm_match, open_matches, reject_match
 from .transfers import confirm_internal_transfer
 
@@ -105,6 +106,15 @@ class MatchActionView(LoginRequiredMixin, View):
                     ),
                 )
                 messages.success(request, "The transfer was recorded as one event.")
+            elif match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
+                confirm_refund_match(
+                    match.pk,
+                    user=request.user,
+                    data_key=get_user_data_key(
+                        user=request.user, actor=request.user, master_key=load_master_key()
+                    ),
+                )
+                messages.success(request, "The refund was applied to its purchase category.")
             else:
                 confirm_match(match.pk, user=request.user)
                 messages.success(request, "The match was confirmed.")

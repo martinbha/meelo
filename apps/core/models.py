@@ -36,6 +36,7 @@ class AuditEvent(models.Model):
         RECONCILIATION_MATCH_REJECTED = "reconciliation_match_rejected", "Match rejected"
         DUPLICATE_MERGED = "duplicate_merged", "Duplicate merged"
         INTERNAL_TRANSFER_CONFIRMED = "internal_transfer_confirmed", "Internal transfer confirmed"
+        REFUND_MATCHED = "refund_matched", "Refund matched to a purchase"
         CATEGORY_CHANGED = "category_changed", "Category changed"
         PAYMENT_INSTRUMENT_CHANGED = "payment_instrument_changed", "Payment instrument changed"
         MERCHANT_ALIAS_CREATED = "merchant_alias_created", "Merchant alias created"

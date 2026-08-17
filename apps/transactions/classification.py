@@ -32,6 +32,12 @@ SPENDING_TYPES: frozenset[str] = frozenset(
 #: Money that arrived from outside every account the user owns.
 INCOME_TYPES: frozenset[str] = frozenset({_Type.INCOME})
 
+#: Money coming back from a purchase that was already counted. A refund is not
+#: income: the user is less out of pocket than before, not better off than they
+#: started, and counting it as income would inflate both totals at once
+#: (specification 7.5, 17.4). It subtracts from the category it came from.
+REFUND_TYPES: frozenset[str] = frozenset({_Type.REFUND})
+
 #: Movements between accounts the user already owns. They change where the
 #: money sits and nothing else, so they belong to neither total.
 NEUTRAL_TYPES: frozenset[str] = frozenset({_Type.INTERNAL_TRANSFER})
@@ -47,6 +53,17 @@ def is_income(transaction_type: str) -> bool:
     """Whether this type adds to an income total."""
 
     return transaction_type in INCOME_TYPES
+
+
+def is_spending_reduction(transaction_type: str) -> bool:
+    """Whether this type subtracts from a spending total rather than adding.
+
+    Kept apart from :func:`is_spending` so a caller cannot sum the two by
+    accident: a refund and a purchase both touch the same category total, but
+    with opposite signs.
+    """
+
+    return transaction_type in REFUND_TYPES
 
 
 def is_neutral(transaction_type: str) -> bool:
