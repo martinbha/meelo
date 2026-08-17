@@ -111,11 +111,34 @@ def test_a_rejected_row_stays_visible_and_says_why(owner: Any) -> None:
 
 
 def test_a_rejected_row_never_reaches_a_confirmed_total(owner: Any) -> None:
-    """Reports read canonical transactions, and a rejected row has none."""
+    """Visible here as a decision; absent from every figure."""
 
-    make_row(owner, review_status=_Status.REJECTED)
+    from apps.reports.spending import monthly_spending
+    from tests.factories import make_account
 
-    assert not CanonicalTransaction.objects.filter(user=owner).exists()
+    account = make_account(owner, name_blind_index="workload-account")
+    document = make_document(owner, file_sha256="7" * 64)
+    accepted = make_row(owner, document=document, review_status=_Status.ACCEPTED)
+    accepted.canonical_transaction = CanonicalTransaction.objects.create(
+        user=owner,
+        created_by=owner,
+        financial_account=account,
+        occurred_at=date(2026, 8, 15),
+        amount_encrypted="42900:KRW",
+        currency="KRW",
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+    accepted.save(update_fields=["canonical_transaction"])
+    make_row(owner, document=document, review_status=_Status.REJECTED)
+
+    workload = outstanding_work(owner)
+    month = monthly_spending(owner, year=2026, month=8).totals("KRW")
+
+    # The rejection is counted here...
+    assert by_key(workload.review_statuses)["rejected"].count == 1
+    # ...and the month reports only the accepted row's amount.
+    assert month.net_spending_minor == 42_900
+    assert month.transaction_count == 1
 
 
 def test_the_workload_is_clear_when_nothing_waits(owner: Any) -> None:
