@@ -70,7 +70,7 @@ that can read and write rows but cannot alter a table; migrations connect as a
 role that can; backups connect as a role that can only read. A SQL injection in
 the application therefore cannot drop a table, and a leaked backup credential
 cannot write one. `deploy/postgres/init/10-roles.sh` creates them on first boot.
-See [DATABASE.md](DATABASE.md#roles).
+See [DATABASE.md](DATABASE.md#roles) for exactly what each one may do.
 
 ### 3. The master key
 

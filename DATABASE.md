@@ -90,3 +90,31 @@ have to be set in middleware and asserted in a test that fails when it is absent
 ```bash
 uv run pytest tests/test_compose.py tests/test_production_security.py
 ```
+
+## Roles
+
+`deploy/postgres/init/10-roles.sh` creates three login roles on first boot, none
+of which is the superuser the container starts with. `PUBLIC` is stripped of
+everything on both the database and the `public` schema first, so a role has
+exactly what it was granted and nothing inherited.
+
+| Role | Can | Cannot |
+| --- | --- | --- |
+| `finance_migrate` | Everything on the schema — create, alter, drop. | — |
+| `finance_app` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables; use sequences. | Alter or drop anything. |
+| `finance_backup` | `SELECT`. | Write anything at all. |
+
+The split is what turns two whole classes of failure into smaller ones. A SQL
+injection reaching the application's connection cannot drop a table, because
+that connection has never had the privilege to. A leaked backup credential — the
+one most likely to end up on another machine, in a cron line, or in a log —
+cannot modify a single row.
+
+Default privileges are granted as well as current ones, so a table created by a
+future migration is reachable by the application without anybody remembering to
+re-grant. A permission model that needs a manual step after every migration is
+one that will be fixed by granting too much.
+
+Passwords reach `psql` through `--set` and are interpolated with `format(%L)`
+rather than pasted into the SQL text. A password containing an apostrophe is
+otherwise a syntax error at best and an injection at worst.
