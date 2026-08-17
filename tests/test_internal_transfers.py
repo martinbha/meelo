@@ -17,6 +17,7 @@ import pytest
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.core.models import AuditEvent
 from apps.ledger.models import LedgerEntry
+from apps.ledger.rules import PostingRuleAccounts
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation
 from apps.observations.services import import_parser_selection
@@ -40,7 +41,7 @@ from apps.reconciliation.services import (
     record_match,
     reject_match,
 )
-from apps.reconciliation.transfers import confirm_internal_transfer
+from apps.reconciliation.transfers import confirm_internal_transfer, propose_internal_transfers
 from apps.transactions.classification import is_income, is_neutral, is_spending
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import (
@@ -194,7 +195,7 @@ def test_an_internal_transfer_is_neither_income_nor_spending() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Confirmation
+# Candidate creation and confirmation
 # ---------------------------------------------------------------------------
 
 
@@ -254,6 +255,65 @@ def propose(user: Any, outgoing: Any, incoming: Any) -> ReconciliationMatch:
         score=85,
         features=("exact_amount", "same_date"),
     )
+
+
+def test_detection_creates_an_internal_transfer_candidate(owner: Any) -> None:
+    outgoing, incoming, _, _ = seed_transfer(owner)
+
+    stored = propose_internal_transfers(user=owner, data_key=KEY)
+
+    assert len(stored) == 1
+    candidate = stored[0]
+    assert candidate.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER
+    assert {candidate.left_observation_id, candidate.right_observation_id} == {
+        outgoing.pk,
+        incoming.pk,
+    }
+
+
+def test_detection_does_not_revive_a_rejected_candidate(owner: Any) -> None:
+    outgoing, incoming, _, _ = seed_transfer(owner)
+    rejected = propose_internal_transfers(user=owner, data_key=KEY)[0]
+    reject_match(rejected.pk, user=owner)
+
+    propose_internal_transfers(user=owner, data_key=KEY)
+
+    rejected.refresh_from_db()
+    assert rejected.status == ReconciliationMatch.Status.REJECTED
+    assert ReconciliationMatch.objects.filter(user=owner).count() == 1
+
+
+def test_detection_skips_rows_that_are_not_waiting_for_review(owner: Any) -> None:
+    outgoing, incoming, checking, _ = seed_transfer(owner)
+    accept_observation(
+        outgoing.pk,
+        user=owner,
+        data_key=KEY,
+        financial_account=checking,
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+
+    assert propose_internal_transfers(user=owner, data_key=KEY) == ()
+
+
+def test_detection_finds_a_drifted_pair_only_under_tolerance(owner: Any) -> None:
+    outgoing, incoming, _, _ = seed_transfer(owner)
+    incoming.occurred_at = date(2026, 8, 18)
+    incoming.save(update_fields=["occurred_at"])
+
+    assert propose_internal_transfers(user=owner, data_key=KEY) == ()
+
+    stored = propose_internal_transfers(user=owner, data_key=KEY, tolerance=TransferTolerance())
+
+    assert len(stored) == 1
+    assert stored[0].match_score < STRONG_MATCH_SCORE
+
+
+def test_detection_never_reaches_another_users_rows(owner: Any) -> None:
+    seed_transfer(owner)
+    stranger = make_user(email="transfer-stranger@example.com")
+
+    assert propose_internal_transfers(user=stranger, data_key=KEY) == ()
 
 
 def test_both_sides_link_to_one_canonical_transfer(owner: Any) -> None:
@@ -370,15 +430,46 @@ def test_another_users_transfer_cannot_be_confirmed(owner: Any) -> None:
         confirm_internal_transfer(match.pk, user=intruder, data_key=KEY)
 
 
+def test_the_transfer_spans_both_recorded_dates(owner: Any) -> None:
+    """Either side may carry the earlier date, and often the arriving one does."""
+
+    outgoing, incoming, _, _ = seed_transfer(owner)
+    incoming.occurred_at = date(2026, 8, 14)
+    incoming.save(update_fields=["occurred_at"])
+    match = propose(owner, outgoing, incoming)
+
+    transfer = confirm_internal_transfer(match.pk, user=owner, data_key=KEY)
+
+    # The move began when the first side recorded it and completed when the
+    # last did; a posted date before the occurred date is not a valid row.
+    assert transfer.occurred_at == date(2026, 8, 14)
+    assert transfer.posted_at == date(2026, 8, 15)
+
+
+def test_confirmation_leaves_the_parser_guess_intact(owner: Any) -> None:
+    """The guess is provenance: it records what the parser got wrong."""
+
+    outgoing, incoming, _, _ = seed_transfer(owner)
+    original = outgoing.transaction_type_guess
+    match = propose(owner, outgoing, incoming)
+
+    confirm_internal_transfer(match.pk, user=owner, data_key=KEY)
+
+    outgoing.refresh_from_db()
+    assert outgoing.transaction_type_guess == original
+
+
 def test_confirming_posts_the_ledger_in_the_same_transaction(owner: Any) -> None:
     outgoing, incoming, checking, savings = seed_transfer(owner)
     match = propose(owner, outgoing, incoming)
-    context = make_ledger_accounts(owner, checking, prefix="tr")
+    source = make_ledger_accounts(owner, checking, prefix="tr").account
     destination = make_ledger_accounts(owner, savings, prefix="tr2").account
-    posting_context = type(context)(account=context.account, transfer_account=destination)
 
     transfer = confirm_internal_transfer(
-        match.pk, user=owner, data_key=KEY, ledger_accounts=posting_context
+        match.pk,
+        user=owner,
+        data_key=KEY,
+        ledger_accounts=PostingRuleAccounts(account=source, transfer_account=destination),
     )
 
     assert transfer.status == CanonicalTransaction.Status.CONFIRMED
