@@ -142,9 +142,22 @@ def provision_user_data_key(*, user: Any, actor: Any, master_key: bytes) -> User
 
 
 @transaction.atomic
-def get_user_data_key(*, user: Any, actor: Any, master_key: bytes) -> bytes:
+def get_user_data_key(
+    *, user: Any, actor: Any, master_key: bytes, version: int | None = None
+) -> bytes:
+    """Unwrap one of this user's data keys — the active one unless asked otherwise.
+
+    Rotation needs the retired version as well as the active one: it has to read
+    what the old key sealed in order to write it under the new one. Retired keys
+    stay unwrappable for exactly that reason, and are removed only once nothing
+    references them (specification 22.6).
+    """
+
     _assert_owner(user=user, actor=actor, action="access")
-    key_record = UserDataKey.objects.filter(user=user, is_active=True).first()
+    if version is None:
+        key_record = UserDataKey.objects.filter(user=user, is_active=True).first()
+    else:
+        key_record = UserDataKey.objects.filter(user=user, version=version).first()
     if key_record is None:
         raise InvalidRequestError("No active data key exists for this user.")
     data_key = unwrap_data_key(

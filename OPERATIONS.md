@@ -144,3 +144,29 @@ uv run python manage.py purge_expired_exports
 
 Run it at least hourly alongside the other maintenance commands. The database row
 survives so the audit trail keeps its shape; only the file goes.
+
+## Key rotation
+
+**Stop the web and worker processes first.** The new key becomes active before
+the stored values move, so a request arriving mid-rotation would try to read a row
+that has not been moved yet. Rotation is fast, and the alternative ordering would
+leave writes during the rotation sealed under the key being retired.
+
+Rotate a user's data key, then verify before removing the old one:
+
+```bash
+uv run python manage.py rotate_encryption_keys --email you@example.com
+uv run python manage.py rotate_encryption_keys --email you@example.com --retire
+```
+
+The first run leaves both keys in place. `--retire` removes the superseded key
+only after every value has been read back under the new one. If a run is
+interrupted, run it again — rotation resumes from the envelopes themselves.
+
+To check that nothing has drifted without changing anything:
+
+```bash
+uv run python manage.py rotate_encryption_keys --verify-only
+```
+
+See [SECURITY.md](SECURITY.md) for why the ordering is what it is.

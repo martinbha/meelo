@@ -133,3 +133,68 @@ uv run pytest tests/test_field_encryption.py tests/test_crypto.py
 `tests/test_field_encryption.py` asserts the claims above rather than restating
 them — including that the manual-entry page, the acceptance path, and ledger
 posting all leave nothing readable in the database.
+
+# Key Rotation
+
+Rotation is a long operation over data a person cannot afford to lose, so the
+design is shaped entirely by what happens when it stops halfway.
+
+```bash
+uv run python manage.py rotate_encryption_keys --email you@example.com
+uv run python manage.py rotate_encryption_keys --email you@example.com --retire
+uv run python manage.py rotate_encryption_keys --verify-only
+```
+
+## The order is the design
+
+1. **Provision the new key and make it active.** Everything written from that
+   moment is already correct, so rotation only has to catch up with history
+   rather than chase writes still arriving under the old key.
+2. **Move the values, in bounded batches.** One transaction per batch, so a
+   rotation over a large history never holds one lock for its whole duration.
+3. **Verify.** Every value is read back under the new key.
+4. **Retire the old key only if step 3 was clean** — and only when asked.
+
+## Resumability without bookkeeping
+
+Every envelope carries its key version. That single fact is what makes an
+interrupted rotation resumable: a row already at the target version is skipped,
+so re-running processes exactly what is left. There is no cursor to corrupt and
+no progress table that can disagree with the data.
+
+It also means a write that lands *during* a rotation is already correct and gets
+skipped, rather than being re-encrypted from a key it was never sealed with.
+
+## Nothing is retired until it has been read
+
+`verify_user` separates two failures because they mean different things:
+
+- **Unreadable** — the value cannot be opened at all. Data loss in progress.
+- **Stale** — rotation has not reached this row yet. Still readable under the
+  old key, so retiring that key *now* would create the first kind.
+
+`--retire` refuses on either. The safe state after a partial rotation is "both
+keys exist"; the dangerous one is "the only key that could read this row is gone".
+
+## The field registry
+
+`ENCRYPTED_MODELS` lists every model holding encrypted values and which columns
+those are. A test walks Django's model registry and fails if any `*_encrypted`
+column is missing from it — because a field rotation walks past is a field left
+readable only by a key that is about to be deleted, and nothing else would say so.
+
+`LedgerEntry` is the one model without an owner column: its rows are selected
+through `transaction__user_id` and its associated data borrows the transaction's
+owner, the same way `entry_amount` reads them.
+
+## Blind indexes move with the key
+
+The search key is derived from the data key, so indexes are rebuilt in the same
+pass. A rotated merchant whose index still came from the old key would be
+unfindable, and nothing would report it.
+
+## Testing
+
+```bash
+uv run pytest tests/test_key_rotation.py
+```
