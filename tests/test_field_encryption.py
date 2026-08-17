@@ -534,3 +534,28 @@ def test_the_manual_entry_page_stores_nothing_readable(web_owner: Any, master_ke
     assert is_encrypted_value(stored.merchant_encrypted)
     assert MERCHANT not in str(stored.__dict__)
     assert read_model_field(stored, "merchant_encrypted", key=data_key) == MERCHANT
+
+
+def test_the_reports_and_the_ledger_read_an_amount_the_same_way(owner: Any, account: Any) -> None:
+    """One rule for reading money, not one per caller."""
+
+    from apps.core.value_objects import Money
+    from apps.reports.amounts import transaction_amount
+
+    transaction = CanonicalTransaction.objects.create(
+        user=owner,
+        created_by=owner,
+        financial_account=account,
+        occurred_at=date(2026, 8, 15),
+        amount_encrypted="1:KRW",
+        currency="KRW",
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+    store_money(transaction, "amount_encrypted", Money(42_900, "KRW"), data_key=KEY)
+
+    assert transaction_amount(transaction, data_key=KEY) == read_money(
+        transaction, "amount_encrypted", data_key=KEY
+    )
+    # And both refuse an encrypted row with no key rather than answering zero.
+    with pytest.raises(EncryptionError):
+        transaction_amount(transaction)
