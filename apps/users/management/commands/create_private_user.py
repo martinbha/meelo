@@ -2,6 +2,7 @@ import getpass
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.core.key_management import load_master_key, provision_user_data_key
 from apps.users.models import User
 
 
@@ -29,6 +30,15 @@ class Command(BaseCommand):
         if password != confirmation:
             raise CommandError("Passwords do not match")
 
+        # Read the master key before creating anything. A user without a data
+        # key cannot store an amount, a merchant, or an account name, so an
+        # account created against a misconfigured key file is an account that
+        # fails on its owner's first upload rather than here.
+        try:
+            master_key = load_master_key()
+        except Exception as exc:  # noqa: BLE001 - reported as a command error
+            raise CommandError(f"Cannot read the encryption master key: {exc}") from exc
+
         is_superuser = options["superuser"]
         user = User.objects.create_user(
             email=email,
@@ -36,4 +46,9 @@ class Command(BaseCommand):
             is_staff=options["staff"] or is_superuser,
             is_superuser=is_superuser,
         )
-        self.stdout.write(self.style.SUCCESS(f"Created private user {user.email}"))
+        key_record = provision_user_data_key(user=user, actor=user, master_key=master_key)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Created private user {user.email} with data key version {key_record.version}"
+            )
+        )

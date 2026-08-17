@@ -19,6 +19,10 @@ uv run python manage.py migrate
 uv run python manage.py create_private_user --email you@example.com --superuser
 ```
 
+**To deploy and run this, start with [RUNBOOK.md](RUNBOOK.md)** — installation,
+scheduled maintenance, a restore walkthrough, troubleshooting by error, and what
+is deliberately out of scope.
+
 Screenshot parsers, their fixtures, and the regression suite are documented in
 [PARSERS.md](PARSERS.md). The review queue, reviewer actions, and
 reconciliation are in [REVIEW.md](REVIEW.md). How a transaction gets a category
@@ -27,13 +31,15 @@ is in [CATEGORIES.md](CATEGORIES.md), and how a month is added up is in
 networking are in [DATABASE.md](DATABASE.md). Operational procedures are in
 [OPERATIONS.md](OPERATIONS.md).
 
-The Compose deployment runs the web application, PostgreSQL, and Caddy proxy by
-default. Enable the processing worker profile after the worker command is
-implemented:
+The Compose deployment runs the web application, PostgreSQL, and the Caddy proxy
+by default. The processing worker is behind a profile, so it can be run on its
+own schedule or on a separate host:
 
 ```bash
-docker compose --env-file .env.example config
 docker compose --env-file .env.example up -d
+```
+
+```bash
 docker compose --env-file .env.example --profile processing up -d
 ```
 
