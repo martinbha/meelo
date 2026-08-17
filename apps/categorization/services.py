@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import uuid
 from typing import Any
 
@@ -10,26 +8,18 @@ from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import decrypt_model_field, encrypt_model_field
+from apps.core.crypto import InvalidCiphertextError, decrypt_model_field, encrypt_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.transactions.models import CanonicalTransaction
 
 from .engine import CategoryDecision, CategorySource, classify
 from .models import Category, CategoryRule, MerchantAlias
-
-
-def normalize_merchant(value: str) -> str:
-    normalized = " ".join(value.casefold().split())
-    if not normalized:
-        raise InvalidRequestError("Merchant text cannot be empty.")
-    return normalized
-
-
-def merchant_blind_index(value: str, *, user_id: Any, key: bytes) -> str:
-    if len(key) < 32:
-        raise InvalidRequestError("Blind-index keys must contain at least 32 bytes.")
-    payload = f"merchant|{user_id}|{normalize_merchant(value)}".encode()
-    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+from .normalization import (
+    MerchantSimilarity,
+    merchant_blind_index,
+    normalize_merchant,
+    rank_candidates,
+)
 
 
 def _check_owned(user: Any, **objects: Any) -> None:
@@ -114,6 +104,41 @@ def find_merchant_alias(
 
 def decrypt_normalized_merchant(alias: MerchantAlias, *, encryption_key: bytes) -> str:
     return decrypt_model_field(alias, "normalized_merchant_encrypted", key=encryption_key)
+
+
+def suggest_merchant_aliases(
+    *,
+    user: Any,
+    merchant: str,
+    encryption_key: bytes,
+    payment_instrument_id: Any | None = None,
+    limit: int = 5,
+) -> tuple[MerchantSimilarity, ...]:
+    """Aliases that resemble this merchant without matching it exactly.
+
+    The exact path is a blind-index lookup and costs one query. This is the
+    fallback for when that finds nothing: the user's own aliases are decrypted
+    and scored in memory, because a similarity score cannot be computed in the
+    database without putting merchant plaintext there.
+
+    Uncertain matches are included rather than filtered out. A weak suggestion
+    a reviewer can see is a suggestion they can correct; one that was silently
+    discarded is a merchant that stays unlinked forever.
+    """
+
+    aliases = list(
+        MerchantAlias.objects.filter(user_id=user.pk).filter(
+            Q(payment_instrument_id=payment_instrument_id) | Q(payment_instrument__isnull=True)
+        )
+    )
+    by_name: dict[str, MerchantAlias] = {}
+    for alias in aliases:
+        try:
+            by_name[decrypt_normalized_merchant(alias, encryption_key=encryption_key)] = alias
+        except InvalidCiphertextError:
+            # A row this key cannot read is not this user's to suggest.
+            continue
+    return rank_candidates(merchant, by_name)[:limit]
 
 
 @db_transaction.atomic
