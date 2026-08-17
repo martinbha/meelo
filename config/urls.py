@@ -21,7 +21,12 @@ from apps.processing.views import (
     UploadDetailView,
     UploadListView,
 )
-from apps.reconciliation.views import MatchActionView, MatchDetailView, MatchQueueView
+from apps.reconciliation.views import (
+    MatchActionView,
+    MatchDetailView,
+    MatchLinkView,
+    MatchQueueView,
+)
 from apps.transactions.views import (
     ManualTransactionCreateView,
     ManualTransactionUpdateView,
@@ -94,6 +99,7 @@ urlpatterns = [
         name="observation-action",
     ),
     path("matches/", MatchQueueView.as_view(), name="match-queue"),
+    path("matches/link/", MatchLinkView.as_view(), name="match-link"),
     path("matches/<uuid:pk>/", MatchDetailView.as_view(), name="match-detail"),
     path(
         "matches/<uuid:pk>/<str:action>/",

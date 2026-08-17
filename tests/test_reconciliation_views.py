@@ -102,7 +102,7 @@ def test_the_match_queue_lists_open_candidates(
     response = client_for.get(reverse("match-queue"))
 
     assert response.status_code == 200
-    assert len(response.context["matches"]) == 1
+    assert len(response.context["rows"]) == 1
 
 
 def test_the_match_queue_never_shows_another_users_candidates(
@@ -117,7 +117,7 @@ def test_the_match_queue_never_shows_another_users_candidates(
 
     response = client.get(reverse("match-queue"))
 
-    assert len(response.context["matches"]) == 0
+    assert len(response.context["rows"]) == 0
 
 
 def test_the_detail_page_shows_both_rows_side_by_side(

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Link two rows{% endblock %}
+
+{% block content %}
+<section class="match-link">
+  <h1>Link two rows</h1>
+  <p>
+    Use this when you can see a relationship the matcher missed — a refund whose
+    merchant was read badly, or a transfer one app dated a week late. Linking
+    records the relationship as a candidate; you still confirm it afterwards.
+  </p>
+
+  <form method="post" action="{% url 'match-link' %}" hx-boost="false">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Link the rows</button>
+    <a href="{% url 'match-queue' %}" class="secondary">Cancel</a>
+  </form>
+</section>
+{% endblock %}

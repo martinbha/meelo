@@ -6,8 +6,10 @@
   <h1>Reconciliation candidates</h1>
   <p>
     Nothing here has been applied. Each row is a proposal waiting for your
-    decision.
+    decision, shown with the evidence behind it.
   </p>
+
+  <p><a href="{% url 'match-link' %}">Link two rows yourself</a></p>
 
   <nav class="queue-filters" aria-label="Candidate types">
     <a href="{% url 'match-queue' %}">All</a>
@@ -19,28 +21,40 @@
     {% endfor %}
   </nav>
 
-  {% if matches %}
+  {% if rows %}
     <table class="queue-table">
       <caption class="visually-hidden">Proposed matches, strongest first</caption>
       <thead>
         <tr>
           <th scope="col">Score</th>
           <th scope="col">Kind</th>
+          <th scope="col">Would become</th>
           <th scope="col">Dates</th>
+          <th scope="col">Why</th>
           <th scope="col">Compare</th>
         </tr>
       </thead>
       <tbody>
-        {% for match in matches %}
+        {% for row in rows %}
           <tr>
-            <td><span class="risk-badge">{{ match.match_score }}</span></td>
-            <td>{{ match.get_match_type_display }}</td>
+            <td><span class="risk-badge">{{ row.match.match_score }}</span></td>
+            <td>{{ row.match.get_match_type_display }}</td>
+            <td>{{ row.proposed_type|default:"—" }}</td>
             <td>
-              {{ match.left_observation.occurred_at|default:"—" }}
+              {{ row.match.left_observation.occurred_at|default:"—" }}
               ·
-              {{ match.right_observation.occurred_at|default:"—" }}
+              {{ row.match.right_observation.occurred_at|default:"—" }}
             </td>
-            <td><a href="{% url 'match-detail' pk=match.pk %}">Compare rows</a></td>
+            <td>
+              {% if row.reasons %}
+                <ul class="match-reasons">
+                  {% for reason in row.reasons %}<li>{{ reason }}</li>{% endfor %}
+                </ul>
+              {% else %}
+                <span class="empty-state">No reasons were recorded.</span>
+              {% endif %}
+            </td>
+            <td><a href="{% url 'match-detail' pk=row.match.pk %}">Compare rows</a></td>
           </tr>
         {% endfor %}
       </tbody>

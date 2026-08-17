@@ -7,7 +7,22 @@
   <p class="match-score">
     Score {{ match.match_score }} of 100 ·
     status {{ match.get_status_display }}
+    {% if proposed_type %}· would become {{ proposed_type }}{% endif %}
   </p>
+
+  <section class="match-why">
+    <h2>Why these rows were paired</h2>
+    {% if reasons %}
+      <ul class="match-reasons">
+        {% for reason in reasons %}<li>{{ reason }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty-state">
+        No reasons were recorded for this candidate. Compare the rows below
+        before deciding.
+      </p>
+    {% endif %}
+  </section>
 
   <form method="post"
         action="{% url 'match-action' pk=match.pk action='confirm' %}"
