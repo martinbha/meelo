@@ -46,3 +46,44 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+  postgres:
+    # The suite runs on SQLite above because it is fast. It runs here on the
+    # database production actually uses, because the differences are not
+    # cosmetic: select_for_update is a no-op on SQLite, and check constraints
+    # and JSON lookups take different paths.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: finance_ocr_ci
+          POSTGRES_USER: finance_ci
+          POSTGRES_PASSWORD: finance_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finance_ci -d finance_ocr_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Migrate
+        run: uv run python manage.py migrate
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
+
+      - name: Tests against PostgreSQL
+        run: uv run pytest
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
