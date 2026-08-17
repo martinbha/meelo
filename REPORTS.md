@@ -176,6 +176,17 @@ somebody is reading a query log to work out why a total moved.
 A test asserts the predicates partition every transaction type: nothing selected
 twice, nothing left out.
 
+The category and merchant breakdowns use them to narrow in SQL. The alternative
+fetches a whole month's transfers and card payments only to discard them in
+Python, and fetching is the part a report pays for.
+
+### One currency check, in one place
+
+`grouping.amount_in` reads an amount and refuses a row whose `currency` column
+contradicts the currency encoded in its amount. Every report goes through it. The
+check was written three times before it lived in one place, and a drifting copy
+would have had one report refuse a row while another quietly lost it.
+
 ## Nothing is cached
 
 Every figure on a report page is derived from amounts encrypted per user. A
