@@ -15,6 +15,12 @@ The order is the whole design:
 Retiring is opt-in (``--retire``) and refuses on any failure, because the safe
 state after a partial rotation is "both keys exist" and the dangerous one is
 "the only key that could read this row is gone".
+
+**Run this with the web and worker processes stopped.** Between steps 1 and 2 the
+active key cannot read rows that have not moved yet, so a request arriving mid-
+rotation would fail. The alternative ordering — move first, activate after —
+would leave writes during the rotation sealed under the key being retired, which
+is worse: a correctness problem instead of a few minutes of downtime.
 """
 
 from __future__ import annotations

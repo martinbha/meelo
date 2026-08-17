@@ -147,6 +147,11 @@ survives so the audit trail keeps its shape; only the file goes.
 
 ## Key rotation
 
+**Stop the web and worker processes first.** The new key becomes active before
+the stored values move, so a request arriving mid-rotation would try to read a row
+that has not been moved yet. Rotation is fast, and the alternative ordering would
+leave writes during the rotation sealed under the key being retired.
+
 Rotate a user's data key, then verify before removing the old one:
 
 ```bash

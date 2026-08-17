@@ -13,6 +13,13 @@ leave new writes landing under a key that is about to be retired, so the rotatio
 would chase its own tail. Once the new key is active, everything written from
 that moment is already correct, and rotation only has to catch up with history.
 
+**Rotation runs with the application stopped.** The new key becomes active
+before the values move, so a row rotation has not reached yet cannot be read by a
+request arriving in the meantime — its envelope is still sealed under the retired
+key. That is a deliberate trade: the alternative leaves new writes landing under
+the key being retired, which is a correctness problem rather than an availability
+one. The operator's runbook says to stop the web and worker processes first.
+
 **Nothing is retired until it has been read.** ``verify_user`` decrypts every
 field under the active key and reports what failed. An old key deleted while one
 row still needs it is not a degraded system, it is a row nobody can ever read
@@ -182,12 +189,24 @@ class RotationReport:
 
 
 def _batches(queryset: Any, size: int) -> Iterator[list[Any]]:
-    """Walk a queryset in bounded chunks, ordered so the walk is stable."""
+    """Walk a queryset in bounded chunks, holding one chunk at a time.
 
-    identifiers = list(queryset.order_by("pk").values_list("pk", flat=True))
-    for start in range(0, len(identifiers), size):
-        window = identifiers[start : start + size]
-        yield list(queryset.model.objects.filter(pk__in=window).order_by("pk"))
+    A keyset cursor rather than a slice or a list of every identifier: this runs
+    over a whole financial history, and "bounded batches" has to mean bounded
+    *memory* as well as bounded transactions. Ordering by primary key also makes
+    the walk stable across the writes rotation is doing to the same rows.
+    """
+
+    cursor: Any = None
+    while True:
+        window = queryset.order_by("pk")
+        if cursor is not None:
+            window = window.filter(pk__gt=cursor)
+        batch = list(window[:size])
+        if not batch:
+            return
+        yield batch
+        cursor = batch[-1].pk
 
 
 def _rebuild_indexes(
