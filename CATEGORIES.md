@@ -61,6 +61,33 @@ that evidence is before it decides whether to replace it.
 Re-applying a decision that matches what is already stored writes nothing, so a
 bulk re-run does not churn every row's `updated_at`.
 
+## Turning a correction into a rule
+
+A reviewer who re-files a coffee shop from "groceries" to "eating out" has told
+the system something reusable. How far it reuses it is a question only they can
+answer, so `apps.categorization.rule_creation` asks it. Three scopes:
+
+| Scope | Writes a rule? | Reaches |
+| --- | --- | --- |
+| `transaction_only` | No | This row |
+| `merchant` | Yes | Every transaction from this merchant |
+| `merchant_and_card` | Yes | This merchant, on this card |
+
+The form has **no default scope**. A pre-selected one is a guess, and the guess
+this exists to avoid is the one that reclassifies a year of history from a
+single correction.
+
+`preview_rule` writes nothing and counts four things per scope: rows still
+awaiting review, unconfirmed transactions that would move, and — deliberately
+shown rather than hidden — the confirmed transactions and hand-corrected rows
+that will *not* move. Someone choosing a scope should see what stays as it is.
+
+**A new rule applies to what comes next.** Reaching backwards takes a second,
+explicit checkbox, and even then it stops at two kinds of row: confirmed
+transactions, because signed-off history is not rewritten by a rule; and rows the
+user categorised by hand, because a rule written a minute ago does not get to
+overrule a deliberate decision about one transaction.
+
 ## Merchant normalization
 
 The same shop reaches this system under several names. A card app prints
