@@ -59,6 +59,13 @@ class CanonicalTransaction(models.Model):
         blank=True,
         null=True,
     )
+    #: What decided the category. Stored rather than recomputed, because it is
+    #: what stops re-classification from overwriting a correction the user made
+    #: — and because a category nobody can explain cannot be argued with.
+    #: Values come from :class:`apps.categorization.engine.CategorySource`;
+    #: the field is a plain CharField so the transactions app does not have to
+    #: depend on the categorization app to define its own schema.
+    category_source = models.CharField(max_length=32, default="uncategorized")
     financial_account = models.ForeignKey(
         FinancialAccount,
         on_delete=models.PROTECT,
