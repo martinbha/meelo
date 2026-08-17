@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
@@ -64,7 +65,32 @@ def assert_recent_authentication(user: Any) -> None:
         raise ForbiddenError("Your sign-in is too old to export data. Sign in again.")
 
 
-@db_transaction.atomic
+def _render(
+    user: Any,
+    *,
+    export_format: str,
+    start: date | None,
+    end: date | None,
+    data_key: bytes | None,
+    passphrase: str,
+) -> tuple[bytes, int]:
+    """Build the file's bytes. Touches no disk and no row."""
+
+    transactions = reportable_transactions(user, start=start, end=end).select_related(
+        "category", "financial_account", "payment_instrument"
+    )
+    rows = list(export_rows(transactions, data_key=data_key))
+    buffer = io.StringIO()
+    if export_format == TransactionExport.Format.CSV:
+        write_csv(rows, buffer)
+        return buffer.getvalue().encode(), len(rows)
+    write_json(rows, buffer, period_start=start, period_end=end)
+    payload = buffer.getvalue().encode()
+    if export_format == TransactionExport.Format.ENCRYPTED:
+        payload = seal_archive(payload, passphrase=passphrase)
+    return payload, len(rows)
+
+
 def create_export(
     *,
     user: Any,
@@ -77,8 +103,13 @@ def create_export(
 ) -> TransactionExport:
     """Write one export file and record it.
 
-    The row is created before the file so the file always has an owner and an
-    expiry: an orphaned file nothing knows about would never be cleaned up.
+    Deliberately **not** one transaction around the whole thing. The row has to
+    be committed before the file is written, because a rollback after
+    ``write_bytes`` would leave a file on disk that no row describes — and a file
+    nothing knows about is one the cleanup will never remove. So: commit the row,
+    write the file, then record what was written. A failure in the middle marks
+    the row deleted and removes the partial file, which is a state the cleanup
+    understands.
     """
 
     if export_format not in TransactionExport.Format.values:
@@ -92,58 +123,54 @@ def create_export(
         # file on disk with no purpose and no reader.
         raise ExportError("An export lifetime must be positive.")
 
-    now = timezone.now()
     record = TransactionExport.objects.create(
         user=user,
         export_format=export_format,
-        file_path="",
+        file_path=str(safe_export_path(f"{export_format}-placeholder")),
         period_start=start,
         period_end=end,
-        expires_at=now + window,
+        expires_at=timezone.now() + window,
     )
-
-    transactions = reportable_transactions(user, start=start, end=end).select_related(
-        "category", "financial_account", "payment_instrument"
-    )
-    rows = list(export_rows(transactions, data_key=data_key))
-
     path = safe_export_path(f"{record.pk}.{export_format}")
-    if export_format == TransactionExport.Format.CSV:
-        buffer = io.StringIO()
-        write_csv(rows, buffer)
-        payload = buffer.getvalue().encode()
-    else:
-        buffer = io.StringIO()
-        write_json(rows, buffer, period_start=start, period_end=end)
-        payload = buffer.getvalue().encode()
-        if export_format == TransactionExport.Format.ENCRYPTED:
-            payload = seal_archive(payload, passphrase=passphrase)
+    try:
+        payload, row_count = _render(
+            user,
+            export_format=export_format,
+            start=start,
+            end=end,
+            data_key=data_key,
+            passphrase=passphrase,
+        )
+        path.write_bytes(payload)
+        # 0600 before anything else can look: the export root is already 0700,
+        # but a world-readable file inside it is one misconfigured parent away
+        # from public.
+        path.chmod(0o600)
+    except Exception:
+        # Never leave a half-written export downloadable.
+        _unlink(record)
+        raise
 
-    path.write_bytes(payload)
-    # 0600 before anything else can look: the export root is already 0700, but a
-    # world-readable file inside it is one misconfigured parent away from public.
-    path.chmod(0o600)
-
-    record.file_path = str(path)
-    record.file_size = len(payload)
-    record.row_count = len(rows)
-    record.save(update_fields=["file_path", "file_size", "row_count"])
-
-    record_audit_event(
-        user=user,
-        event_type="export_created",
-        obj=record,
-        metadata={
-            "format": export_format,
-            "row_count": len(rows),
-            "byte_size": len(payload),
-            "encrypted": export_format == TransactionExport.Format.ENCRYPTED,
-            # A period is a date range, not a value. Amounts and merchants never
-            # reach the audit log.
-            "period_start": start.isoformat() if start else "",
-            "period_end": end.isoformat() if end else "",
-        },
-    )
+    with db_transaction.atomic():
+        record.file_path = str(path)
+        record.file_size = len(payload)
+        record.row_count = row_count
+        record.save(update_fields=["file_path", "file_size", "row_count"])
+        record_audit_event(
+            user=user,
+            event_type="export_created",
+            obj=record,
+            metadata={
+                "format": export_format,
+                "row_count": row_count,
+                "byte_size": len(payload),
+                "encrypted": export_format == TransactionExport.Format.ENCRYPTED,
+                # A period is a date range, not a value. Amounts and merchants
+                # never reach the audit log.
+                "period_start": start.isoformat() if start else "",
+                "period_end": end.isoformat() if end else "",
+            },
+        )
     return record
 
 
@@ -173,7 +200,7 @@ def read_export(export_id: Any, *, user: Any) -> tuple[TransactionExport, bytes]
     if record.is_expired:
         raise ConflictError("This export has expired. Generate a new one.")
 
-    path = safe_export_path(f"{record.pk}.{record.export_format}")
+    path = export_file(record)
     if not path.exists():
         raise ConflictError("The export file is no longer on disk.")
     payload = path.read_bytes()
@@ -217,11 +244,22 @@ def purge_expired_exports(*, now: Any = None) -> int:
     return removed
 
 
+def export_file(record: TransactionExport) -> Path:
+    """Where this export's file is, validated to be inside the export root.
+
+    Read from the row rather than rebuilt from the identifier, so the stored path
+    is the single answer to "where is it" — and still checked against the root,
+    because a path in a database column is input like any other.
+    """
+
+    return safe_export_path(Path(record.file_path).name)
+
+
 def _unlink(record: TransactionExport) -> None:
     """Remove the file and mark the row, tolerating a file already gone."""
 
     try:
-        path = safe_export_path(f"{record.pk}.{record.export_format}")
+        path: Path | None = export_file(record)
     except ExportError:
         path = None
     if path is not None and path.exists():
