@@ -111,7 +111,15 @@ Rules worth knowing before you extend any of them:
 - **Merges never chain.** A row already merged into another cannot become the
   winner of a second merge, so every merged row points at a surviving one.
 - **Acceptance is idempotent.** A second call returns the transaction already
-  created rather than making another.
+  created rather than making another. Two mechanisms hold this, on purpose:
+  `select_for_update` makes the common case cheap, and a unique
+  `source_idempotency_key` per user makes the uncommon case correct. A lock only
+  helps while both attempts are in the same database holding the same lock and
+  neither has crashed; the constraint holds even when that stops being true.
+  Every origin has a key — `observation:<id>`, `transfer:<match id>`,
+  `refund:<match id>` — and `save_once` turns a losing insert into the winner's
+  transaction rather than an error. Manual entry has no key, because two
+  identical manual entries are a legitimate thing for a person to make.
 - **Ledger posting is atomic with the status change.** If the posting fails, the
   acceptance rolls back with it — a row can never end up accepted without its
   entries, or posted twice.

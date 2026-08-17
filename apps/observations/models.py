@@ -184,6 +184,22 @@ class ImportedObservation(models.Model):
                 condition=models.Q(overall_confidence__gte=0.0, overall_confidence__lte=1.0),
                 name="observation_confidence_range",
             ),
+            # A row folded into another is not history of its own. Holding both
+            # a merge target and a transaction would report the same money
+            # twice — once through the surviving row, once through this one.
+            models.CheckConstraint(
+                condition=models.Q(merged_into__isnull=True)
+                | models.Q(canonical_transaction__isnull=True),
+                name="observation_merged_rows_have_no_transaction",
+            ),
+            # And a merge is not something that can happen quietly: the status
+            # has to say so, because that is what keeps the row out of reports.
+            # Spelled out rather than referenced, because a nested Meta cannot
+            # see the enclosing class's own TextChoices.
+            models.CheckConstraint(
+                condition=models.Q(merged_into__isnull=True) | models.Q(review_status="merged"),
+                name="observation_merged_rows_say_so",
+            ),
         ]
         indexes = [
             models.Index(fields=("user", "review_status"), name="observation_user_status_idx"),

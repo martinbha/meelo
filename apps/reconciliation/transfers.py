@@ -25,6 +25,7 @@ from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
 from apps.observations.review import decrypt_observation
+from apps.transactions.idempotency import TRANSFER_SOURCE, save_once, source_key
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
 
@@ -196,12 +197,17 @@ def confirm_internal_transfer(
         transaction_type=CanonicalTransaction.TransactionType.INTERNAL_TRANSFER,
         financial_account=source,
         status=CanonicalTransaction.Status.DRAFT,
+        source_idempotency_key=source_key(TRANSFER_SOURCE, match.pk),
     )
     try:
         validate_transaction_invariants(canonical)
     except ValidationError as exc:
         raise ReconciliationError(f"The transfer event is invalid: {exc}") from exc
-    canonical.save()
+    canonical, created = save_once(canonical)
+    if not created:
+        # An earlier attempt already made this transfer. Its transaction is the
+        # one that counts, and posting again would double the entries.
+        ledger_accounts = None
 
     if ledger_accounts is not None:
         # Confirm before posting: the ledger only accepts confirmed rows, and a

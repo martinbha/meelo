@@ -23,9 +23,16 @@ ALLOWED_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
 
 
 def validate_transaction_invariants(transaction: CanonicalTransaction) -> None:
-    """Run all model-level checks plus amount and posting safety checks."""
+    """Run all model-level checks plus amount and posting safety checks.
 
-    transaction.full_clean()
+    Database constraints are deliberately not pre-checked here. The idempotency
+    key is designed to collide when an attempt is repeated, and
+    :func:`apps.transactions.idempotency.save_once` resolves that collision by
+    returning the transaction the winner made. Raising on it first would turn a
+    converged retry into an error nobody can act on.
+    """
+
+    transaction.full_clean(validate_constraints=False)
     try:
         amount = deserialize_money(transaction.amount_encrypted)
     except InvalidRequestError as exc:
