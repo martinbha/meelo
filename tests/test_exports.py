@@ -617,3 +617,50 @@ def test_the_export_pages_require_a_login(owner: Any, account: Any) -> None:
         response = Client().get(url)
         assert response.status_code == 302
         assert reverse("login") in response.headers["Location"]
+
+
+def test_a_failed_render_leaves_nothing_downloadable(
+    owner: Any, account: Any, monkeypatch: Any
+) -> None:
+    """A half-written export must never be handed to anyone."""
+
+    from apps.reports import services
+
+    add(owner, account)
+    monkeypatch.setattr(
+        services, "_render", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    with pytest.raises(RuntimeError):
+        create_export(user=owner, export_format=_Format.CSV)
+
+    record = TransactionExport.objects.get(user=owner)
+    assert record.deleted_at is not None
+    assert not record.is_available
+    assert available_exports(owner).count() == 0
+
+
+def test_the_file_is_located_from_the_stored_path(owner: Any, account: Any) -> None:
+    """One answer to "where is it", still checked against the root."""
+
+    from apps.reports.services import export_file
+
+    add(owner, account)
+    record = create_export(user=owner, export_format=_Format.CSV)
+
+    assert export_file(record) == safe_export_path(f"{record.pk}.csv")
+    assert export_file(record).exists()
+
+
+def test_a_stored_path_outside_the_root_is_refused(owner: Any, account: Any) -> None:
+    """A path in a database column is input like any other."""
+
+    from apps.reports.services import export_file
+
+    add(owner, account)
+    record = create_export(user=owner, export_format=_Format.CSV)
+    record.file_path = "/etc/passwd"
+
+    # The name is taken and re-resolved inside the root, so the escape fails to
+    # reach anything outside it.
+    assert export_file(record).parent == export_root()
