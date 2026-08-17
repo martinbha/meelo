@@ -158,6 +158,31 @@ Near-duplicate links live in their own model, apart from `ReconciliationMatch`:
 two images looking alike is a statement about pixels, not about money, and must
 never be presented as though a transaction had been matched.
 
+### Refunds
+
+A refund is not income. Someone who bought a coat for 200,000 and returned it is
+back where they started, not 200,000 better off, and the coat's category should
+end up showing nothing. Counting the credit as income would inflate income and
+spending at once and leave the category wrong.
+
+`apps.reconciliation.refunds.confirm_refund_match` therefore always produces a
+`refund` transaction — never `income` — carrying **the purchase's category**, so
+the reduction lands where the spending did. A category the user confirmed on an
+accepted purchase outranks whatever the parser guessed on the row.
+`classification.is_spending_reduction` keeps refunds out of `SPENDING_TYPES` on
+purpose: a purchase and its refund touch the same total with opposite signs, and
+a caller that could sum them would report a larger total than either.
+
+`propose_refund_matches` searches purchases that are **already accepted** as well
+as open ones, because a refund usually arrives weeks after its purchase was
+reviewed; requiring both sides to be open would miss almost every real case.
+
+Refunds nothing claims are not hidden. `unmatched_refunds` lists the credit rows
+no candidate speaks for, and they stay in the review queue — an unmatched credit
+might be a refund whose purchase was never screenshotted, and it might genuinely
+be income. Only the user can say which. Rejecting a candidate returns its refund
+to that list rather than making the row disappear.
+
 ### Transaction matching
 
 `apps.reconciliation.matching` proposes debit-card/bank pairs, credit-card
