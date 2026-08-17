@@ -403,3 +403,32 @@ def test_the_aggregation_functions_write_nothing_to_the_cache(
     period_overview(owner, start=AUGUST[0], end=AUGUST[1], data_key=data_key)
 
     assert writes == []
+
+
+def test_the_arithmetic_is_timed_without_the_cryptography(
+    owner: Any, data_key: bytes, encrypted_month: dict[str, Any]
+) -> None:
+    """Charging the arithmetic for the decryption would hide the real cost."""
+
+    _, timings = measure_report(owner, start=AUGUST[0], end=AUGUST[1], data_key=data_key)
+
+    # Adding integers is orders of magnitude cheaper than opening 600 AES-GCM
+    # envelopes, so an aggregate stage that decrypted would not look like this.
+    assert timings.aggregate_ms < timings.decrypt_ms
+    assert timings.dominant_cost != "aggregate"
+
+
+def test_pre_read_amounts_aggregate_to_the_same_totals(
+    owner: Any, data_key: bytes, encrypted_month: dict[str, Any]
+) -> None:
+    """The split for timing must not change the answer."""
+
+    from apps.reports.amounts import transaction_amount
+    from apps.reports.spending import accumulate, accumulate_amounts, reportable_transactions
+
+    rows = list(reportable_transactions(owner, start=AUGUST[0], end=AUGUST[1]))
+
+    once = accumulate(rows, data_key=data_key)
+    twice = accumulate_amounts([(row, transaction_amount(row, data_key=data_key)) for row in rows])
+
+    assert once == twice
