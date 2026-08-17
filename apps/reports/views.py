@@ -22,7 +22,10 @@ from django.views.generic import View
 from apps.categorization.models import Category
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import owned_queryset
+from apps.financial_accounts.models import FinancialAccount
+from apps.instruments.models import PaymentInstrument
 
+from .activity import account_activity, instrument_activity
 from .breakdown import category_breakdown, merchant_breakdown, reconciles
 from .spending import month_bounds, monthly_spending
 
@@ -125,3 +128,68 @@ class MerchantReportView(SpendingReportView):
     """The same period, grouped by merchant instead."""
 
     grouping = "merchant"
+
+
+def _owned_id(request: HttpRequest, model: Any, parameter: str) -> Any:
+    """An identifier from the query string, only ever one the user owns."""
+
+    requested = request.GET.get(parameter)
+    if not requested:
+        return None
+    return (
+        owned_queryset(model, request.user)
+        .filter(pk=requested)
+        .values_list("pk", flat=True)
+        .first()
+    )
+
+
+@method_decorator(never_cache, name="dispatch")
+class AccountReportView(LoginRequiredMixin, View):
+    """Activity by account, with card payments shown apart from spending."""
+
+    grouping = "account"
+    template_name = "reports/activity_report.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        year, month = _month(request)
+        start, end = _range(request, year, month)
+        currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
+        data_key = get_user_data_key(
+            user=request.user, actor=request.user, master_key=load_master_key()
+        )
+        account_id = _owned_id(request, FinancialAccount, "account")
+        instrument_id = _owned_id(request, PaymentInstrument, "instrument")
+        build = account_activity if self.grouping == "account" else instrument_activity
+        report = build(
+            request.user,
+            start=start,
+            end=end,
+            currency=currency,
+            data_key=data_key,
+            account_id=account_id,
+            instrument_id=instrument_id,
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "report": report,
+                "grouping": self.grouping,
+                "year": year,
+                "month": month,
+                "start": start,
+                "end": end,
+                "currency": currency,
+                "selected_account": account_id,
+                "selected_instrument": instrument_id,
+                "accounts": owned_queryset(FinancialAccount, request.user),
+                "instruments": owned_queryset(PaymentInstrument, request.user),
+            },
+        )
+
+
+class CardReportView(AccountReportView):
+    """The same period, grouped by card instead."""
+
+    grouping = "instrument"

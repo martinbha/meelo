@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Activity by {{ grouping }}{% endblock %}
+
+{% block content %}
+<section class="activity-report">
+  <h1>Activity by {% if grouping == 'account' %}account{% else %}card{% endif %}</h1>
+  <p class="report-period">{{ start }} to {{ end }} · {{ currency }}</p>
+
+  <nav class="queue-filters" aria-label="Grouping">
+    <a href="{% url 'report-accounts' %}?year={{ year }}&amp;month={{ month }}"
+       {% if grouping == 'account' %}aria-current="page"{% endif %}>By account</a>
+    <a href="{% url 'report-cards' %}?year={{ year }}&amp;month={{ month }}"
+       {% if grouping == 'instrument' %}aria-current="page"{% endif %}>By card</a>
+  </nav>
+
+  <form method="get" class="report-filters" hx-boost="false">
+    <label>Year <input type="number" name="year" value="{{ year }}" min="2000" max="2100"></label>
+    <label>Month <input type="number" name="month" value="{{ month }}" min="1" max="12"></label>
+    <label>From <input type="date" name="start" value="{{ start|date:'Y-m-d' }}"></label>
+    <label>To <input type="date" name="end" value="{{ end|date:'Y-m-d' }}"></label>
+    <label>Currency <input type="text" name="currency" value="{{ currency }}" size="3"></label>
+    <label>Account
+      <select name="account">
+        <option value="">All accounts</option>
+        {% for item in accounts %}
+          <option value="{{ item.pk }}"
+            {% if selected_account == item.pk %}selected{% endif %}>{{ item.name_blind_index }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Card
+      <select name="instrument">
+        <option value="">All cards</option>
+        {% for item in instruments %}
+          <option value="{{ item.pk }}"
+            {% if selected_instrument == item.pk %}selected{% endif %}>{{ item.name_blind_index }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Show</button>
+  </form>
+
+  {% if report.lines %}
+    <table class="queue-table">
+      <caption class="visually-hidden">
+        Activity by {{ grouping }}. Card payments are shown apart from spending
+        because the purchases they settle were already counted.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">{% if grouping == 'account' %}Account{% else %}Card{% endif %}</th>
+          <th scope="col">Spent</th>
+          <th scope="col">Refunded</th>
+          <th scope="col">Net spending</th>
+          <th scope="col">Income</th>
+          <th scope="col">Balance payments</th>
+          <th scope="col">Other movement</th>
+          <th scope="col">Unresolved</th>
+          <th scope="col">Transactions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in report.lines %}
+          <tr {% if not line.is_mapped %}class="unassigned"{% endif %}>
+            <th scope="row">{{ line.label }}</th>
+            <td>{{ line.gross_spending_minor }}</td>
+            <td>{% if line.refunds_minor %}−{{ line.refunds_minor }}{% else %}—{% endif %}</td>
+            <td>{{ line.net_spending_minor }}</td>
+            <td>{{ line.income_minor }}</td>
+            <td>{{ line.settlements_minor }}</td>
+            <td>{{ line.movement_minor }}</td>
+            <td>{{ line.unresolved_minor }}</td>
+            <td>{{ line.transaction_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          <td>{{ report.gross_spending_minor }}</td>
+          <td>−{{ report.refunds_minor }}</td>
+          <td>{{ report.net_spending_minor }}</td>
+          <td>{{ report.income_minor }}</td>
+          <td>{{ report.settlements_minor }}</td>
+          <td>{{ report.movement_minor }}</td>
+          <td>{{ report.unresolved_minor }}</td>
+          <td>{{ report.transaction_count }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <p class="merge-help">
+      Balance payments are listed separately and are not part of net spending:
+      the purchases they settle were counted when they were made.
+    </p>
+
+    {% if report.unmapped %}
+      <p class="empty-state">
+        {{ report.unmapped.transaction_count }} transaction(s) are not attached to
+        a card. Mapping them will move them into the list above.
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="empty-state">No activity in this period.</p>
+  {% endif %}
+</section>
+{% endblock %}
