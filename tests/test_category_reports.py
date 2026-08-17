@@ -348,18 +348,52 @@ def test_the_merchant_page_groups_by_merchant(owner: Any, account: Any) -> None:
     assert "스타벅스" in response.content.decode()
 
 
-def test_a_report_page_writes_nothing_to_the_cache(owner: Any, account: Any) -> None:
+def test_a_report_page_writes_nothing_to_the_cache(
+    owner: Any, account: Any, monkeypatch: Any
+) -> None:
     """A cached total is a plaintext copy of somebody's finances."""
 
     add(owner, account, amount_minor=42_900, category=make_category(owner, "food"))
     cache.clear()
+    writes: list[Any] = []
+    monkeypatch.setattr(cache, "set", lambda *args, **kwargs: writes.append(args))
+    monkeypatch.setattr(cache, "set_many", lambda *args, **kwargs: writes.append(args))
     client = Client()
     client.force_login(owner)
 
     response = client.get(reverse("report-categories"), {"year": 2026, "month": 8})
 
     assert response.status_code == 200
-    assert response.headers["Cache-Control"].startswith("max-age=0, no-cache, no-store")
+    assert writes == []
+    # And the response tells every proxy between here and the browser the same.
+    assert "no-store" in response.headers["Cache-Control"]
+
+
+def test_a_row_whose_currencies_disagree_is_refused_by_a_breakdown(
+    owner: Any, account: Any
+) -> None:
+    """Skipping it would drop a real number out of a total silently."""
+
+    transaction = add(owner, account, amount_minor=42_900, currency="KRW")
+    CanonicalTransaction.objects.filter(pk=transaction.pk).update(amount_encrypted="42900:USD")
+
+    with pytest.raises(ValueError, match="but its amount is encoded as"):
+        category_report(owner)
+
+
+def test_a_breakdown_reports_its_own_totals_rather_than_a_half_filled_set(
+    owner: Any, account: Any
+) -> None:
+    """Only two buckets apply here; a zeroed income figure would mislead."""
+
+    add(owner, account, amount_minor=10_000, category=make_category(owner, "food"))
+    add(owner, account, amount_minor=3_000_000, transaction_type=_Type.INCOME)
+
+    report = category_report(owner)
+
+    assert report.gross_spending_minor == 10_000
+    assert report.transaction_count == 1
+    assert not hasattr(report, "totals")
 
 
 def test_a_nonsense_month_falls_back_rather_than_erroring(owner: Any, account: Any) -> None:
