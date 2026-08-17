@@ -33,7 +33,7 @@ from typing import Any
 from apps.transactions.classification import bucket_of, is_settlement
 from apps.transactions.models import CanonicalTransaction
 
-from .amounts import transaction_amount
+from .grouping import amount_in
 from .spending import reportable_transactions
 
 
@@ -196,12 +196,7 @@ def summarize(
         [f"{name}_minor" for name in _COUNTERS] + [f"{name}_count" for name in _COUNTERS], 0
     )
     for transaction in transactions:
-        amount = transaction_amount(transaction, data_key=data_key)
-        if amount.resolved_currency.code != currency:
-            raise ValueError(
-                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
-                f"but its amount is encoded as {amount.resolved_currency.code}."
-            )
+        amount = amount_in(transaction, data_key=data_key, currency=currency)
         name = _field_for(transaction)
         running[f"{name}_minor"] += amount.amount_minor
         running[f"{name}_count"] += 1

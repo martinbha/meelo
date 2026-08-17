@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, Protocol
 
+from apps.core.value_objects import Money
 from apps.transactions.models import CanonicalTransaction
 
 from .amounts import transaction_amount
@@ -38,6 +39,29 @@ class Line(Protocol):
     def net_spending_minor(self) -> int: ...
 
 
+def amount_in(transaction: CanonicalTransaction, *, data_key: bytes | None, currency: str) -> Money:
+    """Read a transaction's amount, refusing a row that contradicts itself.
+
+    Callers filter on the queryable ``currency`` column, so a mismatch here means
+    the column and the encoded amount disagree. There is no honest answer to
+    which currency such a row is in: skipping it drops a real number out of a
+    total with nothing said, and counting it puts one into a total it does not
+    belong to.
+
+    Every report goes through this. The check was written three times before it
+    lived in one place, and a drifting copy would have one report refuse a row
+    while another quietly lost it.
+    """
+
+    amount = transaction_amount(transaction, data_key=data_key)
+    if amount.resolved_currency.code != currency:
+        raise ValueError(
+            f"Transaction {transaction.pk} is recorded as {transaction.currency} "
+            f"but its amount is encoded as {amount.resolved_currency.code}."
+        )
+    return amount
+
+
 def group_rows(
     transactions: Sequence[CanonicalTransaction],
     *,
@@ -57,15 +81,7 @@ def group_rows(
 
     grouped: dict[str, dict[str, Any]] = {}
     for transaction in transactions:
-        amount = transaction_amount(transaction, data_key=data_key)
-        if amount.resolved_currency.code != currency:
-            # Callers filter on the queryable currency column, so reaching here
-            # means the column and the encoded amount disagree. Skipping the row
-            # would drop a real number out of a total with nothing said.
-            raise ValueError(
-                f"Transaction {transaction.pk} is recorded as {transaction.currency} "
-                f"but its amount is encoded as {amount.resolved_currency.code}."
-            )
+        amount = amount_in(transaction, data_key=data_key, currency=currency)
         group = grouped.setdefault(
             key_of(transaction),
             {"label": label_of(transaction, data_key), **dict.fromkeys(fields, 0)},
