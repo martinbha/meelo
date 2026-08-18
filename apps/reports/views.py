@@ -22,7 +22,7 @@ from django.views.generic import View
 
 from apps.categorization.models import Category
 from apps.core.errors import ApplicationError
-from apps.core.key_management import get_user_data_key, load_master_key
+from apps.core.key_scope import request_data_key
 from apps.core.ownership import owned_queryset
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -98,9 +98,7 @@ class SpendingReportView(LoginRequiredMixin, View):
         year, month = _month(request)
         start, end = _range(request, year, month)
         currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
-        data_key = get_user_data_key(
-            user=request.user, actor=request.user, master_key=load_master_key()
-        )
+        data_key = request_data_key(request)
         category_id = _owned_id(request, Category, "category")
         build = category_breakdown if self.grouping == "category" else merchant_breakdown
         breakdown = build(
@@ -153,9 +151,7 @@ class AccountReportView(LoginRequiredMixin, View):
         year, month = _month(request)
         start, end = _range(request, year, month)
         currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
-        data_key = get_user_data_key(
-            user=request.user, actor=request.user, master_key=load_master_key()
-        )
+        data_key = request_data_key(request)
         account_id = _owned_id(request, FinancialAccount, "account")
         instrument_id = _owned_id(request, PaymentInstrument, "instrument")
         build = account_activity if self.grouping == "account" else instrument_activity
@@ -203,9 +199,7 @@ class OverviewReportView(LoginRequiredMixin, View):
         year, month = _month(request)
         start, end = _range(request, year, month)
         currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
-        data_key = get_user_data_key(
-            user=request.user, actor=request.user, master_key=load_master_key()
-        )
+        data_key = request_data_key(request)
         overview = period_overview(
             request.user, start=start, end=end, currency=currency, data_key=data_key
         )
@@ -256,9 +250,7 @@ class ExportView(LoginRequiredMixin, View):
                 export_format=form.cleaned_data["export_format"],
                 start=form.cleaned_data.get("start"),
                 end=form.cleaned_data.get("end"),
-                data_key=get_user_data_key(
-                    user=request.user, actor=request.user, master_key=load_master_key()
-                ),
+                data_key=request_data_key(request),
                 passphrase=form.cleaned_data.get("passphrase") or "",
             )
         except ApplicationError as error:

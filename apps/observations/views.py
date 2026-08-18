@@ -17,7 +17,7 @@ from django.shortcuts import redirect, render
 from django.views.generic import View
 
 from apps.core.errors import ApplicationError
-from apps.core.key_management import get_user_data_key, load_master_key
+from apps.core.key_scope import request_data_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.processing.forms import DocumentOverrideForm
 from apps.processing.models import SourceDocument
@@ -51,7 +51,7 @@ IMAGE_CONTENT_TYPES = {
 
 
 def _data_key(request: HttpRequest) -> bytes:
-    return get_user_data_key(user=request.user, actor=request.user, master_key=load_master_key())
+    return request_data_key(request)
 
 
 def _positive_int(value: str | None, *, default: int) -> int:
