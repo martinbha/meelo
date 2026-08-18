@@ -117,17 +117,20 @@ def set_document_overrides(
     if document is None:
         raise ForbiddenError("This document belongs to another user.")
 
-    change = OverrideChange(
-        document=document,
-        previous_source_type=document.source_type_override,
-        previous_institution=document.institution_override,
-    )
-    if not change.changed:
-        return change
+    previous_source_type = document.source_type_override
+    previous_institution = document.institution_override
+    if (previous_source_type, previous_institution) == (
+        resolved_source_type,
+        resolved_institution,
+    ):
+        # Nothing to write and nothing to record. A reviewer who submits the
+        # form twice has not made a second decision.
+        return OverrideChange(document, previous_source_type, previous_institution)
 
     document.source_type_override = resolved_source_type
     document.institution_override = resolved_institution
     document.save(update_fields=["source_type_override", "institution_override"])
+    change = OverrideChange(document, previous_source_type, previous_institution)
 
     record_audit_event(
         user=user,
