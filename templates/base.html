@@ -16,10 +16,12 @@
       <nav aria-label="Primary navigation">
         {% if request.user.is_authenticated %}
           <a href="{% url 'transaction-list' %}">Transactions</a>
+          <a href="{% url 'financial-account-list' %}">Accounts</a>
           <a href="{% url 'review-queue' %}">Review</a>
           <a href="{% url 'match-queue' %}">Matches</a>
           <a href="{% url 'upload-list' %}">Uploads</a>
-          <a href="{% url 'password-change' %}">Security</a>
+          <a href="{% url 'report-overview' %}">Reports</a>
+          <a href="{% url 'account-security' %}">Security</a>
           <span class="user-email">{{ request.user.email }}</span>
           <form action="{% url 'logout' %}" method="post" hx-boost="false">
             {% csrf_token %}

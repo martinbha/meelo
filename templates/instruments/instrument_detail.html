@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="instrument-heading">
+    <h1 id="instrument-heading">{{ name }}</h1>
+    <p>
+      {{ instrument.get_instrument_type_display }}
+      {% if instrument.last_four %}· ending {{ instrument.last_four }}{% endif %}
+      {% if issuer %}· {{ issuer }}{% endif %}
+    </p>
+    <p>
+      Posts against
+      <a href="{% url 'financial-account-detail' instrument.financial_account_id %}">its account</a>{% if instrument.settlement_account_id %},
+      settled from
+      <a href="{% url 'financial-account-detail' instrument.settlement_account_id %}">another</a>{% endif %}.
+    </p>
+    <p><a href="{% url 'instrument-list' %}">Back to instruments</a></p>
+  </section>
+{% endblock %}

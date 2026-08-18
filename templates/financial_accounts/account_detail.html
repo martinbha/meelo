@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="account-heading">
+    <h1 id="account-heading">{{ name }}</h1>
+    <p>{{ institution }} · {{ account.get_account_type_display }} · {{ account.currency }}</p>
+    {% if account.identifier_last_four %}
+      <p>Ending {{ account.identifier_last_four }}</p>
+    {% endif %}
+
+    <h2>Balance</h2>
+    <ul>
+      {% for currency, minor in balances.items %}
+        <li>{{ minor }} {{ currency }}</li>
+      {% empty %}
+        <li>Nothing posted to the ledger yet.</li>
+      {% endfor %}
+    </ul>
+
+    <h2>Payment instruments</h2>
+    <ul>
+      {% for instrument in instruments %}
+        <li>
+          <a href="{% url 'instrument-detail' instrument.pk %}">
+            {{ instrument.get_instrument_type_display }}
+            {% if instrument.last_four %}ending {{ instrument.last_four }}{% endif %}
+          </a>
+        </li>
+      {% empty %}
+        <li>None mapped to this account.</li>
+      {% endfor %}
+    </ul>
+
+    <p><a href="{% url 'financial-account-list' %}">Back to accounts</a></p>
+  </section>
+{% endblock %}

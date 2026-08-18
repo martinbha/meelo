@@ -1,0 +1,25 @@
+{% extends base_template %}
+{% block title %}Transaction · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="transaction-heading">
+    <h1 id="transaction-heading">{{ merchant|default:"Transaction" }}</h1>
+    <dl>
+      <dt>Date</dt><dd>{{ transaction.occurred_at }}</dd>
+      {% if transaction.posted_at %}<dt>Posted</dt><dd>{{ transaction.posted_at }}</dd>{% endif %}
+      <dt>Amount</dt><dd>{{ amount.format }}</dd>
+      <dt>Type</dt><dd>{{ transaction.get_transaction_type_display }}</dd>
+      <dt>Status</dt><dd>{{ transaction.get_status_display }}</dd>
+      {% if counterparty %}<dt>Counterparty</dt><dd>{{ counterparty }}</dd>{% endif %}
+      {% if notes %}<dt>Notes</dt><dd>{{ notes }}</dd>{% endif %}
+      <dt>Ledger entries</dt><dd>{{ entry_count }}</dd>
+    </dl>
+    <p>
+      {% if transaction.status == 'draft' %}
+        <a href="{% url 'transaction-edit' transaction.pk %}">Edit</a> ·
+      {% endif %}
+      <a href="{% url 'transaction-delete' transaction.pk %}">Delete</a> ·
+      <a href="{% url 'transaction-list' %}">Back to transactions</a>
+    </p>
+  </section>
+{% endblock %}

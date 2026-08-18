@@ -53,5 +53,10 @@ against PostgreSQL yourself with:
 DJANGO_SETTINGS_MODULE=config.settings.ci uv run pytest
 ```
 
+Application routes follow specification section 24. `config/routes.py` holds
+that table as data and `tests/test_routes.py` resolves every entry, so a path
+cannot move without the check noticing — and every path that has moved keeps
+answering as a permanent redirect, because a bookmark is a link somebody kept.
+
 The application processes financial screenshots locally. Do not add screenshots,
 OCR output, credentials, or other sensitive data to the repository.

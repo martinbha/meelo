@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Category rules · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="rules-heading">
+    <h1 id="rules-heading">Category rules</h1>
+    <p class="field-help">Listed in the order the engine tries them.</p>
+    {% if rows %}
+      <table>
+        <thead>
+          <tr><th>Priority</th><th>Rule</th><th>Matches</th><th>Files as</th><th>Active</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr {% if not row.rule.is_active %}class="inactive"{% endif %}>
+              <td>{{ row.rule.priority }}</td>
+              <td>{{ row.rule.get_rule_type_display }}</td>
+              <td>{{ row.pattern|default:"—" }}</td>
+              <td>{{ row.category }}</td>
+              <td>{% if row.rule.is_active %}Yes{% else %}No{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No rules yet. Correcting a category from review is how the first one gets written.</p>
+    {% endif %}
+  </section>
+{% endblock %}

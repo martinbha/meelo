@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Payment instruments · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="instruments-heading">
+    <h1 id="instruments-heading">Payment instruments</h1>
+    {% if rows %}
+      <table>
+        <thead>
+          <tr><th>Instrument</th><th>Type</th><th>Ending</th><th>Posts against</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr {% if not row.instrument.is_active %}class="inactive"{% endif %}>
+              <td><a href="{% url 'instrument-detail' row.instrument.pk %}">{{ row.name }}</a></td>
+              <td>{{ row.instrument.get_instrument_type_display }}</td>
+              <td>{{ row.instrument.last_four|default:"—" }}</td>
+              <td>
+                <a href="{% url 'financial-account-detail' row.instrument.financial_account_id %}">
+                  Account
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No payment instruments yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}
