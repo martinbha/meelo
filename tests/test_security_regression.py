@@ -35,6 +35,7 @@ from apps.reports.services import create_export
 from apps.transactions.models import CanonicalTransaction
 from apps.transactions.money import store_money
 from tests.factories import make_account, make_document, make_ocr_run, make_user
+from tests.plaintext import stored_text
 
 pytestmark = pytest.mark.django_db
 
@@ -341,8 +342,8 @@ def test_no_readable_financial_value_is_stored(alice: Any, master_key: bytes) ->
 
     assert is_encrypted_value(stored.amount_encrypted)
     assert is_encrypted_value(stored.merchant_encrypted)
-    assert MERCHANT not in str(stored.__dict__)
-    assert "42900" not in str(stored.__dict__)
+    assert MERCHANT not in stored_text(stored)
+    assert "42900" not in stored_text(stored)
 
 
 @pytest.mark.parametrize(
