@@ -8,7 +8,8 @@ from typing import Any
 from django.conf import settings
 
 from apps.core import metrics
-from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
+from apps.core.key_management import derive_blind_index_key
+from apps.core.key_scope import resolve_data_key
 from apps.observations.services import import_parser_selection
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
 from apps.parsing.generic import GenericTransactionListParser
@@ -273,8 +274,10 @@ def orchestrate_document_ocr(
 def execute_document_ocr(
     *, document: SourceDocument, source_path: Path, user: Any
 ) -> tuple[OcrRun, ...]:
-    master_key = load_master_key()
-    data_key = get_user_data_key(user=user, actor=user, master_key=master_key)
+    # Through the scope rather than unwrapping directly, so a job that decrypts
+    # a hundred tokens unwraps once and writes one key-access event instead of a
+    # hundred. The worker command closes the scope when the job ends.
+    data_key = resolve_data_key(user=user, actor=user)
     # Timed here rather than per engine: this is the span a slow document is
     # actually slow for, and the outcome label separates a fast failure from a
     # fast success.
