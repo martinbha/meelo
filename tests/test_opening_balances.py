@@ -39,7 +39,6 @@ from tests.factories import make_account, make_user
 pytestmark = pytest.mark.django_db
 
 
-
 @pytest.fixture
 def owner() -> Any:
     return make_user(email="opening@example.com")
