@@ -134,6 +134,42 @@ movement_minor` equals the month's `neutral_minor`, which the tests assert.
 **Activity with no card is a line, sorted last.** Unmapped activity is the thing
 a user needs to go and map, so it is named rather than dropped.
 
+## Balances (`apps.ledger.balances`)
+
+A balance is derived from the ledger, never read off a screenshot. A bank's
+balance line is one institution's opinion at one moment: it is stale the instant
+anything else clears, it does not exist on a card list, and two screenshots of
+the same account minutes apart disagree. The ledger is every event the user
+confirmed, so adding it up gives a figure consistent with the reports by
+construction — both read the same rows.
+
+**Direction comes from the account, not the entry.** A debit increases a bank
+account and decreases a credit-card liability. Signing every entry the same way
+would report a card balance that grows as it is paid off, which is why
+`NORMAL_BALANCE_SIGNS` is a table over `(normal_balance, entry_type)` rather
+than a sign on the amount. A positive balance means "more of whatever this
+account normally holds": money in an asset, debt in a liability.
+
+| Function | Answers |
+| --- | --- |
+| `account_balances` | Every ledger account's position, one row per account and currency |
+| `positions` | Assets, liabilities, and net, per currency |
+| `financial_account_balances` | The same, keyed by the account a person recognises |
+
+**Only confirmed transactions count.** A voided one has been withdrawn, and its
+entries are cancelled by reversals — but relying on that cancellation would make
+the balance depend on the reversal having been written. Filtering on the status
+instead means a balance can never be one missed step away from counting money
+the user said was never spent.
+
+Equity, income, and expense accounts are excluded from the net position. They
+are the other side of the same movements; counting them in would double every
+entry.
+
+Currencies are kept apart here for the same reason they are everywhere else:
+nothing in this application converts between them, so adding them would invent
+an exchange rate.
+
 ## Income against spending
 
 `apps.reports.overview` keeps a period's four honest answers apart: what came in,
