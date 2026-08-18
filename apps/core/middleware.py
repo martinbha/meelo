@@ -12,6 +12,7 @@ from django.shortcuts import render
 
 from .context import request_id_context
 from .errors import ApplicationError, ForbiddenError, InternalServerError, ResourceNotFoundError
+from .key_scope import clear_scope
 
 logger = logging.getLogger(__name__)
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -90,3 +91,26 @@ class ErrorHandlingMiddleware:
                 request,
                 InternalServerError("An unexpected error occurred."),
             )
+
+
+class DataKeyScopeMiddleware:
+    """Makes sure no request leaves an unwrapped key behind it.
+
+    The scope itself is opened lazily, by the first view that needs a key —
+    most requests never decrypt anything, and unwrapping for a page that only
+    lists dates would be work done for nobody. What cannot be lazy is the
+    clearing. A worker thread serves one request after another, and a key left
+    in a context variable is a key the next request could read.
+
+    So this closes the scope on the way out, in a ``finally``, whatever
+    happened in between.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        try:
+            return self.get_response(request)
+        finally:
+            clear_scope()

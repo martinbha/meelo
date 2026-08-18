@@ -10,7 +10,7 @@ from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
 from apps.core.errors import ApplicationError
-from apps.core.key_management import get_user_data_key, load_master_key
+from apps.core.key_scope import request_data_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .deletion import delete_transaction
@@ -22,7 +22,7 @@ from .money import read_money
 def _data_key(request: HttpRequest) -> bytes:
     """The requesting user's own key. Manual entry is encrypted like everything else."""
 
-    return get_user_data_key(user=request.user, actor=request.user, master_key=load_master_key())
+    return request_data_key(request)
 
 
 class ManualTransactionCreateView(LoginRequiredMixin, FormView):  # type: ignore[type-arg]

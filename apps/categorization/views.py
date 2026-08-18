@@ -16,7 +16,8 @@ from django.shortcuts import redirect, render
 from django.views.generic import View
 
 from apps.core.errors import ApplicationError
-from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
+from apps.core.key_management import derive_blind_index_key
+from apps.core.key_scope import request_data_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.transactions.models import CanonicalTransaction
 
@@ -26,7 +27,7 @@ from .rule_creation import SCOPE_LABELS, RuleScope, create_rule_from_correction,
 
 
 def _keys(request: HttpRequest) -> bytes:
-    return get_user_data_key(user=request.user, actor=request.user, master_key=load_master_key())
+    return request_data_key(request)
 
 
 def _merchant(transaction: CanonicalTransaction, *, data_key: bytes) -> str:

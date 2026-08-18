@@ -39,6 +39,8 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
     "apps.core.middleware.ErrorHandlingMiddleware",
+    # Outside the view layer, so the key is cleared even when a view raises.
+    "apps.core.middleware.DataKeyScopeMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

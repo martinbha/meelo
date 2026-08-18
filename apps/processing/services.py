@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 
 from apps.core.context import request_id_context
+from apps.core.key_scope import clear_scope
 
 from .models import ProcessingJob
 
@@ -76,4 +77,8 @@ def process_one_job() -> bool:
             job.mark_succeeded()
     finally:
         request_id_context.reset(context_token)
+        # Whatever the job did, it does not get to leave an unwrapped key in
+        # the worker process for the next document — which may belong to
+        # somebody else entirely.
+        clear_scope()
     return True
