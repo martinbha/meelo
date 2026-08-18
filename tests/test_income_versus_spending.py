@@ -24,6 +24,7 @@ from apps.instruments.models import PaymentInstrument
 from apps.reports import predicates
 from apps.reports.overview import period_overview
 from apps.reports.spending import month_bounds, monthly_spending, reportable_transactions
+from apps.transactions.classification import OPENING_TYPES
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import make_account, make_user
 
@@ -324,7 +325,12 @@ def test_the_predicates_partition_every_reportable_row(owner: Any, checking: Any
 
     counts = [rows.filter(part).count() for part in partition]
 
-    assert sum(counts) == rows.count() == len(_Type.values)
+    assert sum(counts) == rows.count()
+    # Every type reaches exactly one predicate, and the only type that never
+    # reaches the report at all is the opening balance — which is a position
+    # rather than something that happened in the period.
+    present = set(rows.values_list("transaction_type", flat=True))
+    assert set(_Type.values) - present == OPENING_TYPES
 
 
 # ---------------------------------------------------------------------------

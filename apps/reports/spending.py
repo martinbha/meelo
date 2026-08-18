@@ -32,7 +32,7 @@ from django.db.models import QuerySet
 
 from apps.core.ownership import owned_queryset
 from apps.core.value_objects import Money
-from apps.transactions.classification import bucket_of
+from apps.transactions.classification import OPENING_TYPES, bucket_of
 from apps.transactions.models import CanonicalTransaction
 
 from .amounts import transaction_amount
@@ -62,9 +62,19 @@ def reportable_transactions(
     Observations never appear here. A row a reviewer has not accepted, or has
     rejected, has no canonical transaction, so it cannot reach a total by any
     path — which is what keeps unreviewed screenshots out of the books.
+
+    Opening balances are excluded too. One is the position an account started
+    from rather than something that happened in a period, and a report that
+    counted it would show a transfer in whichever month the account was opened.
+    The ledger still counts it, which is the point: balances include it,
+    reports do not.
     """
 
-    queryset = owned_queryset(CanonicalTransaction, user).filter(status__in=REPORTABLE_STATUSES)
+    queryset = (
+        owned_queryset(CanonicalTransaction, user)
+        .filter(status__in=REPORTABLE_STATUSES)
+        .exclude(transaction_type__in=OPENING_TYPES)
+    )
     if start is not None:
         queryset = queryset.filter(occurred_at__gte=start)
     if end is not None:
