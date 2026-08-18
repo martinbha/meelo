@@ -43,6 +43,7 @@ from apps.reports.views import (
 from apps.transactions.views import (
     ManualTransactionCreateView,
     ManualTransactionUpdateView,
+    TransactionDeleteView,
     TransactionListView,
 )
 from apps.users.views import (
@@ -102,6 +103,11 @@ urlpatterns = [
         "transactions/<uuid:pk>/edit/",
         ManualTransactionUpdateView.as_view(),
         name="transaction-edit",
+    ),
+    path(
+        "transactions/<uuid:pk>/delete/",
+        TransactionDeleteView.as_view(),
+        name="transaction-delete",
     ),
     path("review/", ReviewQueueView.as_view(), name="review-queue"),
     path("review/<uuid:pk>/", ObservationReviewView.as_view(), name="observation-review"),

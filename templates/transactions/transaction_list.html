@@ -12,6 +12,7 @@
           <li>
             {{ transaction.occurred_at }} · {{ transaction.transaction_type }}
             · <a href="{% url 'transaction-edit' transaction.pk %}">Edit</a>
+            · <a href="{% url 'transaction-delete' transaction.pk %}">Delete</a>
           </li>
         {% endfor %}
       </ul>

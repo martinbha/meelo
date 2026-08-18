@@ -1,0 +1,45 @@
+{% extends base_template %}
+
+{% block title %}Delete transaction · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="delete-heading">
+    <h1 id="delete-heading">Delete this transaction?</h1>
+
+    <p>
+      {{ transaction.occurred_at }} · {{ transaction.get_transaction_type_display }}
+      · {{ transaction.get_status_display }}
+    </p>
+
+    <p>Deleting it will:</p>
+    <ul>
+      <li>Void the transaction, so it leaves every report.</li>
+      {% if posted_entry_count %}
+        <li>
+          Reverse its {{ posted_entry_count }} ledger
+          {{ posted_entry_count|pluralize:"entry,entries" }} by writing the opposite of
+          each. The original entries stay, so the books can still explain themselves.
+        </li>
+      {% endif %}
+      {% if linked_observation_count %}
+        <li>
+          Return {{ linked_observation_count }} screenshot
+          {{ linked_observation_count|pluralize:"row,rows" }} to the review queue.
+        </li>
+      {% endif %}
+    </ul>
+
+    <p>Clicking delete again afterwards will not undo it.</p>
+
+    <form method="post" hx-boost="false">
+      {% csrf_token %}
+      <input type="hidden" name="confirm" value="yes">
+      <p>
+        <label for="reason">Why (optional, recorded in the audit log)</label>
+        <input type="text" id="reason" name="reason" maxlength="200">
+      </p>
+      <button type="submit">Delete transaction</button>
+      <a href="{% url 'transaction-list' %}">Keep it</a>
+    </form>
+  </section>
+{% endblock %}

@@ -5,13 +5,15 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
-from django.views.generic import FormView
+from django.views.generic import FormView, View
 
+from apps.core.errors import ApplicationError
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
+from .deletion import delete_transaction
 from .forms import ManualTransactionForm
 from .models import CanonicalTransaction
 
@@ -77,3 +79,47 @@ class TransactionListView(LoginRequiredMixin, FormView):  # type: ignore[type-ar
             self.template_name,
             {"transactions": owned_queryset(CanonicalTransaction, request.user)},
         )
+
+
+class TransactionDeleteView(LoginRequiredMixin, View):
+    """Withdraw a transaction, behind a page that says what that means.
+
+    The confirmation is a separate GET rather than a browser dialog because the
+    consequences are not obvious from the button: the ledger is reversed, the
+    observations that fed the transaction go back into the review queue, and
+    none of it is undone by clicking again. A person is owed the chance to read
+    that before it happens.
+    """
+
+    def get(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        transaction = get_owned_object_or_404(CanonicalTransaction, request.user, pk=pk)
+        return render(
+            request,
+            "transactions/transaction_confirm_delete.html",
+            {
+                "transaction": transaction,
+                "posted_entry_count": transaction.ledger_entries.count(),
+                "linked_observation_count": transaction.observations.count(),
+            },
+        )
+
+    def post(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        transaction = get_owned_object_or_404(CanonicalTransaction, request.user, pk=pk)
+        try:
+            result = delete_transaction(
+                transaction.pk,
+                user=request.user,
+                reason=request.POST.get("reason", ""),
+                confirmed=request.POST.get("confirm") == "yes",
+                data_key=_data_key(request),
+            )
+        except ApplicationError as error:
+            messages.error(request, error.message)
+            return redirect("transaction-delete", pk=transaction.pk)
+        released = result.released_observation_count
+        messages.success(
+            request,
+            "Transaction deleted and its ledger entries reversed."
+            + (f" {released} observation(s) returned to review." if released else ""),
+        )
+        return redirect("transaction-list")
