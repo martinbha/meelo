@@ -50,8 +50,20 @@ NEUTRAL_TYPES: frozenset[str] = frozenset(
         _Type.CREDIT_CARD_PAYMENT,
         _Type.CASH_WITHDRAWAL,
         _Type.LOAN_PAYMENT,
+        # An opening balance is where an account started, not money that came
+        # from anywhere. Reporting filters it out before it reaches a total at
+        # all (``OPENING_TYPES`` below); placing it here as well means that if
+        # some future report ever does read one, the worst it can do is add
+        # nothing to spending and nothing to income.
+        _Type.OPENING_BALANCE,
     }
 )
+
+#: Types that never belong in a period report, whatever bucket they sit in. An
+#: opening balance did not happen in a month — it is the position the month
+#: started from — so counting it as movement would report a transfer the user
+#: never made (specification 25.2).
+OPENING_TYPES: frozenset[str] = frozenset({_Type.OPENING_BALANCE})
 
 #: The subset of neutral types that settle a card balance. Not a bucket of its
 #: own — a settlement really is neutral — but reporting shows it apart from other
@@ -97,6 +109,12 @@ def is_neutral(transaction_type: str) -> bool:
     """
 
     return transaction_type in NEUTRAL_TYPES
+
+
+def is_opening_balance(transaction_type: str) -> bool:
+    """Whether this type records where an account started rather than an event."""
+
+    return transaction_type in OPENING_TYPES
 
 
 def is_settlement(transaction_type: str) -> bool:

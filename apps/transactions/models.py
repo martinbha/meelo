@@ -26,6 +26,10 @@ class CanonicalTransaction(models.Model):
         INTEREST = "interest", "Interest"
         LOAN_PAYMENT = "loan_payment", "Loan payment"
         ADJUSTMENT = "adjustment", "Adjustment"
+        #: The position an account started from. Not an event that happened
+        #: in any month, which is why reporting excludes it outright rather
+        #: than bucketing it (specification 6.2, 25.2).
+        OPENING_BALANCE = "opening_balance", "Opening balance"
         UNKNOWN = "unknown", "Unknown"
 
     class Status(models.TextChoices):

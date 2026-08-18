@@ -170,6 +170,27 @@ Currencies are kept apart here for the same reason they are everywhere else:
 nothing in this application converts between them, so adding them would invent
 an exchange rate.
 
+### Opening balances
+
+An account opened with money already in it has to say so, or every balance the
+ledger derives is short by that amount. `apps.financial_accounts.opening_balances`
+posts it as a balanced pair against an equity account, on a transaction of type
+`opening_balance`.
+
+It is not income. The money was not earned in any period this system covers, and
+posting it against equity rather than an income account is what keeps it out of
+"what came in this month". `reportable_transactions` then excludes the type
+outright — an opening balance did not happen in a month, it is the position the
+month started from, so even counting it as movement would report a transfer the
+user never made. It is also placed in `NEUTRAL_TYPES`, so if some future report
+does read one, the worst it can do is add nothing to either total.
+
+Corrections are adjustments. The original entries are never rewritten: every
+balance the system has reported was computed from them, and changing one
+silently would leave those figures different today with nothing recording what
+they used to be. `correct_opening_balance` posts the difference and requires a
+reason.
+
 ## Income against spending
 
 `apps.reports.overview` keeps a period's four honest answers apart: what came in,
