@@ -10,6 +10,16 @@ from apps.processing.models import SourceDocument
 
 
 class OcrRun(models.Model):
+    class Engine(models.TextChoices):
+        """The engines specification 6.5 allows a run to come from.
+
+        Named here rather than left as free text so a typo cannot create a
+        third engine that consensus silently counts as an independent opinion.
+        """
+
+        PADDLEOCR = "paddleocr", "PaddleOCR"
+        TESSERACT = "tesseract", "Tesseract"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -21,7 +31,7 @@ class OcrRun(models.Model):
         on_delete=models.CASCADE,
         related_name="ocr_runs",
     )
-    engine = models.CharField(max_length=32)
+    engine = models.CharField(max_length=32, choices=Engine.choices)
     engine_version = models.CharField(max_length=128)
     model_versions = models.JSONField(default=dict, blank=True)
     languages = models.JSONField(default=list)
