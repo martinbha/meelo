@@ -167,6 +167,37 @@ are what the postings were built from, so correcting one of those on a posted
 transaction is refused: the fix is a reversal and a re-entry, not an edit that
 leaves entries describing a transaction that no longer exists.
 
+## Deleting a transaction (`apps.transactions.deletion`)
+
+"Delete" is the word a person uses; it is not what happens. The row stays, its
+ledger entries stay, and an opposing entry is written for each of them. What
+changes is that the transaction becomes `voided`, so reports stop counting it,
+and every observation that fed it goes back into the review queue as
+`unreviewed`.
+
+Deleting the rows would be the obvious implementation and the wrong one. A set
+of books that can be edited backwards cannot explain itself: the money would be
+missing from the totals with nothing recording that it had ever been there.
+
+Three things happen together or not at all.
+
+| Step | Why it cannot be skipped |
+| --- | --- |
+| Reverse the postings | A void alone leaves reports and ledger disagreeing about whether the money moved |
+| Void the transaction | A reversal alone leaves a transaction reports still count against a ledger that says it never happened |
+| Release the observations | Otherwise they are stranded: accepted, pointing at a transaction nobody can see, and out of the queue |
+
+`confirmed=True` is required, and the page in front of it says what will happen
+rather than asking "are you sure". The consequences are not obvious from the
+button, and repeating the click does not undo them — the reversal is already
+written.
+
+Reversing twice is refused. A second pass leaves the accounts balanced and the
+entry count doubled, and every later reader would have to know that half the
+rows are noise. Detection is per account rather than per transaction: a
+balanced posting and a reversed one both net to zero overall, but only a
+reversed one leaves every individual account at zero.
+
 ## Reconciliation (`apps.reconciliation`)
 
 Reconciliation resolves several views of one real event. It **proposes**;
