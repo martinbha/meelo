@@ -28,8 +28,9 @@ Screenshot parsers, their fixtures, and the regression suite are documented in
 reconciliation are in [REVIEW.md](REVIEW.md). How a transaction gets a category
 is in [CATEGORIES.md](CATEGORIES.md), and how a month is added up is in
 [REPORTS.md](REPORTS.md). Field encryption is in [SECURITY.md](SECURITY.md), and database roles and
-networking are in [DATABASE.md](DATABASE.md). Operational procedures are in
-[OPERATIONS.md](OPERATIONS.md).
+networking are in [DATABASE.md](DATABASE.md). Where the schema differs from the
+specification, and why, is in [DATAMODEL.md](DATAMODEL.md). Operational
+procedures are in [OPERATIONS.md](OPERATIONS.md).
 
 The Compose deployment runs the web application, PostgreSQL, and the Caddy proxy
 by default. The processing worker is behind a profile, so it can be run on its

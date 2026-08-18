@@ -87,6 +87,8 @@ def _tokens(data: dict[str, list[Any]]) -> tuple[OcrToken, ...]:
 
 
 class TesseractOcrEngine(OcrEngine):
+    engine_name = "tesseract"
+
     def __init__(
         self,
         *,

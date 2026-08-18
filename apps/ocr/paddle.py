@@ -115,6 +115,8 @@ def _json_safe_output(output: Any) -> Any:
 
 
 class PaddleOcrEngine(OcrEngine):
+    engine_name = "paddleocr"
+
     def __init__(self, *, factory: Callable[..., Any] = _default_factory) -> None:
         self._factory = factory
 

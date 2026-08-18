@@ -60,6 +60,7 @@ from tests.factories import (
     make_ocr_run,
     make_user,
 )
+from tests.plaintext import stored_text
 
 pytestmark = pytest.mark.django_db
 
@@ -389,9 +390,9 @@ def test_a_manually_entered_transaction_stores_nothing_readable(owner: Any, acco
         "notes_encrypted",
     ):
         assert is_encrypted_value(getattr(stored, field)), field
-    assert MERCHANT not in str(stored.__dict__)
-    assert "42900" not in str(stored.__dict__)
-    assert "a private note" not in str(stored.__dict__)
+    assert MERCHANT not in stored_text(stored)
+    assert "42900" not in stored_text(stored)
+    assert "a private note" not in stored_text(stored)
 
 
 def test_updating_a_transaction_leaves_nothing_readable(owner: Any, account: Any) -> None:
@@ -419,8 +420,8 @@ def test_updating_a_transaction_leaves_nothing_readable(owner: Any, account: Any
 
     stored = CanonicalTransaction.objects.get(pk=transaction.pk)
     assert read_money(stored, "amount_encrypted", data_key=KEY).amount_minor == 42_900
-    assert MERCHANT not in str(stored.__dict__)
-    assert "42900" not in str(stored.__dict__)
+    assert MERCHANT not in stored_text(stored)
+    assert "42900" not in stored_text(stored)
 
 
 def parsed(**overrides: Any) -> ParsedObservation:
@@ -467,8 +468,8 @@ def test_accepting_an_observation_stores_nothing_readable(owner: Any, account: A
     stored = CanonicalTransaction.objects.get(pk=transaction.pk)
     assert is_encrypted_value(stored.amount_encrypted)
     assert is_encrypted_value(stored.merchant_encrypted)
-    assert MERCHANT not in str(stored.__dict__)
-    assert "42900" not in str(stored.__dict__)
+    assert MERCHANT not in stored_text(stored)
+    assert "42900" not in stored_text(stored)
     assert read_money(stored, "amount_encrypted", data_key=KEY).amount_minor == 42_900
 
 
@@ -532,7 +533,7 @@ def test_the_manual_entry_page_stores_nothing_readable(web_owner: Any, master_ke
     data_key = get_user_data_key(user=web_owner, actor=web_owner, master_key=master_key)
     assert is_encrypted_value(stored.amount_encrypted), stored.amount_encrypted
     assert is_encrypted_value(stored.merchant_encrypted)
-    assert MERCHANT not in str(stored.__dict__)
+    assert MERCHANT not in stored_text(stored)
     assert read_model_field(stored, "merchant_encrypted", key=data_key) == MERCHANT
 
 

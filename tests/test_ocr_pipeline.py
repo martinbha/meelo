@@ -29,6 +29,7 @@ from apps.processing.models import SourceDocument
 class StubEngine(OcrEngine):
     def __init__(self, name: str, *, fails: bool = False) -> None:
         self.name = name
+        self.engine_name = name
         self.fails = fails
 
     @property
@@ -95,15 +96,15 @@ def test_pipeline_persists_partial_success_and_hands_off_after_ocr(
         data_key=os.urandom(32),
         key_version=1,
         plans=(
-            EnginePlan(StubEngine("primary"), OcrConfiguration(("ko",))),
-            EnginePlan(StubEngine("fallback", fails=True), OcrConfiguration(("ko",))),
+            EnginePlan(StubEngine("paddleocr"), OcrConfiguration(("ko",))),
+            EnginePlan(StubEngine("tesseract", fails=True), OcrConfiguration(("ko",))),
         ),
         parser_handoff=handoff,
         preprocessing_settings=PreprocessingSettings(),
     )
 
-    assert [run.engine for run in runs] == ["primary"]
-    assert handed_off == [["primary"]]
+    assert [run.engine for run in runs] == ["paddleocr"]
+    assert handed_off == [["paddleocr"]]
     assert OcrRun.objects.filter(source_document=document).count() == 2
     assert OcrRun.objects.get(source_document=document, succeeded=False).error_code == (
         "OCR_CONFIGURATION_INVALID"
@@ -127,7 +128,7 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
             user=user,
             data_key=key,
             key_version=1,
-            plans=(EnginePlan(StubEngine("failed", fails=True), OcrConfiguration(("ko",))),),
+            plans=(EnginePlan(StubEngine("paddleocr", fails=True), OcrConfiguration(("ko",))),),
             preprocessing_settings=PreprocessingSettings(),
         )
     assert failure.value.retryable is False
@@ -140,7 +141,7 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
             user=user,
             data_key=key,
             key_version=1,
-            plans=(EnginePlan(StubEngine("success"), OcrConfiguration(("ko",))),),
+            plans=(EnginePlan(StubEngine("paddleocr"), OcrConfiguration(("ko",))),),
             parser_handoff=lambda doc, runs: False,
             preprocessing_settings=PreprocessingSettings(),
         )
@@ -175,7 +176,7 @@ def test_default_handoff_runs_generic_parser_over_persisted_tokens(
         user=user,
         data_key=key,
         key_version=1,
-        plans=(EnginePlan(RowEngine("primary"), OcrConfiguration(("ko",))),),
+        plans=(EnginePlan(RowEngine("paddleocr"), OcrConfiguration(("ko",))),),
         preprocessing_settings=PreprocessingSettings(),
     )
     selection = parse_ocr_runs(document, runs, data_key=key)
@@ -218,7 +219,7 @@ def test_handoff_selects_an_institution_parser_for_a_known_app(user: Any, tmp_pa
         user=user,
         data_key=key,
         key_version=1,
-        plans=(EnginePlan(TossEngine("primary"), OcrConfiguration(("ko",))),),
+        plans=(EnginePlan(TossEngine("paddleocr"), OcrConfiguration(("ko",))),),
         preprocessing_settings=PreprocessingSettings(),
     )
     selection = parse_ocr_runs(document, runs, data_key=key)
@@ -251,13 +252,13 @@ def test_pipeline_records_failure_when_engine_metadata_is_unavailable(
             data_key=os.urandom(32),
             key_version=1,
             plans=(
-                EnginePlan(UninspectableEngine("missing", fails=True), OcrConfiguration(("ko",))),
+                EnginePlan(UninspectableEngine("paddleocr", fails=True), OcrConfiguration(("ko",))),
             ),
             preprocessing_settings=PreprocessingSettings(),
         )
 
     stored = OcrRun.objects.get(source_document=document)
     assert failure.value.retryable is False
-    assert stored.engine == "uninspectableengine"
+    assert stored.engine == "paddleocr"
     assert stored.engine_version == "unavailable"
     assert stored.error_code == "OCR_CONFIGURATION_INVALID"

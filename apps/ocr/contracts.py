@@ -89,6 +89,13 @@ class OcrRunResult:
 class OcrEngine(ABC):
     """Adapter boundary that prevents engine-specific output leaking downstream."""
 
+    #: Which engine of specification 6.5 this adapter is, as written to
+    #: ``OcrRun.engine``. Declared rather than derived from the class name: the
+    #: column holds a fixed set of values, and the one moment the name is needed
+    #: without asking the engine for it is the moment the engine has already
+    #: failed to answer.
+    engine_name: str
+
     @property
     @abstractmethod
     def metadata(self) -> EngineMetadata:

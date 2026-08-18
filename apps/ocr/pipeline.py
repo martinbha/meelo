@@ -47,11 +47,20 @@ DEFAULT_PREPROCESSING_SETTINGS = PreprocessingSettings(scale=2.0)
 
 
 def _safe_engine_metadata(engine: OcrEngine) -> EngineMetadata:
+    """Engine identity for a run whose engine could not report its own.
+
+    The failure still has to be recorded against an engine, and ``metadata`` is
+    the property that just raised. The declared ``engine_name`` is used instead
+    of a string derived from the class name, because ``OcrRun.engine`` accepts
+    only the two engines in specification 6.5 — deriving one would write a value
+    outside that set and turn a recorded OCR failure into a validation error
+    about the record, losing the original cause.
+    """
+
     try:
         return engine.metadata
     except OcrError:
-        name = engine.__class__.__name__.removesuffix("OcrEngine").casefold()
-        return EngineMetadata(name or "unknown", "unavailable")
+        return EngineMetadata(engine.engine_name, "unavailable")
 
 
 def _run_candidates(run: OcrRun, data_key: bytes) -> tuple[TokenCandidate, ...]:
