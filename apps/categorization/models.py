@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
@@ -19,7 +20,9 @@ class CategoryQuerySet(models.QuerySet):  # type: ignore[type-arg]
         return super().delete()
 
 
-class Category(models.Model):
+class Category(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("name_encrypted",)
+
     class CategoryType(models.TextChoices):
         EXPENSE = "expense", "Expense"
         INCOME = "income", "Income"
@@ -101,7 +104,8 @@ class Category(models.Model):
         return super().delete(*args, **kwargs)
 
 
-class MerchantAlias(models.Model):
+class MerchantAlias(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("alias_encrypted", "normalized_merchant_encrypted")
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -172,7 +176,13 @@ class MerchantAlias(models.Model):
         return self.alias_blind_index
 
 
-class CategoryRule(models.Model):
+class CategoryRule(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = (
+        "merchant_pattern_encrypted",
+        "amount_min_encrypted",
+        "amount_max_encrypted",
+    )
+
     class RuleType(models.TextChoices):
         MERCHANT_EXACT = "merchant_exact", "Merchant exact"
         MERCHANT_CONTAINS = "merchant_contains", "Merchant contains"

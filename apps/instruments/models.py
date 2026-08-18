@@ -5,12 +5,15 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.financial_accounts.models import FinancialAccount
 
 from .validators import validate_payment_instrument_mapping
 
 
-class PaymentInstrument(models.Model):
+class PaymentInstrument(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("name_encrypted", "issuer_encrypted")
+
     class InstrumentType(models.TextChoices):
         DEBIT_CARD = "debit_card", "Debit card"
         CREDIT_CARD = "credit_card", "Credit card"

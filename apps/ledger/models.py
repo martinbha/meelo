@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.financial_accounts.models import FinancialAccount
 
 
-class ChartOfAccounts(models.Model):
+class ChartOfAccounts(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("name_encrypted",)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -35,7 +38,9 @@ class ChartOfAccounts(models.Model):
         return self.name_blind_index
 
 
-class LedgerAccount(models.Model):
+class LedgerAccount(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("name_encrypted",)
+
     class AccountType(models.TextChoices):
         ASSET = "asset", "Asset"
         LIABILITY = "liability", "Liability"
@@ -150,7 +155,9 @@ class LedgerAccount(models.Model):
         return f"{self.code} {self.name_blind_index}"
 
 
-class LedgerEntry(models.Model):
+class LedgerEntry(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("amount_encrypted",)
+
     class EntryType(models.TextChoices):
         DEBIT = "debit", "Debit"
         CREDIT = "credit", "Credit"
@@ -177,6 +184,19 @@ class LedgerEntry(models.Model):
             models.Index(fields=("transaction", "entry_type"), name="ledger_entry_txn_type_idx"),
             models.Index(fields=("account", "created_at"), name="ledger_entry_account_date_idx"),
         ]
+
+    @property
+    def encryption_owner_id(self) -> Any:
+        """A ledger entry belongs to whoever owns its transaction.
+
+        The entry carries no owner column of its own — it is reached through the
+        transaction, and duplicating the owner would create two places for one
+        fact to be wrong. The associated data still binds the ciphertext to a
+        person, so an entry moved to another user's transaction fails to open
+        rather than reporting their money as this one's.
+        """
+
+        return self.transaction.user_id
 
     def __str__(self) -> str:
         return f"{self.entry_type} {self.currency}"

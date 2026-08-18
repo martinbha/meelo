@@ -9,12 +9,20 @@ from django.db import models
 
 from apps.categorization.models import Category
 from apps.core.currencies import is_supported, normalize_code
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.users.models import User
 
 
-class CanonicalTransaction(models.Model):
+class CanonicalTransaction(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = (
+        "merchant_encrypted",
+        "counterparty_encrypted",
+        "amount_encrypted",
+        "notes_encrypted",
+    )
+
     class TransactionType(models.TextChoices):
         PURCHASE = "purchase", "Purchase"
         INCOME = "income", "Income"
