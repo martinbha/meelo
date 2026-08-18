@@ -30,10 +30,18 @@ Build on these rather than writing new regular expressions:
 | Module | Use it for |
 | --- | --- |
 | `apps.parsing.dates` | Resolving any date, with an inference reason and confidence |
-| `apps.parsing.money` | Reading amounts into integer minor units |
+| `apps.parsing.money` | Reading amounts into integer minor units, using `apps.core.currencies` |
 | `apps.parsing.direction` | Turning labels and signs into a debit/credit/unknown |
 | `apps.parsing.balances` | Checking `previous + signed amount == next` |
 | `apps.parsing.rows` | Grouping tokens into visual rows by coordinate |
+
+The currency of an amount is never assumed. `apps.core.currencies` is the one
+table holding each currency's symbol and minor-unit exponent, and the screenshot
+markers are derived from it — a currency added to the registry cannot be one the
+parsers are unable to see. The exponent is not a display detail: `42900` is
+₩42,900 and $429.00, the same integer and different money, so a code with no
+registry entry is refused where it enters rather than defaulting to two decimals
+and producing figures a hundred times off.
 
 Two rules run through all of them:
 
