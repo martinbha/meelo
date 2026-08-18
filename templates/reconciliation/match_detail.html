@@ -25,7 +25,7 @@
   </section>
 
   <form method="post"
-        action="{% url 'match-action' pk=match.pk action='confirm' %}"
+        action="{% url 'match-accept' pk=match.pk %}"
         hx-boost="false">
     {% csrf_token %}
     <div class="review-split">
@@ -80,7 +80,7 @@
   </form>
 
   <form method="post"
-        action="{% url 'match-action' pk=match.pk action='reject' %}"
+        action="{% url 'match-reject' pk=match.pk %}"
         hx-boost="false">
     {% csrf_token %}
     <button type="submit" class="secondary">Not a match</button>

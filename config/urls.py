@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import (
     PasswordChangeDoneView,
     PasswordResetCompleteView,
@@ -6,9 +7,22 @@ from django.contrib.auth.views import (
     PasswordResetView,
 )
 from django.urls import path
+from django.views.generic import RedirectView
 
-from apps.categorization.views import CategoryCorrectionView
+from apps.categorization.views import (
+    CategoryCorrectionView,
+    CategoryListView,
+    CategoryRuleListView,
+)
 from apps.core.views import dashboard, health_check
+from apps.financial_accounts.views import (
+    FinancialAccountDetailView,
+    FinancialAccountListView,
+)
+from apps.instruments.views import (
+    PaymentInstrumentDetailView,
+    PaymentInstrumentListView,
+)
 from apps.observations.views import (
     DocumentImageView,
     DocumentOverrideView,
@@ -44,6 +58,7 @@ from apps.transactions.views import (
     ManualTransactionCreateView,
     ManualTransactionUpdateView,
     TransactionDeleteView,
+    TransactionDetailView,
     TransactionListView,
 )
 from apps.users.views import (
@@ -94,6 +109,7 @@ urlpatterns = [
     ),
     path("transactions/", TransactionListView.as_view(), name="transaction-list"),
     path("transactions/new/", ManualTransactionCreateView.as_view(), name="transaction-new"),
+    path("transactions/<uuid:pk>/", TransactionDetailView.as_view(), name="transaction-detail"),
     path(
         "transactions/<uuid:pk>/category/",
         CategoryCorrectionView.as_view(),
@@ -110,15 +126,19 @@ urlpatterns = [
         name="transaction-delete",
     ),
     path("review/", ReviewQueueView.as_view(), name="review-queue"),
-    path("review/<uuid:pk>/", ObservationReviewView.as_view(), name="observation-review"),
-    path("review/<uuid:pk>/image/", DocumentImageView.as_view(), name="document-image"),
     path(
-        "review/<uuid:pk>/reprocess/",
+        "uploads/<uuid:pk>/review/",
+        ObservationReviewView.as_view(),
+        name="observation-review",
+    ),
+    path("uploads/<uuid:pk>/image/", DocumentImageView.as_view(), name="document-image"),
+    path(
+        "uploads/<uuid:pk>/reprocess/",
         DocumentReprocessView.as_view(),
         name="document-reprocess",
     ),
     path(
-        "review/<uuid:pk>/source/",
+        "uploads/<uuid:pk>/source/",
         DocumentOverrideView.as_view(),
         name="document-override",
     ),
@@ -127,27 +147,42 @@ urlpatterns = [
         ObservationActionView.as_view(),
         name="observation-action",
     ),
-    path("matches/", MatchQueueView.as_view(), name="match-queue"),
-    path("matches/link/", MatchLinkView.as_view(), name="match-link"),
-    path("matches/<uuid:pk>/", MatchDetailView.as_view(), name="match-detail"),
+    path("reconciliation/", MatchQueueView.as_view(), name="match-queue"),
+    path("reconciliation/link/", MatchLinkView.as_view(), name="match-link"),
+    path("reconciliation/<uuid:pk>/", MatchDetailView.as_view(), name="match-detail"),
+    # The specification calls confirming a candidate "accept"; the service has
+    # always called it "confirm". Naming both here keeps the specification's
+    # path without renaming a service that a dozen callers already use.
     path(
-        "matches/<uuid:pk>/<str:action>/",
+        "reconciliation/<uuid:pk>/accept/",
+        MatchActionView.as_view(),
+        {"action": "confirm"},
+        name="match-accept",
+    ),
+    path(
+        "reconciliation/<uuid:pk>/reject/",
+        MatchActionView.as_view(),
+        {"action": "reject"},
+        name="match-reject",
+    ),
+    path(
+        "reconciliation/<uuid:pk>/<str:action>/",
         MatchActionView.as_view(),
         name="match-action",
     ),
-    path("reports/", OverviewReportView.as_view(), name="report-overview"),
+    path("reports/monthly/", OverviewReportView.as_view(), name="report-overview"),
     path("reports/categories/", SpendingReportView.as_view(), name="report-categories"),
     path("reports/merchants/", MerchantReportView.as_view(), name="report-merchants"),
     path("reports/accounts/", AccountReportView.as_view(), name="report-accounts"),
     path("reports/outstanding/", WorkloadReportView.as_view(), name="report-outstanding"),
-    path("reports/exports/", ExportView.as_view(), name="report-exports"),
+    path("reports/export/", ExportView.as_view(), name="report-exports"),
     path(
-        "reports/exports/<uuid:pk>/download/",
+        "reports/export/<uuid:pk>/download/",
         ExportDownloadView.as_view(),
         name="export-download",
     ),
     path(
-        "reports/exports/<uuid:pk>/delete/",
+        "reports/export/<uuid:pk>/delete/",
         ExportDeleteView.as_view(),
         name="export-delete",
     ),
@@ -156,4 +191,80 @@ urlpatterns = [
     path("uploads/new/", UploadCreateView.as_view(), name="upload-new"),
     path("uploads/<uuid:pk>/", UploadDetailView.as_view(), name="upload-detail"),
     path("uploads/<uuid:pk>/delete/", UploadDeleteView.as_view(), name="upload-delete"),
+    # Accounts, instruments, categories, and rules. Read-only for now: creating
+    # and editing them is #183, #185, #186, and #187. The paths are registered
+    # anyway, because a route table that is half true is one nobody can rely on.
+    #
+    # The redirects below are behind ``login_required`` for the same reason the
+    # pages they point at are. A redirect is still an answer, and answering an
+    # anonymous request with "go to /accounts/" tells them the path exists.
+    path("accounts/", FinancialAccountListView.as_view(), name="financial-account-list"),
+    path(
+        "accounts/new/",
+        login_required(
+            RedirectView.as_view(pattern_name="financial-account-list", permanent=False)
+        ),
+        name="financial-account-new",
+    ),
+    path(
+        "accounts/<uuid:pk>/",
+        FinancialAccountDetailView.as_view(),
+        name="financial-account-detail",
+    ),
+    path("instruments/", PaymentInstrumentListView.as_view(), name="instrument-list"),
+    path(
+        "instruments/new/",
+        login_required(RedirectView.as_view(pattern_name="instrument-list", permanent=False)),
+        name="instrument-new",
+    ),
+    path(
+        "instruments/<uuid:pk>/",
+        PaymentInstrumentDetailView.as_view(),
+        name="instrument-detail",
+    ),
+    path("categories/", CategoryListView.as_view(), name="category-list"),
+    path("rules/", CategoryRuleListView.as_view(), name="category-rule-list"),
+    # Password change is the whole of account security today; #170-#174 give
+    # this path a page of its own.
+    path(
+        "account/security/",
+        login_required(RedirectView.as_view(pattern_name="password-change", permanent=False)),
+        name="account-security",
+    ),
+    # The detail page already states the processing status. #189 replaces this
+    # with the polling endpoint the progress UI needs.
+    path(
+        "uploads/<uuid:pk>/status/",
+        login_required(RedirectView.as_view(pattern_name="upload-detail", permanent=False)),
+        name="upload-status",
+    ),
+    # Paths that moved. Permanent, because a bookmark saved before the rename is
+    # a link somebody kept, and answering it with a 404 loses whatever they were
+    # looking at.
+    path(
+        "review/<uuid:pk>/",
+        RedirectView.as_view(pattern_name="observation-review", permanent=True),
+    ),
+    path(
+        "review/<uuid:pk>/image/",
+        RedirectView.as_view(pattern_name="document-image", permanent=True),
+    ),
+    path(
+        "review/<uuid:pk>/reprocess/",
+        RedirectView.as_view(pattern_name="document-reprocess", permanent=True),
+    ),
+    path(
+        "review/<uuid:pk>/source/",
+        RedirectView.as_view(pattern_name="document-override", permanent=True),
+    ),
+    path("matches/", RedirectView.as_view(pattern_name="match-queue", permanent=True)),
+    path(
+        "matches/<uuid:pk>/",
+        RedirectView.as_view(pattern_name="match-detail", permanent=True),
+    ),
+    path(
+        "reports/exports/",
+        RedirectView.as_view(pattern_name="report-exports", permanent=True),
+    ),
+    path("reports/", RedirectView.as_view(pattern_name="report-overview", permanent=True)),
 ]
