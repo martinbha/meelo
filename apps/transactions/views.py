@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
+from apps.core.crypto import read_model_field
 from apps.core.errors import ApplicationError
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
@@ -16,6 +17,7 @@ from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from .deletion import delete_transaction
 from .forms import ManualTransactionForm
 from .models import CanonicalTransaction
+from .money import read_money
 
 
 def _data_key(request: HttpRequest) -> bytes:
@@ -123,3 +125,32 @@ class TransactionDeleteView(LoginRequiredMixin, View):
             + (f" {released} observation(s) returned to review." if released else ""),
         )
         return redirect("transaction-list")
+
+
+class TransactionDetailView(LoginRequiredMixin, View):
+    """One transaction, decrypted for its owner.
+
+    Specification section 24 gives a transaction its own address, separate from
+    the edit form. A link to a transaction should show it, not open it for
+    editing — and a confirmed transaction has no edit form to open.
+    """
+
+    template_name = "transactions/transaction_detail.html"
+
+    def get(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        transaction = get_owned_object_or_404(CanonicalTransaction, request.user, pk=pk)
+        data_key = _data_key(request)
+        return render(
+            request,
+            self.template_name,
+            {
+                "transaction": transaction,
+                "merchant": read_model_field(transaction, "merchant_encrypted", key=data_key),
+                "counterparty": read_model_field(
+                    transaction, "counterparty_encrypted", key=data_key
+                ),
+                "notes": read_model_field(transaction, "notes_encrypted", key=data_key),
+                "amount": read_money(transaction, "amount_encrypted", data_key=data_key),
+                "entry_count": transaction.ledger_entries.count(),
+            },
+        )
