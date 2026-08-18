@@ -16,6 +16,12 @@ def validate_transaction_invariants(
 ) -> None:
     """Run all model-level checks plus amount and posting safety checks.
 
+    A voided transaction keeps its entries. Deletion reverses a posting by
+    writing the opposite of every entry rather than removing rows, so a voided
+    transaction legitimately has more entries than a confirmed one, not fewer —
+    the check is that a *draft* has none, because a draft is a proposal and
+    proposals are not in the books.
+
     Database constraints are deliberately not pre-checked here. The idempotency
     key is designed to collide when an attempt is repeated, and
     :func:`apps.transactions.idempotency.save_once` resolves that collision by
@@ -35,7 +41,7 @@ def validate_transaction_invariants(
     if amount.amount_minor <= 0:
         raise ValidationError({"amount_encrypted": "Amount must be positive."})
     if (
-        transaction.status != CanonicalTransaction.Status.CONFIRMED
+        transaction.status == CanonicalTransaction.Status.DRAFT
         and LedgerEntry.objects.filter(transaction=transaction).exists()
     ):
-        raise ValidationError({"status": "Only confirmed transactions may have ledger entries."})
+        raise ValidationError({"status": "A draft transaction may not have ledger entries."})

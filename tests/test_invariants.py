@@ -36,7 +36,7 @@ def test_transaction_status_transitions_are_explicit_and_audited() -> None:
 
 
 @pytest.mark.django_db
-def test_invariants_reject_malformed_amounts_and_unconfirmed_postings() -> None:
+def test_invariants_reject_malformed_amounts_and_draft_postings() -> None:
     user = make_user(email="invariants@example.com")
     account = make_account(user)
     transaction = make_transaction(user, account, amount_encrypted="not-money")
@@ -68,7 +68,7 @@ def test_invariants_reject_malformed_amounts_and_unconfirmed_postings() -> None:
         amount_encrypted=serialize_money(Money(100, "KRW")),
         currency="KRW",
     )
-    with pytest.raises(ValidationError, match="confirmed"):
+    with pytest.raises(ValidationError, match="draft"):
         validate_transaction_invariants(transaction)
 
 
