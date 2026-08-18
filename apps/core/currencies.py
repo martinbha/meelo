@@ -123,13 +123,24 @@ def currency_choices() -> tuple[tuple[str, str], ...]:
     return tuple((code, f"{REGISTRY[code].name} ({code})") for code in supported_codes())
 
 
-#: Symbols and words a screenshot may print, mapped to their code. Ordered
-#: longest-first so ``HK$`` is not read as ``$``, and derived from the registry
-#: so a new currency cannot be added without the parsers learning to see it.
 def currency_markers() -> tuple[tuple[str, str], ...]:
+    """Match keys a screenshot may print, mapped to their code.
+
+    Every key is casefolded, because these are compared against casefolded OCR
+    text: a symbol such as ``HK$`` carries letters, and left as written it would
+    never match the ``hk$`` the comparison actually sees — leaving ``$`` to win
+    and filing a Hong Kong dollar amount as US dollars.
+
+    Ordered longest first for the same reason in the other direction: ``$`` is a
+    prefix of ``HK$``, and a shorter marker that matches first would take the
+    amount before the specific one is tried.
+
+    Derived from the registry rather than written out again, so a currency added
+    to the registry cannot be one the parsers are unable to see.
+    """
+
     markers: list[tuple[str, str]] = []
     for definition in REGISTRY.values():
-        markers.append((definition.symbol, definition.code))
+        markers.append((definition.symbol.casefold(), definition.code))
         markers.append((definition.code.casefold(), definition.code))
-    # Longest first: an ambiguous prefix must not win over the full marker.
     return tuple(sorted(set(markers), key=lambda item: (-len(item[0]), item[0])))
