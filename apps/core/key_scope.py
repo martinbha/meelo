@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ForbiddenError
-from .key_management import get_user_data_key, load_master_key
+from .key_management import get_user_data_key, get_worker_data_key, load_master_key
 
 
 class KeyScopeError(ForbiddenError):
@@ -130,6 +130,24 @@ def clear_scope() -> None:
     _scope.set(None)
 
 
+def require_data_key(*, user: Any) -> bytes:
+    """The scoped key, or a refusal — never a quiet unwrap.
+
+    Used by code that only ever runs inside a scope somebody else opened, which
+    in practice means the worker. Falling back to unwrapping there would defeat
+    the whole point of :func:`worker_data_key_scope`: the fallback authenticates
+    the owner as their own actor, which is the rule the worker path exists to
+    replace with one that checks the document.
+    """
+
+    scope = _scope.get()
+    if scope is None:
+        raise KeyScopeError("No data-key scope is open; this code must run inside one.")
+    if not scope.matches(user):
+        raise KeyScopeError("The open data-key scope belongs to another user.")
+    return scope.data_key
+
+
 def resolve_data_key(*, user: Any, actor: Any, master_key: bytes | None = None) -> bytes:
     """This user's key, from the open scope if there is one.
 
@@ -175,3 +193,40 @@ def request_data_key(request: Any) -> bytes:
         )
     )
     return data_key
+
+
+@contextmanager
+def worker_data_key_scope(
+    *, document: Any, master_key: bytes | None = None
+) -> Iterator[DataKeyScope]:
+    """The worker's scope: the owner's key, chosen by the document, not the caller.
+
+    Opening this scope is the only way background code gets a data key. The
+    document decides whose key it is, so a job cannot be pointed at somebody
+    else's — there is no user argument to get wrong.
+
+    Nesting inside a scope for a different user is refused for the same reason
+    it is refused elsewhere: a job already acting for one person must not reach
+    for another's key mid-flight.
+    """
+
+    owner = document.user
+    existing = _scope.get()
+    if existing is not None:
+        if not existing.matches(owner):
+            raise KeyScopeError("A data-key scope is already open for another user.")
+        yield existing
+        return
+
+    data_key = get_worker_data_key(document=document, master_key=master_key or load_master_key())
+    scope = DataKeyScope(
+        user_id=owner.pk,
+        data_key=data_key,
+        key_version=owner.encryption_key_version,
+        origin="job",
+    )
+    token = _scope.set(scope)
+    try:
+        yield scope
+    finally:
+        _scope.reset(token)
