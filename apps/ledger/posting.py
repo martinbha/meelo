@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from django.db import transaction as db_transaction
 
@@ -118,3 +119,103 @@ def entry_amount(entry: LedgerEntry, *, data_key: bytes | None = None) -> Money:
     return deserialize_money(
         read_model_field(entry, "amount_encrypted", key=data_key, user_id=entry.transaction.user_id)
     )
+
+
+#: The opposite side of each entry type. Reversal is this and nothing else — a
+#: debit is undone by a credit of the same amount against the same account.
+OPPOSITE_ENTRY_TYPE: dict[str, str] = {
+    LedgerEntry.EntryType.DEBIT: LedgerEntry.EntryType.CREDIT,
+    LedgerEntry.EntryType.CREDIT: LedgerEntry.EntryType.DEBIT,
+}
+
+
+def transaction_net_minor(
+    canonical_transaction: CanonicalTransaction, *, data_key: bytes | None = None
+) -> int:
+    """Debits minus credits across every entry of one transaction.
+
+    Zero is what a fully reversed transaction looks like, and it is also what a
+    correctly posted one looks like — a balanced posting has equal sides by
+    construction. The number is useful for the reversal check precisely because
+    it stays zero: a reversal that got an account or an amount wrong moves it.
+    """
+
+    total = 0
+    for entry in LedgerEntry.objects.filter(transaction=canonical_transaction):
+        amount = entry_amount(entry, data_key=data_key)
+        if entry.entry_type == LedgerEntry.EntryType.DEBIT:
+            total += amount.amount_minor
+        else:
+            total -= amount.amount_minor
+    return total
+
+
+def reverse_transaction_postings(
+    canonical_transaction: CanonicalTransaction,
+    *,
+    data_key: bytes | None = None,
+    key_version: int = 1,
+) -> list[LedgerEntry]:
+    """Write the mirror image of every entry this transaction already has.
+
+    The ledger is append-only. Undoing a posting by deleting its rows would
+    leave a set of books that cannot explain itself: the money would be gone
+    from the totals with nothing saying it had ever been there. So the original
+    entries stay and an opposing entry is written for each, which is what a
+    ledger has always done and what makes the reversal itself auditable.
+
+    Reversing twice is refused rather than tolerated. A second pass would leave
+    the account balanced but the entry count doubled, and every later reader
+    would have to know that half the rows are noise.
+    """
+
+    with db_transaction.atomic():
+        locked_transaction = CanonicalTransaction.objects.select_for_update().get(
+            pk=canonical_transaction.pk
+        )
+        existing = list(
+            LedgerEntry.objects.select_for_update().filter(transaction=locked_transaction)
+        )
+        if not existing:
+            return []
+        if transaction_net_minor(locked_transaction, data_key=data_key) != 0:
+            raise ConflictError("This transaction's postings do not balance and cannot be undone.")
+        if _is_already_reversed(existing, data_key=data_key):
+            raise ConflictError("This transaction has already been reversed.")
+
+        pending = []
+        for entry in existing:
+            amount = entry_amount(entry, data_key=data_key)
+            reversal = LedgerEntry(
+                transaction=locked_transaction,
+                account=entry.account,
+                entry_type=OPPOSITE_ENTRY_TYPE[entry.entry_type],
+                amount_encrypted=serialize_money(amount),
+                currency=entry.currency,
+            )
+            if data_key is not None:
+                encrypt_model_fields(
+                    reversal,
+                    {"amount_encrypted": serialize_money(amount)},
+                    key=data_key,
+                    key_version=key_version,
+                    user_id=locked_transaction.user_id,
+                )
+            pending.append(reversal)
+        return LedgerEntry.objects.bulk_create(pending)
+
+
+def _is_already_reversed(entries: Sequence[LedgerEntry], *, data_key: bytes | None = None) -> bool:
+    """Whether every posting against every account already has its mirror.
+
+    A balanced transaction and a reversed one both net to zero overall, so the
+    total cannot tell them apart. Per account it can: an unreversed posting
+    leaves that account with a non-zero position, and a reversed one does not.
+    """
+
+    per_account: dict[Any, int] = {}
+    for entry in entries:
+        amount = entry_amount(entry, data_key=data_key).amount_minor
+        signed = amount if entry.entry_type == LedgerEntry.EntryType.DEBIT else -amount
+        per_account[entry.account_id] = per_account.get(entry.account_id, 0) + signed
+    return all(total == 0 for total in per_account.values())
