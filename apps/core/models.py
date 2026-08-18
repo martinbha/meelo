@@ -24,6 +24,7 @@ class AuditEvent(models.Model):
         TRANSACTION_CREATED = "transaction_created", "Transaction created"
         TRANSACTION_ACCEPTED = "transaction_accepted", "Transaction accepted"
         TRANSACTION_CORRECTED = "transaction_corrected", "Transaction corrected"
+        TRANSACTION_VOIDED = "transaction_voided", "Transaction voided"
         TRANSACTION_DELETED = "transaction_deleted", "Transaction deleted"
         OBSERVATIONS_IMPORTED = "observations_imported", "Observations imported"
         OBSERVATION_CORRECTED = "observation_corrected", "Observation corrected"
