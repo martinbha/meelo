@@ -57,6 +57,19 @@ class SourceDocument(models.Model):
     source_type = models.CharField(
         max_length=40, choices=SourceType.choices, default=SourceType.UNKNOWN
     )
+    #: What a reviewer said this screenshot actually is, when detection got it
+    #: wrong. Kept apart from ``source_type`` rather than overwriting it: the
+    #: detected guess is evidence about how well detection works, and a reviewer
+    #: who changes their mind has to be able to get back to automatic behaviour.
+    #: Blank means "trust detection", which is why it is blank rather than null —
+    #: two ways to say "no override" is one more than the parser should have to
+    #: check.
+    source_type_override = models.CharField(max_length=40, choices=SourceType.choices, blank=True)
+    #: The institution parser a reviewer chose, by name. Validated against the
+    #: registered parsers when it is set, so a stale name cannot silently fall
+    #: back to detection on the next pass — that would look like the override
+    #: was honoured when it was not.
+    institution_override = models.CharField(max_length=64, blank=True)
     processing_status = models.CharField(
         max_length=24, choices=Status.choices, default=Status.PENDING
     )
@@ -89,6 +102,21 @@ class SourceDocument(models.Model):
         indexes = [
             models.Index(fields=("user", "processing_status"), name="source_doc_user_status_idx"),
         ]
+
+    @property
+    def effective_source_type(self) -> str:
+        """What the parsers should treat this document as.
+
+        The reviewer's correction wins over detection. Everything downstream
+        reads this rather than ``source_type``, so there is one answer to the
+        question instead of one per caller.
+        """
+
+        return self.source_type_override or self.source_type
+
+    @property
+    def has_overrides(self) -> bool:
+        return bool(self.source_type_override or self.institution_override)
 
     def __str__(self) -> str:
         return f"{self.original_filename_encrypted} ({self.processing_status})"
