@@ -32,8 +32,33 @@ value, which is the whole point: a wrong amount that opens cleanly is worse than
 a refusal, because only the refusal gets noticed.
 
 A record with no owner column of its own — a ledger entry belongs to whoever owns
-its transaction — supplies the owner explicitly. The reader passes the same one,
-so a value still cannot be opened under the wrong owner.
+its transaction — answers `encryption_owner_id` from its parent. The reader gets
+the same answer without being told, so a value still cannot be opened under the
+wrong owner, and neither side has to remember to pass it.
+
+## One door in and out
+
+`EncryptedFieldsMixin` is the only way an encrypted column is written or read.
+Each model declares its `encrypted_fields`, and the mixin works the associated
+data out from the instance rather than from its caller — so binding a value to
+the wrong record is no longer something a service can express.
+
+Three checks hold this shut, all in `tests/test_encrypted_field_mixin.py`:
+
+- Every `*_encrypted` column in the schema is declared by its model, and every
+  declaration names a column that exists. Adding a column and forgetting the
+  encryption is the mistake worth catching, because that column holds real
+  financial data from its first write.
+- Rotation's field list and the models' declarations must agree. A field the
+  mixin encrypts but rotation skips would keep an old key alive indefinitely.
+- No module outside `apps/core` calls the crypto primitives. The shared path is
+  only shared if it is the only path, so that is asserted by walking the syntax
+  tree rather than trusted.
+
+Writing an undeclared field raises rather than storing a ciphertext nobody will
+read. An empty value is stored empty rather than encrypted: a ciphertext where
+the absence of a value is the value would make "no note" and "a note nobody can
+read" indistinguishable without decrypting first.
 
 ## Nonces
 
