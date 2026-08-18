@@ -9,14 +9,14 @@ from django.db import transaction as db_transaction
 from apps.categorization.models import Category
 from apps.core.audit import record_audit_event
 from apps.core.crypto import encrypt_model_fields
-from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.errors import InvalidRequestError
 from apps.core.ownership import owned_queryset
 from apps.core.value_objects import Currency, Money
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
-from apps.ledger.models import LedgerEntry
 
 from .invariants import validate_transaction_invariants
+from .lifecycle import assert_editable_in_place
 from .models import CanonicalTransaction
 from .money import store_money
 
@@ -144,11 +144,7 @@ def update_manual_transaction(
     )
     if transaction is None:
         raise InvalidRequestError("Transaction not found.")
-    if (
-        transaction.status == CanonicalTransaction.Status.CONFIRMED
-        and LedgerEntry.objects.filter(transaction=transaction).exists()
-    ):
-        raise ConflictError("Posted transactions cannot be edited.")
+    assert_editable_in_place(transaction)
     _validate_related_objects(
         user=user, account=financial_account, instrument=payment_instrument, category=category
     )
