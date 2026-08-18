@@ -24,7 +24,6 @@ from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category
 from apps.categorization.normalization import display_merchant
 from apps.core.audit import record_audit_event
-from apps.core.crypto import decrypt_model_field, encrypt_model_field, encrypt_model_fields
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.core.value_objects import Currency, InvalidCurrencyError, Money
 from apps.financial_accounts.models import FinancialAccount
@@ -115,7 +114,7 @@ class DecryptedObservation:
 def _decrypt(observation: ImportedObservation, field: str, *, data_key: bytes) -> str:
     if not getattr(observation, field):
         return ""
-    return decrypt_model_field(observation, field, key=data_key)
+    return observation.decrypt_field(field, key=data_key)
 
 
 def _money_or_none(value: str) -> Money | None:
@@ -262,12 +261,8 @@ def _apply_correction(
         current = _decrypt(observation, "merchant_raw_encrypted", data_key=data_key)
         if text == current:
             return False
-        observation.merchant_raw_encrypted = (
-            encrypt_model_field(
-                observation, "merchant_raw_encrypted", text, key=data_key, key_version=key_version
-            )
-            if text
-            else ""
+        observation.encrypt_fields(
+            {"merchant_raw_encrypted": text}, key=data_key, key_version=key_version
         )
         return True
 
@@ -288,8 +283,8 @@ def _apply_correction(
         plaintext = f"{money.amount_minor}:{money.resolved_currency.code}"
         if plaintext == _decrypt(observation, "amount_encrypted", data_key=data_key):
             return False
-        observation.amount_encrypted = encrypt_model_field(
-            observation, "amount_encrypted", plaintext, key=data_key, key_version=key_version
+        observation.encrypt_fields(
+            {"amount_encrypted": plaintext}, key=data_key, key_version=key_version
         )
         return True
 
@@ -306,10 +301,8 @@ def _apply_correction(
         # just corrected away from.
         existing = _money_or_none(_decrypt(observation, "amount_encrypted", data_key=data_key))
         if existing is not None:
-            observation.amount_encrypted = encrypt_model_field(
-                observation,
-                "amount_encrypted",
-                f"{existing.amount_minor}:{code}",
+            observation.encrypt_fields(
+                {"amount_encrypted": f"{existing.amount_minor}:{code}"},
                 key=data_key,
                 key_version=key_version,
             )
@@ -479,8 +472,7 @@ def accept_observation(
     # copying them out in clear would undo that at the moment they became
     # history.
     store_money(canonical, "amount_encrypted", amount, data_key=data_key, key_version=key_version)
-    encrypt_model_fields(
-        canonical,
+    canonical.encrypt_fields(
         {"merchant_encrypted": _decrypt(observation, "merchant_raw_encrypted", data_key=data_key)},
         key=data_key,
         key_version=key_version,

@@ -9,9 +9,17 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 
-class SourceDocument(models.Model):
+
+class SourceDocument(EncryptedFieldsMixin, models.Model):
     """Metadata and lifecycle state for one user-uploaded screenshot."""
+
+    encrypted_fields = (
+        "original_filename_encrypted",
+        "source_institution_guess_encrypted",
+        "error_message_encrypted",
+    )
 
     class SourceType(models.TextChoices):
         BANK_TRANSACTION_LIST = "bank_transaction_list", "Bank transaction list"

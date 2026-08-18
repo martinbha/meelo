@@ -16,12 +16,15 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.observations.models import ImportedObservation
 from apps.processing.models import SourceDocument
 
 
-class ReconciliationMatch(models.Model):
+class ReconciliationMatch(EncryptedFieldsMixin, models.Model):
     """One proposed relationship between two observations."""
+
+    encrypted_fields = ("match_features_json_encrypted",)
 
     class MatchType(models.TextChoices):
         DUPLICATE_OBSERVATION = "duplicate_observation", "Duplicate observation"

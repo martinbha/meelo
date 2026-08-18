@@ -6,10 +6,17 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.processing.models import SourceDocument
 
 
-class OcrRun(models.Model):
+class OcrRun(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = (
+        "configuration_encrypted",
+        "preprocessing_encrypted",
+        "raw_output_encrypted",
+    )
+
     class Engine(models.TextChoices):
         """The engines specification 6.5 allows a run to come from.
 
@@ -72,7 +79,8 @@ class OcrRun(models.Model):
         return f"{self.engine} run for {self.source_document_id}"
 
 
-class OcrToken(models.Model):
+class OcrToken(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = ("text_encrypted", "normalized_text_encrypted")
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

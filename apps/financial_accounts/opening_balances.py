@@ -29,7 +29,6 @@ from typing import Any
 from django.db import transaction as db_transaction
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import read_model_field
 from apps.core.errors import ForbiddenError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.ledger.chart import ensure_ledger_account_for, ensure_opening_balance_equity
@@ -70,7 +69,7 @@ def stored_opening_balance(
 ) -> Money | None:
     """The opening balance recorded on the account, or ``None`` if there is none."""
 
-    raw = read_model_field(account, "opening_balance_encrypted", key=data_key)
+    raw = account.read_field("opening_balance_encrypted", key=data_key)
     if not raw:
         return None
     return deserialize_money(raw)

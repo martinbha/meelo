@@ -8,7 +8,7 @@ from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import InvalidCiphertextError, decrypt_model_field, encrypt_model_field
+from apps.core.crypto import InvalidCiphertextError
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.transactions.models import CanonicalTransaction
 
@@ -55,17 +55,11 @@ def create_merchant_alias(
         default_category=default_category,
         payment_instrument=payment_instrument,
     )
-    alias_record.alias_encrypted = encrypt_model_field(
-        alias_record,
-        "alias_encrypted",
-        normalize_merchant(alias),
-        key=encryption_key,
-        key_version=key_version,
-    )
-    alias_record.normalized_merchant_encrypted = encrypt_model_field(
-        alias_record,
-        "normalized_merchant_encrypted",
-        normalize_merchant(normalized_merchant),
+    alias_record.encrypt_fields(
+        {
+            "alias_encrypted": normalize_merchant(alias),
+            "normalized_merchant_encrypted": normalize_merchant(normalized_merchant),
+        },
         key=encryption_key,
         key_version=key_version,
     )
@@ -103,7 +97,7 @@ def find_merchant_alias(
 
 
 def decrypt_normalized_merchant(alias: MerchantAlias, *, encryption_key: bytes) -> str:
-    return decrypt_model_field(alias, "normalized_merchant_encrypted", key=encryption_key)
+    return alias.decrypt_field("normalized_merchant_encrypted", key=encryption_key)
 
 
 def suggest_merchant_aliases(
@@ -171,10 +165,8 @@ def create_exact_merchant_rule(
         financial_account=financial_account,
         priority=priority,
     )
-    rule.merchant_pattern_encrypted = encrypt_model_field(
-        rule,
-        "merchant_pattern_encrypted",
-        normalize_merchant(merchant),
+    rule.encrypt_fields(
+        {"merchant_pattern_encrypted": normalize_merchant(merchant)},
         key=encryption_key,
         key_version=key_version,
     )

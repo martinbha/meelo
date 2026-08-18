@@ -7,9 +7,17 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.core.currencies import is_supported, normalize_code
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 
 
-class FinancialAccount(models.Model):
+class FinancialAccount(EncryptedFieldsMixin, models.Model):
+    encrypted_fields = (
+        "name_encrypted",
+        "institution_encrypted",
+        "masked_identifier_encrypted",
+        "opening_balance_encrypted",
+    )
+
     class AccountType(models.TextChoices):
         CHECKING = "checking", "Checking"
         SAVINGS = "savings", "Savings"

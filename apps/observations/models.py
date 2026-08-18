@@ -20,6 +20,7 @@ from django.db import models
 
 from apps.categorization.models import Category
 from apps.core.currencies import is_supported, normalize_code
+from apps.core.encrypted_fields import EncryptedFieldsMixin
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.ocr.models import OcrRun
@@ -27,8 +28,18 @@ from apps.processing.models import SourceDocument
 from apps.transactions.models import CanonicalTransaction
 
 
-class ImportedObservation(models.Model):
+class ImportedObservation(EncryptedFieldsMixin, models.Model):
     """One parsed row awaiting review."""
+
+    encrypted_fields = (
+        "merchant_raw_encrypted",
+        "merchant_normalized_encrypted",
+        "counterparty_raw_encrypted",
+        "amount_encrypted",
+        "balance_after_encrypted",
+        "approval_code_encrypted",
+        "source_region_json_encrypted",
+    )
 
     class ReviewStatus(models.TextChoices):
         UNREVIEWED = "unreviewed", "Unreviewed"

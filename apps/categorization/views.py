@@ -15,7 +15,6 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
-from apps.core.crypto import read_model_field
 from apps.core.errors import ApplicationError
 from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
@@ -40,7 +39,7 @@ def _merchant(transaction: CanonicalTransaction, *, data_key: bytes) -> str:
     would say so (#163).
     """
 
-    return read_model_field(transaction, "merchant_encrypted", key=data_key)
+    return transaction.read_field("merchant_encrypted", key=data_key)
 
 
 class CategoryCorrectionView(LoginRequiredMixin, View):
@@ -129,7 +128,7 @@ class CategoryListView(LoginRequiredMixin, View):
         rows = [
             {
                 "category": category,
-                "name": read_model_field(category, "name_encrypted", key=data_key),
+                "name": category.read_field("name_encrypted", key=data_key),
                 "parent": category.parent,
             }
             for category in owned_queryset(Category, request.user).select_related("parent")
@@ -152,8 +151,8 @@ class CategoryRuleListView(LoginRequiredMixin, View):
         rows = [
             {
                 "rule": rule,
-                "pattern": read_model_field(rule, "merchant_pattern_encrypted", key=data_key),
-                "category": read_model_field(rule.category, "name_encrypted", key=data_key),
+                "pattern": rule.read_field("merchant_pattern_encrypted", key=data_key),
+                "category": rule.category.read_field("name_encrypted", key=data_key),
             }
             for rule in owned_queryset(CategoryRule, request.user).select_related(
                 "category", "payment_instrument", "financial_account"

@@ -24,7 +24,6 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import encrypt_model_fields
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
@@ -270,11 +269,8 @@ def confirm_refund_match(
     # observations these came from held their values encrypted, and copying them
     # out in clear would undo that at the moment they became history.
     store_money(canonical, "amount_encrypted", amount, data_key=data_key, key_version=key_version)
-    encrypt_model_fields(
-        canonical,
-        {"merchant_encrypted": values.merchant},
-        key=data_key,
-        key_version=key_version,
+    canonical.encrypt_fields(
+        {"merchant_encrypted": values.merchant}, key=data_key, key_version=key_version
     )
     try:
         validate_transaction_invariants(canonical, data_key=data_key)

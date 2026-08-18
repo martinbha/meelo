@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from apps.core.crypto import read_model_field
 from apps.transactions.classification import bucket_of
 from apps.transactions.models import CanonicalTransaction
 
@@ -187,7 +186,7 @@ def category_breakdown(
         data_key=data_key,
         key_of=lambda item: str(item.category_id) if item.category_id else "",
         label_of=lambda item, key: (
-            read_model_field(item.category, "name_encrypted", key=key)
+            item.category.read_field("name_encrypted", key=key)
             if item.category is not None
             else UNCATEGORIZED_LABEL
         ),
@@ -222,7 +221,7 @@ def merchant_breakdown(
         data_key=data_key,
         key_of=lambda item: item.merchant_blind_index or "",
         label_of=lambda item, key: (
-            read_model_field(item, "merchant_encrypted", key=key) or UNKNOWN_MERCHANT_LABEL
+            item.read_field("merchant_encrypted", key=key) or UNKNOWN_MERCHANT_LABEL
         ),
         currency=currency.upper(),
         start=start,
