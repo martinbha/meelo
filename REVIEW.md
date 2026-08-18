@@ -127,6 +127,46 @@ Rules worth knowing before you extend any of them:
   rejection logs the reason's *length*. The audit log must not become a second,
   unencrypted copy of the financial data it describes.
 
+## The transaction lifecycle (`apps.transactions.lifecycle`)
+
+A canonical transaction is a proposal, then history, then possibly withdrawn
+history.
+
+| From | May become |
+| --- | --- |
+| `draft` | `confirmed`, `voided` |
+| `confirmed` | `voided` |
+| `voided` | nothing |
+
+The table is the whole rule. Anything not in it raises `TransitionError` and
+changes nothing — including a status string that is not a status, which must not
+be read as an unlisted transition and let through. It is a table rather than an
+`if` in whichever service happens to be changing the status, because the second
+such `if` is where the two disagree.
+
+**Voiding is not deletion.** The row stays, reports stop counting it
+(`REPORTABLE_STATUSES` is draft and confirmed), and it audits as
+`transaction_voided`. `transaction_deleted` is reserved for the removal path
+that also reverses the ledger.
+
+**Confirmation is the line for editing, not posting.** `update_manual_transaction`
+refuses anything that is not a draft. The earlier rule refused edits only once
+ledger entries existed, which left a window: a confirmed transaction that reports
+already counted could be rewritten with nothing recording that it had ever said
+something else.
+
+A confirmed transaction is still correctable — people misread receipts — but
+only through `correct_confirmed_transaction`, which requires a reason and
+records which fields changed. The point is not that corrections are rare; it is
+that a correction leaves a trace and an ordinary edit does not, so the two must
+not share a code path. Only names reach the audit record, never values
+(specification 23).
+
+Corrections stop at the ledger. Amount, currency, type, account, and instrument
+are what the postings were built from, so correcting one of those on a posted
+transaction is refused: the fix is a reversal and a re-entry, not an edit that
+leaves entries describing a transaction that no longer exists.
+
 ## Reconciliation (`apps.reconciliation`)
 
 Reconciliation resolves several views of one real event. It **proposes**;
