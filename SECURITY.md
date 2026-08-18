@@ -36,6 +36,39 @@ its transaction — answers `encryption_owner_id` from its parent. The reader ge
 the same answer without being told, so a value still cannot be opened under the
 wrong owner, and neither side has to remember to pass it.
 
+## One unwrap per scope
+
+Unwrapping a data key is an AES-GCM operation against the master key and an
+audit write. A page rendering forty encrypted merchant names used to do both
+forty times — forty rows in the audit log saying the same thing, which is noise
+that hides the one access that mattered.
+
+`apps.core.key_scope` unwraps once and holds the key in a `ContextVar` for the
+life of one request or one worker job. The choice of container is the whole
+design:
+
+| Where a cached key could live | Why not |
+| --- | --- |
+| `django.core.cache` | A key in Redis |
+| The session | A key in the database and in a signed cookie |
+| A module global | A key that outlives the request that earned it |
+| A `ContextVar` | Exactly as wide as the thing that needs it |
+
+The scope records **whose** key it holds. Asked for a different user it refuses
+rather than answering, because answering would hand one person's key to code
+acting for another. Nesting a scope for the same user reuses the outer one, so a
+service that opens one defensively does not double the audit trail.
+
+`DataKeyScopeMiddleware` clears the scope in a `finally`, so an exception does
+not leave a key in a worker thread that will serve the next request; the worker
+does the same at the end of every job. The reference is dropped rather than
+overwritten — CPython does not let you overwrite an immutable `bytes` in place,
+and code that appeared to do so would be reassuring rather than true.
+
+The scope is opened lazily, by the first view that asks. Most requests decrypt
+nothing, and unwrapping a key for a page that lists dates is work done for
+nobody.
+
 ## One door in and out
 
 `EncryptedFieldsMixin` is the only way an encrypted column is written or read.
