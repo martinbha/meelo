@@ -17,19 +17,27 @@ import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from apps.core.currencies import currency_markers
 from apps.core.value_objects import Currency, InvalidMoneyError, Money
 
-#: Currency markers that may appear before or after the digits.
-CURRENCY_MARKERS: tuple[tuple[str, str], ...] = (
-    ("₩", "KRW"),
+#: Words a screenshot prints instead of a symbol. The registry supplies every
+#: symbol and code; these are the local spellings it cannot know about.
+LOCAL_CURRENCY_WORDS: tuple[tuple[str, str], ...] = (
     ("원", "KRW"),
-    ("krw", "KRW"),
-    ("$", "USD"),
-    ("usd", "USD"),
-    ("€", "EUR"),
-    ("eur", "EUR"),
-    ("¥", "JPY"),
-    ("jpy", "JPY"),
+    ("엔", "JPY"),
+    ("달러", "USD"),
+)
+
+#: Currency markers that may appear before or after the digits, longest first so
+#: ``HK$`` is not read as ``$``. Derived from the registry rather than written
+#: out again here: a currency added to the registry and not to this list would
+#: parse as the default, which is how an amount ends up filed under the wrong
+#: currency with nothing reporting a problem.
+CURRENCY_MARKERS: tuple[tuple[str, str], ...] = tuple(
+    sorted(
+        {*currency_markers(), *LOCAL_CURRENCY_WORDS},
+        key=lambda item: (-len(item[0]), item[0]),
+    )
 )
 
 #: Labels printed next to an amount. Recorded as-is; direction is decided later.
