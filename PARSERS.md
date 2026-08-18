@@ -44,6 +44,36 @@ Two rules run through all of them:
   it does not correct the amount. The printed sign and label are preserved on
   the observation next to the interpreted direction.
 
+## When detection gets it wrong
+
+Selection normally scores every institution parser against the tokens and takes
+the best. A reviewer who has looked at the screenshot can overrule that from the
+review page, and the next OCR pass uses their answer:
+
+```python
+set_document_overrides(document.pk, user=user, source_type="", institution="kb_bank")
+```
+
+Two things about how this is stored. The override sits in
+`source_type_override` and `institution_override` rather than on top of
+`source_type`, because the detected guess is the evidence for how well detection
+works and overwriting it destroys that measurement — and because a reviewer who
+was wrong needs a way back. Submitting the form with both fields empty is that
+way back; there is no separate "clear" action to forget about.
+
+The institution override forces the parser outright rather than adding to its
+score. A person who has read the screenshot and named the bank is not offering
+evidence to be weighed against the pixels, they are stating the answer, and a
+forced parser that still lost on score would make the override look like it had
+been ignored. `apps.processing.overrides` validates the name against the
+registered parsers on the way in, so an override can never point at a parser
+that does not exist — that would fall back to detection on the next pass and
+look exactly like the override had been honoured.
+
+Saving an override does not re-run anything. Reprocessing costs a minute of OCR,
+and a reviewer correcting the type and then the institution should not pay for
+it twice.
+
 ## Adding an institution
 
 Most institutions need only a profile. Create
