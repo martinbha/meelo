@@ -34,7 +34,7 @@ def test_tokens_round_trip_in_reading_order_without_plaintext(user: Any) -> None
         user=user,
         result=OcrRunResult(
             tokens=(),
-            metadata=EngineMetadata("engine", "1"),
+            metadata=EngineMetadata("paddleocr", "1"),
             configuration=OcrConfiguration(("ko",)),
             duration_ms=1,
         ),
@@ -68,7 +68,7 @@ def test_token_serializer_rejects_cross_owner_access(user: Any) -> None:
         user=user,
         result=OcrRunResult(
             tokens=(),
-            metadata=EngineMetadata("engine", "1"),
+            metadata=EngineMetadata("paddleocr", "1"),
             configuration=OcrConfiguration(("en",)),
             duration_ms=0,
         ),
