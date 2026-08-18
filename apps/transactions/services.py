@@ -8,7 +8,6 @@ from django.db import transaction as db_transaction
 
 from apps.categorization.models import Category
 from apps.core.audit import record_audit_event
-from apps.core.crypto import encrypt_model_fields
 from apps.core.errors import InvalidRequestError
 from apps.core.ownership import owned_queryset
 from apps.core.value_objects import Currency, Money
@@ -93,8 +92,7 @@ def create_manual_transaction(
         key_version=key_version,
     )
     if data_key is not None:
-        encrypt_model_fields(
-            transaction,
+        transaction.encrypt_fields(
             {
                 "merchant_encrypted": merchant,
                 "counterparty_encrypted": counterparty,
@@ -162,11 +160,7 @@ def update_manual_transaction(
         key_version=key_version,
     )
     if data_key is not None:
-        transaction.merchant_encrypted = ""
-        transaction.counterparty_encrypted = ""
-        transaction.notes_encrypted = ""
-        encrypt_model_fields(
-            transaction,
+        transaction.encrypt_fields(
             {
                 "merchant_encrypted": merchant,
                 "counterparty_encrypted": counterparty,

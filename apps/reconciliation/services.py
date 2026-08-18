@@ -16,7 +16,6 @@ from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
-from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
@@ -138,9 +137,10 @@ def _encrypted_features(
     if not features or data_key is None:
         return ""
     payload = json.dumps(sorted(features), separators=(",", ":"))
-    return encrypt_model_field(
-        match, "match_features_json_encrypted", payload, key=data_key, key_version=key_version
+    match.encrypt_fields(
+        {"match_features_json_encrypted": payload}, key=data_key, key_version=key_version
     )
+    return match.match_features_json_encrypted
 
 
 def decrypt_match_features(match: ReconciliationMatch, *, data_key: bytes) -> tuple[str, ...]:
@@ -153,7 +153,7 @@ def decrypt_match_features(match: ReconciliationMatch, *, data_key: bytes) -> tu
 
     if not match.match_features_json_encrypted:
         return ()
-    payload = decrypt_model_field(match, "match_features_json_encrypted", key=data_key)
+    payload = match.decrypt_field("match_features_json_encrypted", key=data_key)
     try:
         values = json.loads(payload)
     except json.JSONDecodeError:

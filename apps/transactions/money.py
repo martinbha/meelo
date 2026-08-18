@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.core.crypto import encrypt_model_field, read_model_field
 from apps.core.value_objects import Currency, Money
 from apps.ledger.posting import deserialize_money, serialize_money
 
@@ -28,7 +27,7 @@ def read_money(instance: Any, field: str, *, data_key: bytes | None = None) -> M
     direction nobody checks.
     """
 
-    return deserialize_money(read_model_field(instance, field, key=data_key))
+    return deserialize_money(instance.read_field(field, key=data_key))
 
 
 def store_money(
@@ -50,11 +49,8 @@ def store_money(
     setattr(instance, field, encoded)
     if data_key is None:
         return encoded
-    ciphertext = encrypt_model_field(
-        instance, field, encoded, key=data_key, key_version=key_version
-    )
-    setattr(instance, field, ciphertext)
-    return ciphertext
+    instance.encrypt_fields({field: encoded}, key=data_key, key_version=key_version)
+    return str(getattr(instance, field))
 
 
 def money_from(amount_minor: int, currency: str) -> Money:

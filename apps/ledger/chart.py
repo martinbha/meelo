@@ -27,7 +27,6 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
-from apps.core.crypto import encrypt_model_fields
 from apps.core.errors import InvalidRequestError
 from apps.financial_accounts.models import FinancialAccount
 
@@ -139,9 +138,7 @@ def _get_or_create_account(
         is_system=is_system,
     )
     if data_key is not None:
-        encrypt_model_fields(
-            account, {"name_encrypted": name}, key=data_key, key_version=key_version
-        )
+        account.encrypt_fields({"name_encrypted": name}, key=data_key, key_version=key_version)
     account.full_clean(validate_constraints=False)
     account.save()
     return account

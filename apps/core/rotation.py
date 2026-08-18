@@ -40,10 +40,8 @@ from django.db import transaction as db_transaction
 
 from .crypto import (
     EncryptionError,
-    encrypt_model_field,
     envelope_key_version,
     is_encrypted_value,
-    read_model_field,
 )
 
 #: Rows handled per transaction. Bounded so a rotation over a large history does
@@ -65,12 +63,6 @@ class EncryptedModel:
     #: directly; a ledger entry belongs to whoever owns its transaction, so it
     #: is reached through that.
     owner_filter: str = "user_id"
-
-    @property
-    def owns_itself(self) -> bool:
-        """Whether the row carries its own owner, or borrows one for the AAD."""
-
-        return self.owner_filter == "user_id"
 
     def model(self) -> Any:
         from django.apps import apps
@@ -254,7 +246,6 @@ def rotate_model(
     """
 
     report = RotationReport()
-    owner_id = None if spec.owns_itself else user.pk
     queryset = spec.model().objects.filter(**{spec.owner_filter: user.pk})
     for batch in _batches(queryset, batch_size):
         with db_transaction.atomic():
@@ -271,28 +262,20 @@ def rotate_model(
                         # Already moved, by an earlier run or by a write that
                         # happened after the new key became active.
                         if is_encrypted_value(stored):
-                            plaintexts[name] = read_model_field(
-                                record, name, key=new_key, user_id=owner_id
-                            )
+                            plaintexts[name] = record.read_field(name, key=new_key)
                         continue
                     try:
-                        plaintext = read_model_field(record, name, key=old_key if version else None)
+                        # Read through the record so the owner comes from the
+                        # row itself. A ledger entry has no owner column — it
+                        # belongs to whoever owns its transaction — and passing
+                        # one by hand is how that gets forgotten on one of the
+                        # two reads and not the other.
+                        plaintext = record.read_field(name, key=old_key if version else None)
                     except EncryptionError as error:
                         report.failures.append(f"{spec.label}:{record.pk}:{name}: {error}")
                         continue
                     plaintexts[name] = plaintext
-                    setattr(
-                        record,
-                        name,
-                        encrypt_model_field(
-                            record,
-                            name,
-                            plaintext,
-                            key=new_key,
-                            key_version=new_version,
-                            user_id=owner_id,
-                        ),
-                    )
+                    record.encrypt_fields({name: plaintext}, key=new_key, key_version=new_version)
                     changed.append(name)
 
                 index_columns: list[str] = []
@@ -377,7 +360,6 @@ def verify_user(
 
     report = VerificationReport()
     for spec in models or ENCRYPTED_MODELS:
-        owner_id = None if spec.owns_itself else user.pk
         queryset = spec.model().objects.filter(**{spec.owner_filter: user.pk})
         for batch in _batches(queryset, batch_size):
             for record in batch:
@@ -394,7 +376,7 @@ def verify_user(
                         )
                         continue
                     try:
-                        read_model_field(record, name, key=key, user_id=owner_id)
+                        record.read_field(name, key=key)
                     except EncryptionError as error:
                         report.unreadable.append(f"{spec.label}:{record.pk}:{name}: {error}")
     return report

@@ -8,7 +8,6 @@ from typing import Any
 from django.conf import settings
 
 from apps.core import metrics
-from apps.core.crypto import decrypt_model_field
 from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
 from apps.observations.services import import_parser_selection
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
@@ -67,8 +66,8 @@ def _run_candidates(run: OcrRun, data_key: bytes) -> tuple[TokenCandidate, ...]:
     return tuple(
         TokenCandidate(
             engine=run.engine,
-            text=decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
-            normalized_text=decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
+            text=token.decrypt_field("normalized_text_encrypted", key=data_key),
+            normalized_text=token.decrypt_field("normalized_text_encrypted", key=data_key),
             confidence=token.confidence,
             bounding_box=BoundingBox(token.left, token.top, token.right, token.bottom),
         )

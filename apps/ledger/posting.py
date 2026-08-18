@@ -6,7 +6,6 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
-from apps.core.crypto import encrypt_model_fields, read_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.transactions.models import CanonicalTransaction
@@ -94,15 +93,13 @@ def post_balanced_transaction(
             if data_key is not None:
                 # The identifier already exists — the primary key has a UUID
                 # default — so the associated data can bind the ciphertext to
-                # this entry before it is ever written. An entry holds no owner
-                # of its own, so the transaction's is supplied; ``entry_amount``
-                # passes the same one back.
-                encrypt_model_fields(
-                    entry,
+                # this entry before it is ever written. The entry works its own
+                # owner out from the transaction it points at, which is the one
+                # ``entry_amount`` will pass back when reading it.
+                entry.encrypt_fields(
                     {"amount_encrypted": serialize_money(posting.amount)},
                     key=data_key,
                     key_version=key_version,
-                    user_id=locked_transaction.user_id,
                 )
             pending.append(entry)
         entries = LedgerEntry.objects.bulk_create(pending)
@@ -116,9 +113,7 @@ def entry_amount(entry: LedgerEntry, *, data_key: bytes | None = None) -> Money:
     associated data — the same one used when the value was written.
     """
 
-    return deserialize_money(
-        read_model_field(entry, "amount_encrypted", key=data_key, user_id=entry.transaction.user_id)
-    )
+    return deserialize_money(entry.read_field("amount_encrypted", key=data_key))
 
 
 #: The opposite side of each entry type. Reversal is this and nothing else — a
@@ -194,12 +189,10 @@ def reverse_transaction_postings(
                 currency=entry.currency,
             )
             if data_key is not None:
-                encrypt_model_fields(
-                    reversal,
+                reversal.encrypt_fields(
                     {"amount_encrypted": serialize_money(amount)},
                     key=data_key,
                     key_version=key_version,
-                    user_id=locked_transaction.user_id,
                 )
             pending.append(reversal)
         return LedgerEntry.objects.bulk_create(pending)

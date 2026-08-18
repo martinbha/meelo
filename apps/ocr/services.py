@@ -7,7 +7,6 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.core.crypto import decrypt_model_field, encrypt_model_field
 from apps.processing.models import SourceDocument
 
 from .contracts import EngineMetadata, OcrConfiguration, OcrRunResult
@@ -25,7 +24,8 @@ def _encrypted_json(
     key_version: int,
 ) -> str:
     plaintext = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return encrypt_model_field(run, field, plaintext, key=data_key, key_version=key_version)
+    run.encrypt_fields({field: plaintext}, key=data_key, key_version=key_version)
+    return str(getattr(run, field))
 
 
 def _configuration_payload(configuration: OcrConfiguration) -> dict[str, Any]:
@@ -54,17 +54,11 @@ def persist_tokens(
             word_number=hierarchy[4],
             sequence=sequence,
         )
-        record.text_encrypted = encrypt_model_field(
-            record,
-            "text_encrypted",
-            token.text,
-            key=data_key,
-            key_version=key_version,
-        )
-        record.normalized_text_encrypted = encrypt_model_field(
-            record,
-            "normalized_text_encrypted",
-            normalize_ocr_text(token.text),
+        record.encrypt_fields(
+            {
+                "text_encrypted": token.text,
+                "normalized_text_encrypted": normalize_ocr_text(token.text),
+            },
             key=data_key,
             key_version=key_version,
         )
@@ -78,8 +72,8 @@ def serialize_token_for_review(*, token: OcrToken, user: Any, data_key: bytes) -
         raise ValueError("The OCR token does not belong to the requesting user.")
     return {
         "id": str(token.pk),
-        "text": decrypt_model_field(token, "text_encrypted", key=data_key),
-        "normalized_text": decrypt_model_field(token, "normalized_text_encrypted", key=data_key),
+        "text": token.decrypt_field("text_encrypted", key=data_key),
+        "normalized_text": token.decrypt_field("normalized_text_encrypted", key=data_key),
         "confidence": token.confidence,
         "bounds": {
             "left": token.left,

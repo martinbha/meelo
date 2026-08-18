@@ -22,7 +22,6 @@ from django.db import transaction as db_transaction
 
 from apps.categorization.normalization import merchant_blind_index, normalize_merchant
 from apps.core.audit import record_audit_event
-from apps.core.crypto import encrypt_model_field
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.ocr.models import OcrRun
@@ -220,14 +219,7 @@ def _encrypt_fields(
         "approval_code_encrypted": parsed.approval_code or "",
         "source_region_json_encrypted": _source_region(parsed),
     }
-    for field, plaintext in plaintexts.items():
-        if not plaintext:
-            continue
-        setattr(
-            record,
-            field,
-            encrypt_model_field(record, field, plaintext, key=data_key, key_version=key_version),
-        )
+    record.encrypt_fields(plaintexts, key=data_key, key_version=key_version)
 
 
 def existing_import(
