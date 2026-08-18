@@ -18,10 +18,11 @@ from django.views.generic import View
 from apps.core.crypto import read_model_field
 from apps.core.errors import ApplicationError
 from apps.core.key_management import derive_blind_index_key, get_user_data_key, load_master_key
-from apps.core.ownership import get_owned_object_or_404
+from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.transactions.models import CanonicalTransaction
 
 from .forms import CategoryCorrectionForm
+from .models import Category, CategoryRule
 from .rule_creation import SCOPE_LABELS, RuleScope, create_rule_from_correction, preview_rule
 
 
@@ -112,3 +113,50 @@ class CategoryCorrectionView(LoginRequiredMixin, View):
                 # card — is simply not offered a preview.
                 continue
         return {"transaction": transaction, "form": form, "previews": previews}
+
+
+class CategoryListView(LoginRequiredMixin, View):
+    """The category tree, at the path specification section 24 names.
+
+    Read-only. Creating, renaming, and re-parenting categories is #186; this is
+    the part that can be built from what exists, which is the list itself.
+    """
+
+    template_name = "categorization/category_list.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        data_key = _keys(request)
+        rows = [
+            {
+                "category": category,
+                "name": read_model_field(category, "name_encrypted", key=data_key),
+                "parent": category.parent,
+            }
+            for category in owned_queryset(Category, request.user).select_related("parent")
+        ]
+        return render(request, self.template_name, {"rows": rows})
+
+
+class CategoryRuleListView(LoginRequiredMixin, View):
+    """The rules that decide a category, in the order they are tried.
+
+    Editing priorities, previewing conflicts, and enabling or disabling rules is
+    #193. The ordering shown here is the one the engine actually applies, so a
+    rule that never fires is at least visible.
+    """
+
+    template_name = "categorization/rule_list.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        data_key = _keys(request)
+        rows = [
+            {
+                "rule": rule,
+                "pattern": read_model_field(rule, "merchant_pattern_encrypted", key=data_key),
+                "category": read_model_field(rule.category, "name_encrypted", key=data_key),
+            }
+            for rule in owned_queryset(CategoryRule, request.user).select_related(
+                "category", "payment_instrument", "financial_account"
+            )
+        ]
+        return render(request, self.template_name, {"rows": rows})

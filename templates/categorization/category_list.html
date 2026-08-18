@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Categories · Finance workspace{% endblock %}
+
+{% block content %}
+  <section aria-labelledby="categories-heading">
+    <h1 id="categories-heading">Categories</h1>
+    {% if rows %}
+      <table>
+        <thead><tr><th>Category</th><th>Parent</th><th>Type</th><th>Origin</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>{{ row.name }}</td>
+              <td>{{ row.parent.name_blind_index|default:"—" }}</td>
+              <td>{{ row.category.get_category_type_display }}</td>
+              <td>{% if row.category.is_system %}System{% else %}Yours{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No categories yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}
