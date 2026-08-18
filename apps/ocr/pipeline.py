@@ -167,10 +167,20 @@ def parse_ocr_runs(
     document: SourceDocument, runs: Sequence[OcrRun], *, data_key: bytes
 ) -> ParserSelection:
     tokens = tokens_for_parsing(runs, data_key=data_key)
+    # A reviewer's correction outranks detection. ``manual_source_override``
+    # forces the parser outright rather than nudging the score, because a person
+    # who has looked at the screenshot and named the bank is not offering
+    # evidence to be weighed against the pixels — they are stating the answer.
+    # The same name goes in as the hint so the forced parser's support score
+    # reflects that assertion instead of reporting zero confidence in a choice
+    # nobody is going to reconsider.
+    override = document.institution_override or None
     metadata = DocumentMetadata(
-        source_type=document.source_type,
+        source_type=document.effective_source_type,
         width=document.image_width,
         height=document.image_height,
+        institution_hint=override,
+        manual_source_override=override,
         # The upload moment and the user's time zone date every relative and
         # partial row on the screen.
         uploaded_at=document.uploaded_at,
