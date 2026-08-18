@@ -142,6 +142,52 @@ def provision_user_data_key(*, user: Any, actor: Any, master_key: bytes) -> User
 
 
 @transaction.atomic
+def get_worker_data_key(*, document: Any, master_key: bytes) -> bytes:
+    """Unwrap the owner's data key for a background job, with no logged-in actor.
+
+    The worker has to decrypt: a queued screenshot is parsed minutes after the
+    person who uploaded it has closed the tab, and OCR output has to be sealed
+    under their key or it is not theirs. But :func:`get_user_data_key` requires
+    an authenticated actor who *is* the owner, and the worker is neither.
+
+    Passing the owner in as their own actor would satisfy that check while
+    meaning nothing — the rule would be "the worker says this is fine". So this
+    is a separate door with a rule of its own, and the rule is the document:
+
+    - the key belongs to whoever owns the document being processed, and to
+      nobody else. The caller does not choose the user; the document does.
+    - a deactivated owner's key is not unwrapped, because a suspended account
+      should stop being processed rather than quietly continue.
+
+    The access is audited as ``worker_key_accessed`` rather than as an ordinary
+    access, with the document identifier attached. That distinction matters when
+    reading the log afterwards: "the owner opened their key" and "a background
+    job opened the owner's key while nobody was signed in" are different events,
+    and only one of them can be correlated with a person being at a keyboard.
+    """
+
+    owner = document.user
+    if not owner.is_active:
+        raise ForbiddenError("The document owner's account is not active.")
+    key_record = UserDataKey.objects.filter(user=owner, is_active=True).first()
+    if key_record is None:
+        raise InvalidRequestError("No active data key exists for this user.")
+    data_key = unwrap_data_key(
+        key_record.wrapped_key,
+        master_key=master_key,
+        user_id=owner.pk,
+        version=key_record.version,
+    )
+    record_audit_event(
+        user=owner,
+        event_type="worker_key_accessed",
+        obj=document,
+        metadata={"key_version": key_record.version, "document_id": str(document.pk)},
+    )
+    return data_key
+
+
+@transaction.atomic
 def get_user_data_key(
     *, user: Any, actor: Any, master_key: bytes, version: int | None = None
 ) -> bytes:
