@@ -9,7 +9,6 @@ from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
-from apps.core.crypto import read_model_field
 from apps.core.errors import ApplicationError
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
@@ -145,11 +144,9 @@ class TransactionDetailView(LoginRequiredMixin, View):
             self.template_name,
             {
                 "transaction": transaction,
-                "merchant": read_model_field(transaction, "merchant_encrypted", key=data_key),
-                "counterparty": read_model_field(
-                    transaction, "counterparty_encrypted", key=data_key
-                ),
-                "notes": read_model_field(transaction, "notes_encrypted", key=data_key),
+                "merchant": transaction.read_field("merchant_encrypted", key=data_key),
+                "counterparty": transaction.read_field("counterparty_encrypted", key=data_key),
+                "notes": transaction.read_field("notes_encrypted", key=data_key),
                 "amount": read_money(transaction, "amount_encrypted", data_key=data_key),
                 "entry_count": transaction.ledger_entries.count(),
             },

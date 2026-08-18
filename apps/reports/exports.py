@@ -37,7 +37,6 @@ from argon2.low_level import hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
 
-from apps.core.crypto import read_model_field
 from apps.core.errors import InvalidRequestError
 from apps.transactions.classification import bucket_of
 from apps.transactions.models import CanonicalTransaction
@@ -108,7 +107,7 @@ def safe_export_path(name: str) -> Path:
 def _label(instance: Any, field: str, *, data_key: bytes | None) -> str:
     if instance is None:
         return ""
-    return read_model_field(instance, field, key=data_key)
+    return instance.read_field(field, key=data_key)
 
 
 def export_row(
@@ -130,8 +129,8 @@ def export_row(
         "reporting_bucket": bucket_of(transaction.transaction_type),
         "amount_minor": amount.amount_minor,
         "currency": amount.resolved_currency.code,
-        "merchant": read_model_field(transaction, "merchant_encrypted", key=data_key),
-        "counterparty": read_model_field(transaction, "counterparty_encrypted", key=data_key),
+        "merchant": transaction.read_field("merchant_encrypted", key=data_key),
+        "counterparty": transaction.read_field("counterparty_encrypted", key=data_key),
         "category": _label(transaction.category, "name_encrypted", data_key=data_key),
         "financial_account": _label(
             transaction.financial_account, "name_encrypted", data_key=data_key
@@ -141,7 +140,7 @@ def export_row(
         ),
         "status": transaction.status,
         "category_source": transaction.category_source,
-        "notes": read_model_field(transaction, "notes_encrypted", key=data_key),
+        "notes": transaction.read_field("notes_encrypted", key=data_key),
     }
 
 

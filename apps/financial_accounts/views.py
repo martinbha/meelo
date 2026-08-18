@@ -16,7 +16,6 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views.generic import View
 
-from apps.core.crypto import read_model_field
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.ledger.balances import financial_account_balances
@@ -33,8 +32,8 @@ def _readable(account: FinancialAccount, data_key: bytes) -> dict[str, Any]:
 
     return {
         "account": account,
-        "name": read_model_field(account, "name_encrypted", key=data_key),
-        "institution": read_model_field(account, "institution_encrypted", key=data_key),
+        "name": account.read_field("name_encrypted", key=data_key),
+        "institution": account.read_field("institution_encrypted", key=data_key),
     }
 
 

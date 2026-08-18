@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from apps.core.crypto import read_model_field
 from apps.transactions.classification import bucket_of, is_settlement
 from apps.transactions.models import CanonicalTransaction
 
@@ -214,9 +213,7 @@ def account_activity(
             rows,
             data_key=data_key,
             key_of=lambda item: str(item.financial_account_id),
-            label_of=lambda item, key: read_model_field(
-                item.financial_account, "name_encrypted", key=key
-            ),
+            label_of=lambda item, key: item.financial_account.read_field("name_encrypted", key=key),
             currency=currency.upper(),
         ),
     )
@@ -254,7 +251,7 @@ def instrument_activity(
             data_key=data_key,
             key_of=lambda item: str(item.payment_instrument_id or ""),
             label_of=lambda item, key: (
-                read_model_field(item.payment_instrument, "name_encrypted", key=key)
+                item.payment_instrument.read_field("name_encrypted", key=key)
                 if item.payment_instrument is not None
                 else UNMAPPED_LABEL
             ),
