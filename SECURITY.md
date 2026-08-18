@@ -69,6 +69,33 @@ The scope is opened lazily, by the first view that asks. Most requests decrypt
 nothing, and unwrapping a key for a page that lists dates is work done for
 nobody.
 
+## The worker's door
+
+A queued screenshot is parsed minutes after the person who uploaded it closed
+the tab, and the OCR output has to be sealed under their key or it is not
+theirs. So the worker needs a data key with nobody signed in.
+
+`get_user_data_key` requires an authenticated actor who *is* the owner. Passing
+the owner in as their own actor would satisfy that while meaning nothing — the
+rule becomes "the worker says this is fine". `get_worker_data_key` is a separate
+door with a rule of its own, and the rule is the **document**:
+
+- the key belongs to whoever owns the document being processed, and the caller
+  does not choose the user — the document does, so there is no argument to point
+  at the wrong person;
+- a deactivated owner's key is not unwrapped, because a suspended account should
+  stop being processed rather than quietly continue.
+
+Access is audited as `worker_key_accessed`, with the document identifier
+attached. "The owner opened their key" and "a background job opened the owner's
+key while nobody was signed in" are different events, and only one of them can
+be correlated with a person at a keyboard.
+
+`worker_data_key_scope` opens once per job and closes with it. Worker code calls
+`require_data_key`, which **refuses** rather than falling back to an unwrap:
+a fallback there would restore the owner-as-their-own-actor rule that this door
+exists to replace.
+
 ## One door in and out
 
 `EncryptedFieldsMixin` is the only way an encrypted column is written or read.

@@ -1,5 +1,8 @@
+import base64
+import os
 from datetime import timedelta
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -9,16 +12,31 @@ from django.utils import timezone
 from PIL import Image
 
 from apps.core.context import request_id_context
+from apps.core.key_management import provision_user_data_key
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.services import JOB_HANDLERS, process_one_job
 from apps.processing.storage import document_directory
 
 
 @pytest.fixture
-def user(db: Any) -> Any:
+def master_key(tmp_path: Path, settings: Any) -> bytes:
+    key = os.urandom(32)
+    path = tmp_path / "master.key"
+    path.write_text(base64.urlsafe_b64encode(key).decode(), encoding="ascii")
+    settings.FIELD_ENCRYPTION_MASTER_KEY_FILE = str(path)
+    return key
+
+
+@pytest.fixture
+def user(db: Any, master_key: bytes) -> Any:
     from django.contrib.auth import get_user_model
 
-    return get_user_model().objects.create_user("owner@example.com", password="password")
+    # A data key, because the worker now opens one per document job — a worker
+    # that cannot reach the owner's key cannot process their screenshot, and a
+    # test that pretends otherwise is testing a pipeline that does not exist.
+    account = get_user_model().objects.create_user("owner@example.com", password="password")
+    provision_user_data_key(user=account, actor=account, master_key=master_key)
+    return account
 
 
 @pytest.mark.django_db
