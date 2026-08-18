@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from apps.core.key_scope import worker_data_key_scope
 from apps.ocr.pipeline import OcrPipelineError, execute_document_ocr
 
 from .cleanup import cleanup_document_storage
@@ -30,6 +31,15 @@ def process_document_job(job: ProcessingJob) -> None:
     document = _document_for_job(job)
     if document.processing_status == SourceDocument.Status.DELETED:
         return
+    # One scope for the whole job, opened from the document rather than from
+    # the job's user field. The two agree — ``_document_for_job`` filters on
+    # both — but only one of them is the thing whose data is about to be
+    # decrypted, and that is the one that should decide whose key is opened.
+    with worker_data_key_scope(document=document):
+        _process_document(job, document)
+
+
+def _process_document(job: ProcessingJob, document: SourceDocument) -> None:
     try:
         if document.processing_status == SourceDocument.Status.FAILED:
             document = transition_document(
