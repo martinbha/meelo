@@ -9,10 +9,8 @@ from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Money
 from apps.ledger.models import ChartOfAccounts, LedgerAccount, LedgerEntry
 from apps.ledger.posting import serialize_money
-from apps.transactions.invariants import (
-    transition_transaction_status,
-    validate_transaction_invariants,
-)
+from apps.transactions.invariants import validate_transaction_invariants
+from apps.transactions.lifecycle import transition_transaction_status
 from apps.transactions.models import CanonicalTransaction
 from apps.transactions.services import create_manual_transaction
 
