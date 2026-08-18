@@ -16,6 +16,20 @@
       {% csrf_token %}
       <button type="submit" class="secondary">Re-run OCR</button>
     </form>
+
+    <form method="post" action="{% url 'document-override' pk=document.pk %}"
+          class="document-override" hx-boost="false">
+      {% csrf_token %}
+      <fieldset>
+        <legend>Read this screenshot as</legend>
+        <p class="field-help">
+          Detected as {{ document.get_source_type_display }}. Change this when the
+          guess is wrong, then re-run OCR so the right parser reads the screenshot.
+        </p>
+        {{ override_form.as_p }}
+        <button type="submit" class="secondary">Save reading</button>
+      </fieldset>
+    </form>
   </header>
 
   <div class="review-split">

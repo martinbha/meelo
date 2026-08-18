@@ -11,6 +11,7 @@ from apps.categorization.views import CategoryCorrectionView
 from apps.core.views import dashboard, health_check
 from apps.observations.views import (
     DocumentImageView,
+    DocumentOverrideView,
     DocumentReprocessView,
     ObservationActionView,
     ObservationReviewView,
@@ -109,6 +110,11 @@ urlpatterns = [
         "review/<uuid:pk>/reprocess/",
         DocumentReprocessView.as_view(),
         name="document-reprocess",
+    ),
+    path(
+        "review/<uuid:pk>/source/",
+        DocumentOverrideView.as_view(),
+        name="document-override",
     ),
     path(
         "observations/<uuid:pk>/<str:action>/",
