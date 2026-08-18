@@ -168,6 +168,11 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "retention_policy": "How long the original may be kept (specification 9).",
             "retention_deadline": "When the retention policy expires, so the cleanup command "
             "can select rows in the database rather than in Python.",
+            "source_type_override": "What a reviewer said the screenshot actually is "
+            "(specification 14, 19). Kept beside the detected guess rather than overwriting "
+            "it, so detection accuracy stays measurable and the override can be cleared.",
+            "institution_override": "The institution parser a reviewer chose, by name. "
+            "See source_type_override.",
         },
         enumerations={
             "SourceType": (

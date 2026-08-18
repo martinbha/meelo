@@ -19,7 +19,9 @@ from django.views.generic import View
 from apps.core.errors import ApplicationError
 from apps.core.key_management import get_user_data_key, load_master_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
+from apps.processing.forms import DocumentOverrideForm
 from apps.processing.models import SourceDocument
+from apps.processing.overrides import set_document_overrides
 from apps.processing.storage import document_directory
 
 # The view layer is the only place the two apps meet. Reconciliation
@@ -145,6 +147,12 @@ class ObservationReviewView(LoginRequiredMixin, View):
                 "rows": rows,
                 "latest_run": latest_run(document),
                 "action_form": ReviewActionForm(user=request.user),
+                "override_form": DocumentOverrideForm(
+                    initial={
+                        "source_type": document.source_type_override,
+                        "institution": document.institution_override,
+                    }
+                ),
                 "has_image": _image_path(document) is not None,
             },
         )
@@ -262,6 +270,42 @@ class ObservationActionView(LoginRequiredMixin, View):
             duplicate_ids=form.cleaned_data["duplicate_ids"],
         )
         messages.success(request, "The duplicates were merged.")
+
+
+class DocumentOverrideView(LoginRequiredMixin, View):
+    """Record what a reviewer says this screenshot is.
+
+    Saving an override does not itself re-run anything. The reviewer is told to
+    ask for another pass, because reprocessing costs a minute of OCR and a
+    reviewer correcting the type and the institution in turn should not pay for
+    it twice.
+    """
+
+    def post(self, request: HttpRequest, pk: Any) -> HttpResponse:
+        document = get_owned_object_or_404(SourceDocument, request.user, pk=pk)
+        form = DocumentOverrideForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "That is not a screenshot type this system recognises.")
+            return redirect("observation-review", pk=document.pk)
+        try:
+            change = set_document_overrides(
+                document.pk,
+                user=request.user,
+                source_type=form.cleaned_data["source_type"],
+                institution=form.cleaned_data["institution"],
+            )
+        except ApplicationError as error:
+            messages.error(request, error.message)
+            return redirect("observation-review", pk=document.pk)
+        if not change.changed:
+            messages.info(request, "That is already how this screenshot is being read.")
+        elif change.cleared:
+            messages.success(
+                request, "Detection restored. Re-run OCR to read the screenshot again."
+            )
+        else:
+            messages.success(request, "Saved. Re-run OCR to read the screenshot again.")
+        return redirect("observation-review", pk=document.pk)
 
 
 class DocumentReprocessView(LoginRequiredMixin, View):

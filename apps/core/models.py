@@ -31,6 +31,8 @@ class AuditEvent(models.Model):
         OBSERVATION_REJECTED = "observation_rejected", "Observation rejected"
         OBSERVATION_MERGED = "observation_merged", "Observation merged"
         DOCUMENT_REPROCESS_REQUESTED = "document_reprocess_requested", "Reprocessing requested"
+        DOCUMENT_OVERRIDE_SET = "document_override_set", "Document override set"
+        DOCUMENT_OVERRIDE_CLEARED = "document_override_cleared", "Document override cleared"
         RECONCILIATION_MATCH_CREATED = "reconciliation_match_created", "Match proposed"
         RECONCILIATION_MATCH_CONFIRMED = "reconciliation_match_confirmed", "Match confirmed"
         RECONCILIATION_MATCH_REJECTED = "reconciliation_match_rejected", "Match rejected"
