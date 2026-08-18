@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.categorization.models import Category
+from apps.core.currencies import is_supported, normalize_code
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.users.models import User
@@ -128,9 +129,9 @@ class CanonicalTransaction(models.Model):
         errors: dict[str, str] = {}
         if self.posted_at and self.posted_at < self.occurred_at:
             errors["posted_at"] = "Posted date cannot be earlier than the occurred date."
-        self.currency = self.currency.upper()
-        if len(self.currency) != 3 or not self.currency.isalpha():
-            errors["currency"] = "Currency must be a three-letter code."
+        self.currency = normalize_code(self.currency)
+        if not is_supported(self.currency):
+            errors["currency"] = f"'{self.currency}' is not a currency this application supports."
 
         related_objects: dict[str, tuple[Any, Any]] = {
             "category": (Category, self.category_id),

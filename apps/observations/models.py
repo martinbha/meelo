@@ -19,6 +19,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.categorization.models import Category
+from apps.core.currencies import is_supported, normalize_code
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.ocr.models import OcrRun
@@ -219,9 +220,11 @@ class ImportedObservation(models.Model):
         super().clean()
         errors: dict[str, str] = {}
         if self.currency:
-            self.currency = self.currency.upper()
-            if len(self.currency) != 3 or not self.currency.isalpha():
-                errors["currency"] = "Currency must be a three-letter code."
+            self.currency = normalize_code(self.currency)
+            if not is_supported(self.currency):
+                errors["currency"] = (
+                    f"'{self.currency}' is not a currency this application supports."
+                )
         for name, value in (
             ("ocr_confidence", self.ocr_confidence),
             ("parser_confidence", self.parser_confidence),

@@ -6,6 +6,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.currencies import is_supported, normalize_code
+
 
 class FinancialAccount(models.Model):
     class AccountType(models.TextChoices):
@@ -67,9 +69,11 @@ class FinancialAccount(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        self.currency = self.currency.upper()
-        if len(self.currency) != 3 or not self.currency.isalpha():
-            raise ValidationError({"currency": "Currency must be a three-letter code."})
+        self.currency = normalize_code(self.currency)
+        if not is_supported(self.currency):
+            raise ValidationError(
+                {"currency": f"'{self.currency}' is not a currency this application supports."}
+            )
         if self.identifier_last_four and len(self.identifier_last_four) != 4:
             raise ValidationError(
                 {"identifier_last_four": "The identifier suffix must be four characters."}

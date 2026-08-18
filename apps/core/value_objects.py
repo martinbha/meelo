@@ -6,6 +6,8 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import ClassVar, Self
 
+from .currencies import CurrencyDefinition, definition_for, is_supported, normalize_code
+
 
 class InvalidCurrencyError(ValueError):
     pass
@@ -25,20 +27,41 @@ class InvalidDateError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Currency:
+    """A currency this application supports, and nothing else.
+
+    Being three letters is not enough. Every code is checked against
+    :mod:`apps.core.currencies`, because the registry is what knows how many
+    decimal places the currency has — and a code with no entry has no defensible
+    exponent. Guessing two would store ``42900`` as ₩429.00's worth of minor
+    units for a currency that has none, and the error would surface later as
+    figures a hundred times off.
+    """
+
     code: str
 
     _CODE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Z]{3}$")
-    _ZERO_DECIMAL: ClassVar[frozenset[str]] = frozenset({"JPY", "KRW"})
 
     def __post_init__(self) -> None:
-        normalized = self.code.strip().upper()
+        normalized = normalize_code(self.code)
         if not self._CODE_PATTERN.fullmatch(normalized):
             raise InvalidCurrencyError("Currency must be a three-letter ISO-style code.")
+        if not is_supported(normalized):
+            raise InvalidCurrencyError(
+                f"'{normalized}' is not a currency this application supports."
+            )
         object.__setattr__(self, "code", normalized)
 
     @property
+    def definition(self) -> CurrencyDefinition:
+        return definition_for(self.code)
+
+    @property
     def decimal_places(self) -> int:
-        return 0 if self.code in self._ZERO_DECIMAL else 2
+        return self.definition.minor_unit_exponent
+
+    @property
+    def symbol(self) -> str:
+        return self.definition.symbol
 
     def __str__(self) -> str:
         return self.code
@@ -103,6 +126,27 @@ class Money:
     def __str__(self) -> str:
         currency = self.resolved_currency
         return f"{self.decimal_amount:.{currency.decimal_places}f} {currency}"
+
+    def format(self, *, symbol: bool = True, grouping: bool = True) -> str:
+        """The figure as a person reads it: right decimals, right symbol.
+
+        ``Money(42900, "KRW")`` is ``₩42,900`` and ``Money(1025, "USD")`` is
+        ``$10.25``. The difference is the registry's exponent, not a locale
+        setting — the same integer means two different amounts of money
+        depending on which currency it is in, and only the registry knows which.
+        """
+
+        currency = self.resolved_currency
+        places = currency.decimal_places
+        magnitude = abs(self.decimal_amount)
+        digits = f"{magnitude:,.{places}f}" if grouping else f"{magnitude:.{places}f}"
+        sign = "-" if self.amount_minor < 0 else ""
+        if not symbol:
+            return f"{sign}{digits} {currency.code}"
+        definition = currency.definition
+        if definition.symbol_leads:
+            return f"{sign}{definition.symbol}{digits}"
+        return f"{sign}{digits}\u00a0{definition.symbol}"
 
 
 @dataclass(frozen=True, order=True, slots=True)
