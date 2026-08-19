@@ -10,7 +10,7 @@ from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
 from apps.core.errors import ApplicationError
-from apps.core.key_scope import request_data_key
+from apps.core.key_scope import request_data_key, request_search_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .deletion import delete_transaction
@@ -36,7 +36,10 @@ class ManualTransactionCreateView(LoginRequiredMixin, FormView):  # type: ignore
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:
-        form.save(data_key=_data_key(self.request))
+        form.save(
+            data_key=_data_key(self.request),
+            blind_index_key=request_search_key(self.request),
+        )
         messages.success(self.request, "Transaction saved for review.")
         return super().form_valid(form)
 
@@ -64,7 +67,10 @@ class ManualTransactionUpdateView(LoginRequiredMixin, FormView):  # type: ignore
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:
-        form.save(data_key=_data_key(self.request))
+        form.save(
+            data_key=_data_key(self.request),
+            blind_index_key=request_search_key(self.request),
+        )
         messages.success(self.request, "Transaction updated.")
         return super().form_valid(form)
 
