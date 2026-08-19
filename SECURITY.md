@@ -261,6 +261,39 @@ rather than a saved position — an interruption leaves finished rows finished.
 Pages are walked with a keyset cursor on the primary key, not `OFFSET`, since
 the rows are being written as they are read.
 
+## Nothing readable stays in an encrypted column
+
+Two halves, and the second is the one that keeps being true.
+
+**Existing rows.** Encryption reached several models after their first rows
+existed, so both forms sit in the same column: an envelope, and a readable
+merchant name that looks exactly like one. `manage.py encrypt_plaintext_fields`
+seals the readable ones, discovering the columns from the models' own
+declarations so a newly encrypted column cannot be missed — a hand-kept list
+would omit exactly the newest one, which is the likeliest to still hold
+plaintext. Migration `core.0017` runs the same code on deploy, and skips
+silently when no master key is configured, because a fresh install and a test
+database have nothing to seal and refusing to migrate there would break the one
+case that is already correct.
+
+It is **one-way**. The way back is a restore from the backup taken before the
+run, which is what the command says before it starts and why `--dry-run` exists.
+A decrypt-the-whole-database routine is not something this application should
+have sitting in it waiting to be called, so the migration's `reverse_code` is a
+no-op that explains itself.
+
+**New rows.** Several write paths accepted `data_key=None` and stored the value
+in clear — a convenience for fixtures, and a hole in production.
+`FIELD_ENCRYPTION_REQUIRED` turns a missing key into a refusal at the write,
+before the column can hold something readable that adds up perfectly. It is on
+everywhere except the test settings, and `tests/test_plaintext_encryption.py`
+turns it back on and drives the real services through it: an off switch nothing
+tests is an off switch that turns out to have been on.
+
+Operational columns stay readable on purpose. A queue cannot select on a
+ciphertext, an index cannot order one, and a status nobody can read is a status
+the worker cannot act on.
+
 ## Where they are used
 
 - **Merchant lookup** — the alias and rule matching in `CATEGORIES.md`, built from
