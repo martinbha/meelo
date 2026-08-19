@@ -23,6 +23,13 @@ SENSITIVE_FIELD_NAMES = (
     "secret",
     "token",
     "authorization",
+    # A TOTP device's shared seed is stored in a field called "key", and a
+    # recovery code in one called "token". Over-redacting a log line that
+    # happened to say "key" costs a reader some context; under-redacting one
+    # costs the second factor entirely.
+    "key",
+    "otp_secret",
+    "recovery_code",
 )
 _SENSITIVE_FIELD_PATTERN = (
     rf"(?:{'|'.join(SENSITIVE_FIELD_NAMES)}|[A-Za-z0-9_]*(?:password|secret|token))"

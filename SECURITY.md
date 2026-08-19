@@ -4,6 +4,33 @@
 
 How a financial value is stored, and what that buys.
 
+# Two-Factor Storage
+
+`django_otp`, `otp_totp`, and `otp_static` are installed, and `OTPMiddleware`
+runs immediately after authentication so every request carries
+`request.user.is_verified()`.
+
+**Nothing enforces it yet.** Enrolment is #171 and enforcement is #173, and the
+order is deliberate: a login wall that arrives before the enrolment flow does is
+a locked account, not a hardened one. Until then a device can be stored and is
+not consulted.
+
+Both plugin tables are installed together, including the static devices that
+hold #172's recovery codes, so the tables are created by one migration pass
+rather than by a later one that runs while somebody is locked out.
+
+**The seed is not administrable.** django-otp's own admin exposes a TOTP
+device's shared secret as an editable field. A staff account that can read the
+seed can generate valid codes from anywhere, forever — which makes the second
+factor worth nothing while looking entirely present. Both device admins are
+re-registered with the secret *removed* rather than made read-only, since a
+read-only field is still rendered, and the recovery-token table is not
+registered at all.
+
+**The seed is redacted from logs.** It lives in a field called `key`, which no
+generic credential rule matches. Over-redacting a log line that happened to say
+"key" costs a reader some context; under-redacting one costs the second factor.
+
 ## Where the master key comes from
 
 Specification 22.1 lists several places it may live. They are not

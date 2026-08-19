@@ -20,6 +20,16 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "axes",
+    # Two-factor storage, installed ahead of the flow that uses it (#171-#173).
+    # The device tables exist and the middleware annotates each request with
+    # whether the user has verified, but nothing yet *requires* verification —
+    # a login wall that arrives before enrolment does is a locked account.
+    "django_otp",
+    "django_otp.plugins.otp_totp",
+    # Static devices hold the recovery codes #172 issues. Installed now so the
+    # table is created by the same migration pass rather than a later one that
+    # runs while somebody is locked out.
+    "django_otp.plugins.otp_static",
     "apps.core.apps.CoreConfig",
     "apps.categorization.apps.CategorizationConfig",
     "apps.financial_accounts.apps.FinancialAccountsConfig",
@@ -45,6 +55,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Immediately after authentication, because it reads request.user and puts
+    # request.user.is_verified() beside it. It verifies nothing on its own and
+    # blocks nothing; enforcement is #173.
+    "django_otp.middleware.OTPMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",
