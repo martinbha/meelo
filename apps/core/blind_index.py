@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from dataclasses import dataclass
 from typing import Any
 
 from .errors import InvalidRequestError
@@ -69,6 +70,34 @@ DOMAINS: frozenset[str] = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class SearchKey:
+    """A search key and the version every token it builds must be stamped with.
+
+    The two travel together because separating them is how a rotation goes
+    wrong. A token's prefix has to say which key built it — that is what lets a
+    reindex find the stale ones and a query match both during the window — and
+    a version passed alongside the key is a version somebody eventually forgets
+    to pass. Then a token built under the new key is stamped with the old
+    version, looks stale forever, and matches nothing.
+
+    Callers that hold plain ``bytes`` still work; those are treated as version
+    one, which is what every deployment that has never rotated has.
+    """
+
+    version: int
+    material: bytes
+
+    def __len__(self) -> int:
+        return len(self.material)
+
+
+def _key_material(key: SearchKey | bytes, version: int) -> tuple[bytes, int]:
+    if isinstance(key, SearchKey):
+        return key.material, key.version
+    return key, version
+
+
 class BlindIndexError(InvalidRequestError):
     """A blind index cannot be built from these inputs."""
 
@@ -78,7 +107,7 @@ def blind_index(
     value: str,
     *,
     user_id: Any,
-    key: bytes,
+    key: SearchKey | bytes,
     version: int = DEFAULT_KEY_VERSION,
 ) -> str:
     """A searchable token for one value, revealing nothing about it.
@@ -90,7 +119,8 @@ def blind_index(
 
     if domain not in DOMAINS:
         raise BlindIndexError(f"Unknown blind-index domain: {domain!r}.")
-    if len(key) < MINIMUM_KEY_BYTES:
+    material, version = _key_material(key, version)
+    if len(material) < MINIMUM_KEY_BYTES:
         raise BlindIndexError(f"Blind-index keys must contain at least {MINIMUM_KEY_BYTES} bytes.")
     if version < 1:
         raise BlindIndexError("Blind-index key versions start at one.")
@@ -102,7 +132,7 @@ def blind_index(
     # key version, or another person. The key version is repeated outside it
     # because a query has to read it without holding the key.
     payload = f"{BLIND_INDEX_SCHEME}|{version}|{domain}|{user_id}|{value}".encode()
-    return f"{version}:{hmac.new(key, payload, hashlib.sha256).hexdigest()}"
+    return f"{version}:{hmac.new(material, payload, hashlib.sha256).hexdigest()}"
 
 
 def index_version(token: str) -> int:

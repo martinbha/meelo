@@ -15,6 +15,7 @@ from django.utils import timezone
 from apps.users.models import UserDataKey, UserSearchKey
 
 from .audit import record_audit_event
+from .blind_index import SearchKey
 from .errors import ForbiddenError, InvalidRequestError
 
 WRAP_FORMAT = "kw1"
@@ -241,17 +242,21 @@ def unwrap_search_key(record: UserSearchKey, *, master_key: bytes) -> bytes:
 
 
 @transaction.atomic
-def get_user_search_key(*, user: Any, actor: Any, master_key: bytes) -> bytes:
-    """The active search key for one user, for an actor entitled to it."""
+def get_user_search_key(*, user: Any, actor: Any, master_key: bytes) -> SearchKey:
+    """The active search key for one user, for an actor entitled to it.
+
+    Returned with its version attached, because a token's prefix has to say
+    which key built it and a version passed separately is one somebody forgets.
+    """
 
     _assert_owner(user=user, actor=actor, action="access")
     record = UserSearchKey.objects.filter(user=user, is_active=True).first()
     if record is None:
         raise InvalidRequestError("No active search key exists for this user.")
-    return unwrap_search_key(record, master_key=master_key)
+    return SearchKey(record.version, unwrap_search_key(record, master_key=master_key))
 
 
-def get_user_search_keys(*, user: Any, master_key: bytes) -> dict[int, bytes]:
+def get_user_search_keys(*, user: Any, master_key: bytes) -> dict[int, SearchKey]:
     """Every search key version this user still has, by version.
 
     Plural because a rotation leaves two live at once: tokens written before it
@@ -262,7 +267,7 @@ def get_user_search_keys(*, user: Any, master_key: bytes) -> dict[int, bytes]:
     """
 
     return {
-        record.version: unwrap_search_key(record, master_key=master_key)
+        record.version: SearchKey(record.version, unwrap_search_key(record, master_key=master_key))
         for record in UserSearchKey.objects.filter(user=user).order_by("-version")
     }
 
@@ -313,7 +318,7 @@ def active_search_key_version(*, user: Any) -> int:
 
 
 @transaction.atomic
-def get_worker_search_key(*, document: Any, master_key: bytes) -> bytes:
+def get_worker_search_key(*, document: Any, master_key: bytes) -> SearchKey:
     """The document owner's search key, for a job with no logged-in actor.
 
     The same rule as :func:`get_worker_data_key`: the document decides whose key
@@ -326,7 +331,7 @@ def get_worker_search_key(*, document: Any, master_key: bytes) -> bytes:
     record = UserSearchKey.objects.filter(user=owner, is_active=True).first()
     if record is None:
         raise InvalidRequestError("No active search key exists for this user.")
-    return unwrap_search_key(record, master_key=master_key)
+    return SearchKey(record.version, unwrap_search_key(record, master_key=master_key))
 
 
 @transaction.atomic

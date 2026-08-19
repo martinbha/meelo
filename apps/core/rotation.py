@@ -58,6 +58,7 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
+from .blind_index import SearchKey
 from .crypto import (
     EncryptionError,
     envelope_key_version,
@@ -226,7 +227,7 @@ def _rebuild_indexes(
     spec: EncryptedModel,
     *,
     plaintexts: dict[str, str],
-    search_key: bytes,
+    search_key: SearchKey,
 ) -> int:
     """Rebuild the blind indexes derived from fields this row just moved."""
 
@@ -299,7 +300,7 @@ def rotate_model(
     old_key: bytes,
     new_key: bytes,
     new_version: int,
-    search_key: bytes,
+    search_key: SearchKey,
     batch_size: int = DEFAULT_BATCH_SIZE,
     dry_run: bool = False,
     resume: bool = True,
@@ -395,7 +396,7 @@ def rotate_user(
     old_key: bytes,
     new_key: bytes,
     new_version: int,
-    search_key: bytes,
+    search_key: SearchKey,
     batch_size: int = DEFAULT_BATCH_SIZE,
     models: Sequence[EncryptedModel] | None = None,
     dry_run: bool = False,

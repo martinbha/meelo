@@ -21,6 +21,7 @@ from django.db import transaction as db_transaction
 
 from apps.categorization.normalization import merchant_blind_index, normalize_merchant
 from apps.core.audit import record_audit_event
+from apps.core.blind_index import SearchKey
 from apps.core.encrypted_values import encode_json
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.searchable import approval_code_index
@@ -187,7 +188,7 @@ def _encrypt_fields(
     *,
     data_key: bytes,
     key_version: int,
-    blind_index_key: bytes | None = None,
+    blind_index_key: SearchKey | bytes | None = None,
 ) -> None:
     """Encrypt every value-bearing field once the record has an identity.
 
@@ -249,7 +250,7 @@ def import_parser_selection(
     selection: ParserSelection,
     data_key: bytes,
     key_version: int,
-    blind_index_key: bytes | None = None,
+    blind_index_key: SearchKey | bytes | None = None,
     actor: Any | None = None,
 ) -> ImportResult:
     """Store one parse as observations, exactly once.

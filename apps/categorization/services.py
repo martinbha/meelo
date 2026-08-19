@@ -9,6 +9,7 @@ from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
+from apps.core.blind_index import SearchKey
 from apps.core.crypto import InvalidCiphertextError
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.searchable import counterparty_index
@@ -42,7 +43,7 @@ def create_merchant_alias(
     alias: str,
     normalized_merchant: str,
     encryption_key: bytes,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     key_version: int,
     default_category: Category | None = None,
     payment_instrument: Any | None = None,
@@ -88,9 +89,9 @@ def find_merchant_alias(
     *,
     user: Any,
     merchant: str,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     payment_instrument_id: Any | None = None,
-    additional_keys: Sequence[bytes] = (),
+    additional_keys: Sequence[SearchKey | bytes] = (),
 ) -> MerchantAlias | None:
     """The alias for one merchant, matched against every live search key.
 
@@ -161,7 +162,7 @@ def suggest_merchant_aliases(
     return rank_candidates(merchant, by_name)[:limit]
 
 
-def rule_pattern_index(rule_type: str, value: str, *, user_id: Any, key: bytes) -> str:
+def rule_pattern_index(rule_type: str, value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     """The token a rule of this type must store to ever match anything.
 
     Blind indexes are domain-separated on purpose: a merchant named ``4200`` and
@@ -188,7 +189,7 @@ def create_exact_merchant_rule(
     merchant: str,
     category: Category,
     encryption_key: bytes,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     key_version: int,
     payment_instrument: Any | None = None,
     financial_account: Any | None = None,

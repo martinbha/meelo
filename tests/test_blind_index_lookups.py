@@ -28,6 +28,7 @@ from django.db import connection
 from apps.categorization.models import CategoryRule
 from apps.categorization.normalization import merchant_blind_index
 from apps.categorization.services import COUNTERPARTY_RULE_TYPES, rule_pattern_index
+from apps.core.blind_index import SearchKey
 from apps.core.key_management import (
     get_user_data_key,
     get_user_search_key,
@@ -76,7 +77,7 @@ def data_key(owner: Any, master_key: bytes) -> bytes:
 
 
 @pytest.fixture
-def search_key(owner: Any, master_key: bytes) -> bytes:
+def search_key(owner: Any, master_key: bytes) -> SearchKey:
     return get_user_search_key(user=owner, actor=owner, master_key=master_key)
 
 
@@ -131,7 +132,7 @@ def test_domains_do_not_collide() -> None:
 
 
 def test_a_manually_entered_transaction_is_findable(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     """Without the token, no alias matches it and no rule ever fires on it."""
 
@@ -163,7 +164,7 @@ def test_a_manually_entered_transaction_is_findable(
 
 
 def test_an_imported_observation_indexes_its_approval_code(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     from decimal import Decimal
 
@@ -281,7 +282,7 @@ def make_unindexed(owner: Any, data_key: bytes, count: int) -> list[CanonicalTra
 
 
 def test_the_backfill_indexes_rows_written_before_the_column_existed(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     rows = make_unindexed(owner, data_key, 5)
     lookup = merchant_blind_index(MERCHANT, user_id=owner.pk, key=search_key)
@@ -295,7 +296,7 @@ def test_the_backfill_indexes_rows_written_before_the_column_existed(
 
 
 def test_the_backfill_writes_nothing_on_a_second_run(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     """A cron entry that overlaps itself must not be a problem."""
 
@@ -309,7 +310,7 @@ def test_the_backfill_writes_nothing_on_a_second_run(
 
 
 def test_an_interrupted_backfill_resumes_without_redoing_finished_rows(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     rows = make_unindexed(owner, data_key, 6)
     lookup = merchant_blind_index(MERCHANT, user_id=owner.pk, key=search_key)
@@ -340,7 +341,7 @@ def test_a_dry_run_reports_without_writing(owner: Any, data_key: bytes, search_k
 
 
 def test_the_command_runs_for_one_user(
-    owner: Any, data_key: bytes, search_key: bytes, capsys: Any
+    owner: Any, data_key: bytes, search_key: SearchKey, capsys: Any
 ) -> None:
     make_unindexed(owner, data_key, 2)
 
@@ -352,7 +353,7 @@ def test_the_command_runs_for_one_user(
 
 
 def test_the_backfill_never_reaches_another_users_rows(
-    owner: Any, data_key: bytes, search_key: bytes, master_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey, master_key: bytes
 ) -> None:
     stranger = make_user(email="lookup-stranger@example.com")
     provision_user_data_key(user=stranger, actor=stranger, master_key=master_key)
@@ -446,7 +447,7 @@ def seed_many(owner: Any, account: Any, *, count: int, target: str) -> None:
 
 
 def test_the_query_plan_uses_the_index_on_a_realistic_row_count(
-    owner: Any, search_key: bytes
+    owner: Any, search_key: SearchKey
 ) -> None:
     """The acceptance criterion, on enough rows for the planner to have a choice.
 

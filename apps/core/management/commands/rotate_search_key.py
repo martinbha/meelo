@@ -28,7 +28,7 @@ one another.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,7 +36,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction as db_transaction
 from django.db.models import Q
 
-from apps.core.blind_index import index_version
+from apps.core.blind_index import SearchKey, index_version
 from apps.core.key_management import (
     active_search_key_version,
     get_user_data_key,
@@ -52,7 +52,7 @@ SEARCH_KIND = "search"
 
 
 def index_candidates(
-    build: Any, value: str, *, user_id: Any, keys: dict[int, bytes]
+    build: Any, value: str, *, user_id: Any, keys: Mapping[int, SearchKey | bytes]
 ) -> tuple[str, ...]:
     """One token per live search key version, for a lookup to match any of.
 
@@ -93,7 +93,7 @@ def reindex_user(
     *,
     user: User,
     data_key: bytes,
-    search_key: bytes,
+    search_key: SearchKey,
     key_version: int,
     models: Sequence[IndexedModel] = INDEXED_MODELS,
     batch_size: int = 500,
