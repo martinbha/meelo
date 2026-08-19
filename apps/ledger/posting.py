@@ -6,6 +6,7 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
+from apps.core.encrypted_fields import require_encryption_key
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.transactions.models import CanonicalTransaction
@@ -48,6 +49,7 @@ def post_balanced_transaction(
     encryption of the row they came from.
     """
 
+    require_encryption_key(data_key, field="ledger.LedgerEntry.amount_encrypted")
     if canonical_transaction.status != CanonicalTransaction.Status.CONFIRMED:
         raise InvalidRequestError("Only confirmed transactions can be posted to the ledger.")
     if len(postings) < 2:
@@ -164,6 +166,7 @@ def reverse_transaction_postings(
     would have to know that half the rows are noise.
     """
 
+    require_encryption_key(data_key, field="ledger.LedgerEntry.amount_encrypted")
     with db_transaction.atomic():
         locked_transaction = CanonicalTransaction.objects.select_for_update().get(
             pk=canonical_transaction.pk

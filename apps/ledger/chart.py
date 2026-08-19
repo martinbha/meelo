@@ -27,6 +27,7 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
+from apps.core.encrypted_fields import require_encryption_key
 from apps.core.errors import InvalidRequestError
 from apps.financial_accounts.models import FinancialAccount
 
@@ -117,6 +118,7 @@ def _get_or_create_account(
     data_key: bytes | None = None,
     key_version: int = 1,
 ) -> LedgerAccount:
+    require_encryption_key(data_key, field=f"{account_type}.name_encrypted")
     chart = ensure_chart(user)
     # Lock the chart so two concurrent creations cannot allocate one code twice.
     ChartOfAccounts.objects.select_for_update().get(pk=chart.pk)

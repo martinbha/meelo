@@ -9,6 +9,7 @@ from django.db import transaction as db_transaction
 from apps.categorization.models import Category
 from apps.categorization.normalization import merchant_blind_index
 from apps.core.audit import record_audit_event
+from apps.core.encrypted_fields import require_encryption_key
 from apps.core.errors import InvalidRequestError
 from apps.core.ownership import owned_queryset
 from apps.core.searchable import counterparty_index
@@ -137,6 +138,7 @@ def create_manual_transaction(
             key_version=key_version,
         )
     else:
+        require_encryption_key(data_key, field="transactions.CanonicalTransaction")
         transaction.merchant_encrypted = merchant
         transaction.counterparty_encrypted = counterparty
         transaction.notes_encrypted = notes
@@ -212,6 +214,7 @@ def update_manual_transaction(
             key_version=key_version,
         )
     else:
+        require_encryption_key(data_key, field="transactions.CanonicalTransaction")
         transaction.merchant_encrypted = merchant
         transaction.counterparty_encrypted = counterparty
         transaction.notes_encrypted = notes

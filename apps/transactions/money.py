@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from apps.core.encrypted_fields import require_encryption_key
 from apps.core.value_objects import Currency, Money
 from apps.ledger.posting import deserialize_money, serialize_money
 
@@ -38,13 +39,17 @@ def store_money(
     data_key: bytes | None = None,
     key_version: int = 1,
 ) -> str:
-    """Encode an amount onto a field, encrypting it when a key is available.
+    """Encode an amount onto a field, encrypting it.
 
-    Without a key the encoding is stored in clear. That path exists for tests and
-    for the fixtures that predate encryption; every production caller supplies a
-    key, and ``tests/test_field_encryption.py`` holds the web paths to it.
+    Without a key the encoding would be stored in clear, which is refused unless
+    the settings say otherwise — see
+    :func:`apps.core.encrypted_fields.encryption_required`. An amount in clear
+    in an ``_encrypted`` column looks exactly like a working one, so the
+    refusal has to happen at the write and not be discovered by reading the
+    database later.
     """
 
+    require_encryption_key(data_key, field=field)
     encoded = serialize_money(amount)
     setattr(instance, field, encoded)
     if data_key is None:
