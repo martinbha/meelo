@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.core.audit import record_audit_event
 from apps.core.crypto import InvalidCiphertextError
 from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.searchable import counterparty_index
 from apps.transactions.models import CanonicalTransaction
 
 from .engine import CategoryDecision, CategorySource, classify
@@ -19,6 +20,11 @@ from .normalization import (
     merchant_blind_index,
     normalize_merchant,
     rank_candidates,
+)
+
+#: Rule types whose pattern is a counterparty rather than a merchant.
+COUNTERPARTY_RULE_TYPES = frozenset(
+    {CategoryRule.RuleType.COUNTERPARTY_EXACT, CategoryRule.RuleType.COUNTERPARTY_CONTAINS}
 )
 
 
@@ -135,6 +141,26 @@ def suggest_merchant_aliases(
     return rank_candidates(merchant, by_name)[:limit]
 
 
+def rule_pattern_index(rule_type: str, value: str, *, user_id: Any, key: bytes) -> str:
+    """The token a rule of this type must store to ever match anything.
+
+    Blind indexes are domain-separated on purpose: a merchant named ``4200`` and
+    a counterparty named ``4200`` must not produce the same token. That
+    separation cuts both ways — a counterparty rule whose pattern was indexed in
+    the merchant domain is compared against a counterparty-domain token and can
+    never fire, at all, for any input. Nothing raises and no row is wrong; the
+    rule simply does nothing forever.
+
+    So the domain follows the rule type rather than the column name. The column
+    is called ``merchant_pattern_blind_index`` for historical reasons; what it
+    holds depends on what the rule is about.
+    """
+
+    if rule_type in COUNTERPARTY_RULE_TYPES:
+        return counterparty_index(value, user_id=user_id, key=key)
+    return merchant_blind_index(value, user_id=user_id, key=key)
+
+
 @db_transaction.atomic
 def create_exact_merchant_rule(
     *,
@@ -158,8 +184,8 @@ def create_exact_merchant_rule(
         id=uuid.uuid4(),
         user=user,
         category=category,
-        merchant_pattern_blind_index=merchant_blind_index(
-            merchant, user_id=user.pk, key=blind_index_key
+        merchant_pattern_blind_index=rule_pattern_index(
+            CategoryRule.RuleType.MERCHANT_EXACT, merchant, user_id=user.pk, key=blind_index_key
         ),
         payment_instrument=payment_instrument,
         financial_account=financial_account,
