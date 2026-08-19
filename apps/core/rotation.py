@@ -228,6 +228,43 @@ def _rebuild_indexes(
     return rebuilt
 
 
+def resume_point(*, user: Any, new_version: int, label: str) -> str:
+    """The primary key a resumed rotation should start after, if any.
+
+    Returns ``""`` when there is nothing to resume from — no checkpoint, a
+    checkpoint from a different rotation, or one already marked complete. Every
+    one of those means "start at the beginning", which is always safe: the
+    version check is what guarantees correctness, and this only decides how much
+    of the history has to be walked to reach the work.
+    """
+
+    from .models import RotationCheckpoint
+
+    checkpoint = RotationCheckpoint.objects.filter(
+        user_id=user.pk, key_version=new_version, model_label=label
+    ).first()
+    if checkpoint is None or checkpoint.is_complete:
+        return ""
+    return checkpoint.last_record_id
+
+
+def _record_progress(
+    *, user: Any, new_version: int, label: str, last_record_id: str, rows: int, complete: bool
+) -> None:
+    from django.utils import timezone
+
+    from .models import RotationCheckpoint
+
+    checkpoint, _ = RotationCheckpoint.objects.get_or_create(
+        user_id=user.pk, key_version=new_version, model_label=label
+    )
+    checkpoint.last_record_id = last_record_id
+    checkpoint.rows_rotated += rows
+    if complete:
+        checkpoint.completed_at = timezone.now()
+    checkpoint.save(update_fields=["last_record_id", "rows_rotated", "completed_at", "updated_at"])
+
+
 def rotate_model(
     spec: EncryptedModel,
     *,
@@ -237,16 +274,23 @@ def rotate_model(
     new_version: int,
     search_key: bytes,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
+    resume: bool = True,
 ) -> RotationReport:
     """Move one model's rows for one user onto the new key.
 
     Rows already at the target version are skipped, which is what makes a
-    re-run after an interruption cheap and correct rather than a second full
-    pass.
+    re-run after an interruption correct. The checkpoint is what makes it
+    *cheap*: a resumed run starts after the last row the previous run finished
+    rather than walking the whole history to find it.
     """
 
     report = RotationReport()
     queryset = spec.model().objects.filter(**{spec.owner_filter: user.pk})
+    if resume and not dry_run:
+        cursor = resume_point(user=user, new_version=new_version, label=spec.label)
+        if cursor:
+            queryset = queryset.filter(pk__gt=cursor)
     for batch in _batches(queryset, batch_size):
         with db_transaction.atomic():
             for record in batch:
@@ -287,10 +331,34 @@ def rotate_model(
                         report.indexes_rebuilt += rebuilt
                         index_columns = [column for column, _, _ in spec.indexes]
 
-                if changed:
+                if changed and not dry_run:
                     record.save(update_fields=[*changed, *index_columns])
+                if changed:
                     report.rows_rewritten += 1
                     report.fields_rewritten += len(changed)
+
+            if not dry_run:
+                # Inside the batch's transaction, so the checkpoint and the rows
+                # it describes commit together. A checkpoint written outside it
+                # could survive a rollback and claim work that was undone.
+                _record_progress(
+                    user=user,
+                    new_version=new_version,
+                    label=spec.label,
+                    last_record_id=str(batch[-1].pk),
+                    rows=len(batch),
+                    complete=False,
+                )
+
+    if not dry_run:
+        _record_progress(
+            user=user,
+            new_version=new_version,
+            label=spec.label,
+            last_record_id="",
+            rows=0,
+            complete=True,
+        )
     return report
 
 
@@ -303,6 +371,7 @@ def rotate_user(
     search_key: bytes,
     batch_size: int = DEFAULT_BATCH_SIZE,
     models: Sequence[EncryptedModel] | None = None,
+    dry_run: bool = False,
 ) -> RotationReport:
     """Move every encrypted value this user owns onto the new key."""
 
@@ -317,6 +386,7 @@ def rotate_user(
                 new_version=new_version,
                 search_key=search_key,
                 batch_size=batch_size,
+                dry_run=dry_run,
             )
         )
     return report
