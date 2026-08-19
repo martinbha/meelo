@@ -4,30 +4,50 @@ Rotation is a long operation over data a person cannot afford to lose, so the
 design is shaped entirely by what happens when it stops halfway.
 
 **Every envelope carries its key version.** That single fact is what makes this
-resumable without a progress table: a row already sealed under the target version
-is skipped, so re-running after a crash processes exactly what is left. There is
-no cursor to corrupt and no bookkeeping that can disagree with the data.
+*correct* to re-run: a row already sealed under the target version is skipped, so
+re-running after a crash processes exactly what is left, whatever any bookkeeping
+says.
+
+**A checkpoint makes it cheap.** ``RotationCheckpoint`` records how far the walk
+got, per user, per target version, per model, and a resumed run starts after it.
+Without one, every resumed run re-reads the whole history to find where it
+stopped — on the rotation that matters, over years of transactions, that is the
+difference between minutes and hours. It is strictly an optimisation: a
+checkpoint that is wrong, stale, or missing costs work done twice and can never
+leave a row behind, because the version check is still what decides.
 
 **The new key becomes active first, then the values move.** The other order would
 leave new writes landing under a key that is about to be retired, so the rotation
 would chase its own tail. Once the new key is active, everything written from
 that moment is already correct, and rotation only has to catch up with history.
 
-**Rotation runs with the application stopped.** The new key becomes active
-before the values move, so a row rotation has not reached yet cannot be read by a
-request arriving in the meantime — its envelope is still sealed under the retired
-key. That is a deliberate trade: the alternative leaves new writes landing under
-the key being retired, which is a correctness problem rather than an availability
-one. The operator's runbook says to stop the web and worker processes first.
+**Reads keep working while both versions are live.** Between the key switch and
+the last row moving, the database holds envelopes at two versions. A read that
+fails under the active key retries under the version its own envelope names,
+fetching that key through the scope and caching it — so a page rendered mid
+rotation shows every row rather than half of them. The retry happens only after
+the active key has failed and only for the version the envelope states; a value
+that opens under no key at all still fails loudly, because that is a corrupt row
+and not a rotation window.
+
+Stopping the application first is still the calmer operation, and the runbook
+still says to. The difference is that not doing so is now degraded performance
+rather than errors.
 
 **Nothing is retired until it has been read.** ``verify_user`` decrypts every
 field under the active key and reports what failed. An old key deleted while one
 row still needs it is not a degraded system, it is a row nobody can ever read
 again (specification 22.6, 25.4).
 
-Blind indexes are rebuilt in the same pass, because the search key is derived
-from the data key: a rotated merchant whose index still came from the old key
-would be unfindable, and nothing would say so.
+Blind indexes are rebuilt in the same pass. Since #161 the search key no longer
+moves with the data key, so the rebuild is a no-op in the common case — but a
+row whose index was written before the column existed is fixed here as well as
+by the backfill, and doing it twice costs nothing.
+
+``--dry-run`` reports the size of the job without creating a key version or
+writing a row. It deliberately does not provision the next version: a dry run
+that left a key behind would have changed the thing it was asked only to
+describe.
 """
 
 from __future__ import annotations
