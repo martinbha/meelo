@@ -176,6 +176,48 @@ class EncryptedFieldsMixin(models.Model):
         self._check_declared([field])
         return read_model_field(self, field, key=key, user_id=self.encryption_owner_id)
 
+    # ------------------------------------------------------------------
+    # Structured values
+    # ------------------------------------------------------------------
+
+    def encrypt_json_field(
+        self, field: str, value: Any, *, key: bytes, key_version: int = 1
+    ) -> None:
+        """Encrypt a structure as canonical JSON."""
+
+        from .encrypted_values import encode_json
+
+        self.encrypt_fields({field: encode_json(value)}, key=key, key_version=key_version)
+
+    def read_json_field(
+        self, field: str, *, key: bytes | None = None, expected: Any = object, default: Any = None
+    ) -> Any:
+        """Read a structure back, refusing anything that is not the shape asked for.
+
+        An empty column returns ``default`` rather than raising: a match stored
+        without features has no features, which is a legitimate answer and not
+        a malformed payload.
+        """
+
+        from .encrypted_values import decode_json
+
+        payload = self.read_field(field, key=key)
+        if not payload:
+            return default
+        return decode_json(payload, expected=expected)
+
+    def encrypt_money_field(
+        self, field: str, amount: Any, *, key: bytes, key_version: int = 1
+    ) -> None:
+        from .encrypted_values import encode_money
+
+        self.encrypt_fields({field: encode_money(amount)}, key=key, key_version=key_version)
+
+    def read_money_field(self, field: str, *, key: bytes | None = None) -> Any:
+        from .encrypted_values import decode_money
+
+        return decode_money(self.read_field(field, key=key))
+
     def plaintext_fields(self) -> tuple[str, ...]:
         """Declared fields currently holding something readable.
 
