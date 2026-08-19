@@ -23,6 +23,7 @@ from django.db import transaction as db_transaction
 from apps.categorization.normalization import merchant_blind_index, normalize_merchant
 from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.searchable import approval_code_index
 from apps.core.value_objects import Currency, Money
 from apps.ocr.models import OcrRun
 from apps.parsing.contracts import ParsedObservation, TransactionDirection
@@ -206,9 +207,17 @@ def _encrypt_fields(
             # A merchant that normalizes to nothing is not a lookup key. The
             # raw text is still kept; only the index is skipped.
             normalized = ""
-    if normalized and blind_index_key is not None:
-        record.merchant_blind_index = merchant_blind_index(
-            parsed.merchant or "", user_id=record.user_id, key=blind_index_key
+    if blind_index_key is not None:
+        # Written on the same pass as the ciphertext, so an indexed row and an
+        # encrypted row are never two different sets. A value that normalizes
+        # to nothing gets no token: an index over "" would match every row that
+        # also had nothing, which reads as a hit and is not one.
+        if normalized:
+            record.merchant_blind_index = merchant_blind_index(
+                parsed.merchant or "", user_id=record.user_id, key=blind_index_key
+            )
+        record.approval_code_blind_index = approval_code_index(
+            parsed.approval_code or "", user_id=record.user_id, key=blind_index_key
         )
 
     plaintexts = {
