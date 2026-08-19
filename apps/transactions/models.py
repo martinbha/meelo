@@ -130,6 +130,10 @@ class CanonicalTransaction(EncryptedFieldsMixin, models.Model):
             models.Index(fields=("user", "occurred_at"), name="transaction_user_date_idx"),
             models.Index(fields=("user", "status"), name="transaction_user_status_idx"),
             models.Index(fields=("user", "merchant_blind_index"), name="transaction_merchant_idx"),
+            models.Index(
+                fields=("user", "counterparty_blind_index"),
+                name="transaction_counterparty_idx",
+            ),
         ]
 
     def clean(self) -> None:

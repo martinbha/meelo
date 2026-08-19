@@ -40,6 +40,10 @@ class FinancialAccount(EncryptedFieldsMixin, models.Model):
     institution_blind_index = models.CharField(max_length=128)
     account_type = models.CharField(max_length=32, choices=AccountType.choices)
     masked_identifier_encrypted = models.TextField(blank=True)
+    #: The digits of the account number, keyed. A parser that reads "···1234"
+    #: off a screenshot needs to find the account it belongs to without
+    #: decrypting every account the user has.
+    identifier_blind_index = models.CharField(max_length=128, blank=True)
     identifier_last_four = models.CharField(max_length=4, blank=True)
     currency = models.CharField(max_length=3, default="KRW")
     opening_balance_encrypted = models.TextField(default="")
@@ -73,6 +77,14 @@ class FinancialAccount(EncryptedFieldsMixin, models.Model):
         indexes = [
             models.Index(fields=("user", "is_active"), name="financial_account_active_idx"),
             models.Index(fields=("user", "account_type"), name="financial_account_type_idx"),
+            models.Index(
+                fields=("user", "institution_blind_index"),
+                name="financial_account_inst_idx",
+            ),
+            models.Index(
+                fields=("user", "identifier_blind_index"),
+                name="financial_account_ident_idx",
+            ),
         ]
 
     def clean(self) -> None:

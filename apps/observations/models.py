@@ -116,6 +116,10 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
     )
     balance_after_encrypted = models.TextField(blank=True)
     approval_code_encrypted = models.TextField(blank=True)
+    #: An approval code identifies one authorisation exactly, which is what
+    #: makes it the strongest duplicate signal there is — and it is six digits,
+    #: so it can only be searched keyed (specification 22.4).
+    approval_code_blind_index = models.CharField(max_length=128, blank=True)
     installment_months = models.PositiveSmallIntegerField(blank=True, null=True)
     transaction_type_guess = models.CharField(
         max_length=32,
@@ -217,6 +221,10 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
             models.Index(fields=("user", "review_status"), name="observation_user_status_idx"),
             models.Index(fields=("user", "occurred_at"), name="observation_user_date_idx"),
             models.Index(fields=("user", "merchant_blind_index"), name="observation_merchant_idx"),
+            models.Index(
+                fields=("user", "approval_code_blind_index"),
+                name="observation_approval_idx",
+            ),
             models.Index(
                 fields=("source_document", "row_index"), name="observation_document_row_idx"
             ),
