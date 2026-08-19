@@ -66,6 +66,9 @@ class DataKeyScope:
     #: unwrapping a second key for a page that only renders values would put a
     #: second secret in memory for no reason.
     _search_key: list[bytes] = field(default_factory=list, repr=False, compare=False)
+    #: Retired key versions, unwrapped only if a half-rotated row needs one.
+    #: Empty outside a rotation window, which is almost always.
+    _versioned_keys: dict[int, bytes] = field(default_factory=dict, repr=False, compare=False)
 
     def matches(self, user: Any) -> bool:
         return self.user_id == getattr(user, "pk", None)
@@ -294,3 +297,30 @@ def require_search_key(*, user: Any, document: Any) -> bytes:
         scope,
         unwrap=lambda: get_worker_search_key(document=document, master_key=load_master_key()),
     )
+
+
+def data_key_for_version(*, user: Any, version: int, master_key: bytes | None = None) -> bytes:
+    """One specific key version for this user, unwrapped.
+
+    Needed only during a rotation, when a row may still be sealed under the
+    version that is on its way out. Outside that window every envelope carries
+    the active version and this is never reached.
+
+    Cached on the scope alongside the active key, so a page that reads a hundred
+    half-rotated rows unwraps the retired key once rather than a hundred times.
+    """
+
+    scope = _scope.get()
+    if scope is not None and not scope.matches(user):
+        raise KeyScopeError("The open data-key scope belongs to another user.")
+    if scope is not None and version in scope._versioned_keys:
+        return scope._versioned_keys[version]
+    key = get_user_data_key(
+        user=user,
+        actor=user,
+        master_key=master_key or load_master_key(),
+        version=version,
+    )
+    if scope is not None:
+        scope._versioned_keys[version] = key
+    return key

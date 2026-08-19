@@ -475,6 +475,8 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "users.UserSearchKey": "Per-user wrapped blind-index keys, versioned separately from the "
     "data keys so the two can rotate on their own schedules (specification 22.4).",
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
+    "core.RotationCheckpoint": "How far a key rotation got, so a resumed run does not re-read "
+    "the whole history to find where it stopped (specification 22.6).",
     "processing.ProcessingJob": "The database-backed work queue (specification 3.3).",
     "ledger.ChartOfAccounts": "The double-entry chart the ledger posts into (specification 7).",
     "ledger.LedgerAccount": "Ledger accounts and their normal balances (specification 7).",

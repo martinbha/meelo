@@ -39,6 +39,7 @@ from django.db import models
 
 from .crypto import (
     EncryptionError,
+    InvalidCiphertextError,
     decrypt_model_field,
     encrypt_model_field,
     is_encrypted_value,
@@ -174,7 +175,47 @@ class EncryptedFieldsMixin(models.Model):
         """
 
         self._check_declared([field])
-        return read_model_field(self, field, key=key, user_id=self.encryption_owner_id)
+        try:
+            return read_model_field(self, field, key=key, user_id=self.encryption_owner_id)
+        except InvalidCiphertextError:
+            # A rotation in flight leaves rows under two versions at once, and a
+            # read arriving in between must not fail. The envelope says which
+            # key sealed it, so the retired one can be fetched and tried —
+            # once, for that version, and only when the active key has already
+            # failed. Everything else stays a hard failure: a value that opens
+            # under no key at all is a value that must stay loud.
+            recovered = self._read_under_envelope_version(field)
+            if recovered is None:
+                raise
+            return recovered
+
+    def _read_under_envelope_version(self, field: str) -> str | None:
+        """Retry one field under the key version its envelope names.
+
+        Returns ``None`` when there is nothing to retry with — no owner, no
+        older version, or a version that is the one that just failed — so the
+        caller re-raises the original authentication error rather than a
+        confusing one about key lookup.
+        """
+
+        from .crypto import envelope_key_version
+        from .key_scope import data_key_for_version
+
+        stored = getattr(self, field, "") or ""
+        version = envelope_key_version(stored)
+        owner_id = self.encryption_owner_id
+        if not version or owner_id is None:
+            return None
+        try:
+            from django.contrib.auth import get_user_model
+
+            owner = get_user_model().objects.filter(pk=owner_id).first()
+            if owner is None or owner.encryption_key_version == version:
+                return None
+            historic = data_key_for_version(user=owner, version=version)
+        except Exception:  # noqa: BLE001 - the original failure is the useful one
+            return None
+        return read_model_field(self, field, key=historic, user_id=owner_id)
 
     # ------------------------------------------------------------------
     # Structured values

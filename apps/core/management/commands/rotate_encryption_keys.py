@@ -65,6 +65,11 @@ class Command(BaseCommand):
             help="Check that every value opens under the active key, changing nothing.",
         )
         parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report what a rotation would move, without a new key or any writes.",
+        )
+        parser.add_argument(
             "--retire",
             action="store_true",
             help="Delete superseded key versions, but only after a clean verification.",
@@ -81,6 +86,9 @@ class Command(BaseCommand):
         for user in users.order_by("pk"):
             if options["verify_only"]:
                 self._verify(user, master_key=master_key, batch_size=options["batch_size"])
+                continue
+            if options["dry_run"]:
+                self._dry_run(user, master_key=master_key, batch_size=options["batch_size"])
                 continue
             self._rotate(
                 user,
@@ -109,6 +117,36 @@ class Command(BaseCommand):
             self.stderr.write(f"  unreadable {problem}")
         for problem in report.stale_versions:
             self.stderr.write(f"  not yet rotated {problem}")
+
+    def _dry_run(self, user: Any, *, master_key: bytes, batch_size: int) -> None:
+        """Report the size of the job without creating a key or writing a row.
+
+        Deliberately does not provision the next key version. A dry run that
+        left a new key behind would have changed the thing it was asked only to
+        describe, and the next real run would then rotate to the version after
+        it.
+        """
+
+        current = self._active(user)
+        if current is None:
+            self.stdout.write(f"{user.email}: no active key, nothing to rotate.")
+            return
+        key = get_user_data_key(user=user, actor=user, master_key=master_key)
+        report = rotate_user(
+            user=user,
+            old_key=key,
+            # The same key on both sides: nothing is written, and re-encrypting
+            # under the current key would be a no-op even if it were.
+            new_key=key,
+            new_version=current.version,
+            search_key=get_user_search_key(user=user, actor=user, master_key=master_key),
+            batch_size=batch_size,
+            dry_run=True,
+        )
+        self.stdout.write(
+            f"{user.email}: {report.rows_examined} row(s) would be examined at "
+            f"version {current.version}. Nothing was written."
+        )
 
     def _rotate(self, user: Any, *, master_key: bytes, batch_size: int, retire: bool) -> None:
         current = self._active(user)
@@ -174,7 +212,11 @@ class Command(BaseCommand):
             # Only now. Everything has been read back under the new key, so no
             # row still depends on the one being removed.
             removed = UserDataKey.objects.filter(user=user, version__lt=new_version).delete()
-            self.stdout.write(f"{user.email}: retired {removed[0]} superseded key(s).")
+            self.stdout.write(
+                f"{user.email}: verification found {verification.values_checked} value(s) "
+                f"at version {new_version} and none remaining at any earlier one; "
+                f"retired {removed[0]} superseded key(s)."
+            )
         else:
             self.stdout.write(
                 f"{user.email}: verified. Re-run with --retire to remove version {current.version}."
