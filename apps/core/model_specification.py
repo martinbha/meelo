@@ -103,6 +103,11 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "created_at",
             "updated_at",
         ),
+        additional={
+            "identifier_blind_index": "Keyed token for the account number's digits, so a parser "
+            "that reads a masked identifier off a screenshot can find the account without "
+            "decrypting every account the user has (specification 22.4).",
+        },
         enumerations={
             "AccountType": (
                 "checking",
@@ -324,6 +329,9 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "risk_score": "Worst-problem score the queue sorts on.",
             "reviewed_by_id": "Who decided, matching the audit requirement in section 23.",
             "reviewed_at": "When they decided.",
+            "approval_code_blind_index": "Keyed token for the approval code, which identifies one "
+            "authorisation exactly and is the strongest duplicate signal there is "
+            "(specification 16.3, 22.4).",
             "corrected_fields": "Which fields a reviewer changed, for the accuracy metrics in "
             "specification 31.3.",
             "merged_into_id": "The surviving row when this one was merged, so the merge can "

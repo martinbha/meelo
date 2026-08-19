@@ -70,7 +70,13 @@ class ManualTransactionForm(forms.Form):
         except (InvalidOperation, ValueError):
             return None
 
-    def save(self, *, data_key: bytes | None = None, key_version: int = 1) -> CanonicalTransaction:
+    def save(
+        self,
+        *,
+        data_key: bytes | None = None,
+        blind_index_key: bytes | None = None,
+        key_version: int = 1,
+    ) -> CanonicalTransaction:
         """Persist the entry, encrypting its values when a key is supplied.
 
         The view always supplies one. The parameter is optional so a test can
@@ -94,7 +100,16 @@ class ManualTransactionForm(forms.Form):
             "notes": data.get("notes", ""),
         }
         if self.instance is None:
-            return create_manual_transaction(**kwargs, data_key=data_key, key_version=key_version)
+            return create_manual_transaction(
+                **kwargs,
+                data_key=data_key,
+                blind_index_key=blind_index_key,
+                key_version=key_version,
+            )
         return update_manual_transaction(
-            self.instance.pk, **kwargs, data_key=data_key, key_version=key_version
+            self.instance.pk,
+            **kwargs,
+            data_key=data_key,
+            blind_index_key=blind_index_key,
+            key_version=key_version,
         )

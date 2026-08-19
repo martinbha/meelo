@@ -225,6 +225,42 @@ that turns a guess into a confirmed hit.
 
 It is a secret of the same standing as the encryption key.
 
+## What each domain normalizes to
+
+A blind index only matches when both sides produce the same token, so the
+normalization is as much part of the index as the key is. Getting it wrong does
+not raise — it produces a token that matches nothing, and a lookup that quietly
+returns no rows. That is indistinguishable from "there is nothing there", which
+is why `apps.core.searchable` holds the rules once and both the write path and
+the lookup path read them.
+
+| Domain | Normalized to | Because |
+| --- | --- | --- |
+| `merchant` | `apps.categorization.normalization` | Three spellings of one shop share a rule |
+| `counterparty` | Case-folded, whitespace collapsed | A person's name is not a merchant; merchant normalization strips branch and processor noise a bank name legitimately contains |
+| `institution` | As counterparty | As counterparty |
+| `approval_code` | Case, spacing, and separators removed | A card app prints `12-3456` where the bank prints `123456`; one authorisation, two spellings |
+| `identifier` | Digits only | Masking is the bank's presentation, not part of the number |
+
+A value that normalizes to nothing gets **no token**, not a token of the empty
+string. An index over `""` matches every other empty row, which reads as a hit
+and is not one.
+
+The domain follows the *meaning*, not the column name. `CategoryRule` stores its
+pattern in `merchant_pattern_blind_index` whatever the rule is about, so
+`rule_pattern_index` picks the domain from the rule type — a counterparty rule
+indexed in the merchant domain is compared against a counterparty token and can
+never fire, for any input, silently.
+
+## Backfilling
+
+`manage.py backfill_blind_indexes` rebuilds tokens that are missing or stale. It
+is idempotent because it compares the stored token against what it should be and
+writes only on a difference, and resumable because the remaining work is a query
+rather than a saved position — an interruption leaves finished rows finished.
+Pages are walked with a keyset cursor on the primary key, not `OFFSET`, since
+the rows are being written as they are read.
+
 ## Where they are used
 
 - **Merchant lookup** — the alias and rule matching in `CATEGORIES.md`, built from

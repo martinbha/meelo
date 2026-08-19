@@ -7,9 +7,11 @@ from typing import Any
 from django.db import transaction as db_transaction
 
 from apps.categorization.models import Category
+from apps.categorization.normalization import merchant_blind_index
 from apps.core.audit import record_audit_event
 from apps.core.errors import InvalidRequestError
 from apps.core.ownership import owned_queryset
+from apps.core.searchable import counterparty_index
 from apps.core.value_objects import Currency, Money
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -47,6 +49,38 @@ def _amount(amount_minor: int | Decimal, currency: str) -> Money:
     return Money(minor, Currency(currency))
 
 
+def _apply_blind_indexes(
+    transaction: CanonicalTransaction,
+    *,
+    merchant: str,
+    counterparty: str,
+    blind_index_key: bytes | None,
+) -> None:
+    """Write the tokens that make this row findable.
+
+    Without them a manually entered transaction is invisible to every exact
+    lookup the system has: no alias matches it, no rule fires on it, and the
+    "what did I file this merchant under last time" question returns nothing.
+    None of that raises — the row saves, the reports add it up, and only the
+    categorisation quietly stops working, which is why it went unnoticed.
+
+    Each value is indexed in its own domain. A counterparty named ``4200`` and a
+    merchant named ``4200`` must not produce the same token, or a match in one
+    column would imply a match in the other.
+    """
+
+    if blind_index_key is None:
+        return
+    transaction.merchant_blind_index = (
+        merchant_blind_index(merchant, user_id=transaction.user_id, key=blind_index_key)
+        if merchant
+        else ""
+    )
+    transaction.counterparty_blind_index = counterparty_index(
+        counterparty, user_id=transaction.user_id, key=blind_index_key
+    )
+
+
 #: The fields on a transaction that hold a value rather than a reference. All of
 #: them are encrypted together once the row has an identity, because the
 #: associated data binds each one to this record.
@@ -68,6 +102,7 @@ def create_manual_transaction(
     counterparty: str = "",
     notes: str = "",
     data_key: bytes | None = None,
+    blind_index_key: bytes | None = None,
     key_version: int = 1,
 ) -> CanonicalTransaction:
     _validate_related_objects(
@@ -105,6 +140,12 @@ def create_manual_transaction(
         transaction.merchant_encrypted = merchant
         transaction.counterparty_encrypted = counterparty
         transaction.notes_encrypted = notes
+    _apply_blind_indexes(
+        transaction,
+        merchant=merchant,
+        counterparty=counterparty,
+        blind_index_key=blind_index_key,
+    )
     validate_transaction_invariants(transaction, data_key=data_key)
     transaction.save()
     record_audit_event(
@@ -132,6 +173,7 @@ def update_manual_transaction(
     counterparty: str = "",
     notes: str = "",
     data_key: bytes | None = None,
+    blind_index_key: bytes | None = None,
     key_version: int = 1,
 ) -> CanonicalTransaction:
     transaction = (
@@ -173,6 +215,12 @@ def update_manual_transaction(
         transaction.merchant_encrypted = merchant
         transaction.counterparty_encrypted = counterparty
         transaction.notes_encrypted = notes
+    _apply_blind_indexes(
+        transaction,
+        merchant=merchant,
+        counterparty=counterparty,
+        blind_index_key=blind_index_key,
+    )
     validate_transaction_invariants(transaction, data_key=data_key)
     transaction.save()
     record_audit_event(
