@@ -4,6 +4,43 @@
 
 How a financial value is stored, and what that buys.
 
+## Where the master key comes from
+
+Specification 22.1 lists several places it may live. They are not
+interchangeable — every one ends as the same thirty-two bytes, but they fail and
+leak differently.
+
+| Source | Path | Trade-off |
+| --- | --- | --- |
+| Docker secret | `/run/secrets/field_encryption_master_key` | A tmpfs file the daemon mounts. Not in the image, not in the Compose file, not in the container's environment, so `docker inspect` does not show it. The default. |
+| systemd credential | `$CREDENTIALS_DIRECTORY/field_encryption_master_key` | The same idea without Docker: readable only by the service user, removed when the unit stops. Preferred when the application runs as a unit. |
+| Root-owned file | Whatever `FIELD_ENCRYPTION_MASTER_KEY_FILE` names | The weakest of the three, and allowed because sometimes it is what an operator has. |
+
+An explicitly configured path wins over the conventional ones: an operator who
+named a path meant it, and silently reading a different file would be worse than
+failing. Otherwise both conventional locations are found without configuration,
+so a standard Compose or systemd deployment needs none.
+
+**The key is never read from an environment variable.** A variable is visible to
+anything that can read `/proc/<pid>/environ`, survives into core dumps, and is
+inherited by every child process. Even the "root-owned environment file" option
+is read as a *file*.
+
+**A file readable beyond its owner is refused.** Group counts as beyond — "the
+group can read it" is a list of accounts nobody audits. The check runs *before*
+the read, so a world-readable key never reaches the process at all; a refusal
+that happens after the secret is in memory has lost most of what refusing was
+for. The error names the path and the mode and tells the operator what to run.
+
+**Production refuses to start without one.** The check is at startup, in
+`CoreConfig.ready`, and it loads the key rather than testing whether a variable
+is set. Requiring the variable enforced the wrong thing: a deployment that named
+a path to a file that did not exist started perfectly happily.
+
+Nothing in this path puts the key's bytes into a message. A malformed key is
+reported as malformed, not echoed — a stack trace that helpfully includes the
+secret is a worse outcome than the failure it was reporting.
+
 ## The envelope
 
 Every value-bearing field holds one AES-256-GCM envelope, dot-separated:

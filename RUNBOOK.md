@@ -63,7 +63,7 @@ with a key that is also in the repository.
 | `DOMAIN`, `DJANGO_ALLOWED_HOSTS` | The hostname Caddy will get a certificate for. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://` plus that hostname. |
 | `POSTGRES_*_PASSWORD` | Four distinct passwords, one per role — see below. |
-| `FIELD_ENCRYPTION_MASTER_KEY_SOURCE` | Path to the master key file. Next step. |
+| `FIELD_ENCRYPTION_MASTER_KEY_SOURCE` | Path to the master key file. Next step. Optional if you use a Docker secret. |
 
 The four PostgreSQL roles are not ceremony. The application connects as a role
 that can read and write rows but cannot alter a table; migrations connect as a
@@ -90,6 +90,21 @@ Store it in a password manager or on offline media. Do not store it in the same
 backup as the database: an archive containing both the lock and its key is a
 plaintext archive with extra steps. See
 [OPERATIONS.md](OPERATIONS.md#what-is-deliberately-not).
+
+`chmod 600` is not advice. The application checks the mode before it reads the
+file and refuses to start if anyone but the owner can read it, naming the path
+and the command to fix it.
+
+Two other places it will be found without any configuration, if you prefer them
+to a path in an environment file:
+
+- a **Docker secret** mounted at `/run/secrets/field_encryption_master_key`,
+  which keeps the key out of the image, the Compose file, and `docker inspect`;
+- a **systemd credential**, if the application runs as a unit with
+  `LoadCredential=field_encryption_master_key:/path/to/key`.
+
+Setting `FIELD_ENCRYPTION_MASTER_KEY_FILE` overrides both. [SECURITY.md](SECURITY.md)
+has the trade-offs.
 
 ### 4. Bring the stack up
 

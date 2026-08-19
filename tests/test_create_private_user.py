@@ -29,6 +29,7 @@ def master_key(tmp_path: Path, settings: Any) -> bytes:
     key = os.urandom(32)
     path = tmp_path / "master.key"
     path.write_text(base64.urlsafe_b64encode(key).decode(), encoding="ascii")
+    path.chmod(0o600)
     settings.FIELD_ENCRYPTION_MASTER_KEY_FILE = str(path)
     return key
 
