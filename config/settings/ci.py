@@ -8,13 +8,14 @@ that only ever runs on SQLite is a suite that has not tested the database the
 data lives in (#269).
 """
 
-from pathlib import Path
+# Inherits from ``testing`` rather than from ``base``, so this module differs
+# from the local suite in the database and in nothing else. Inheriting from
+# ``base`` meant every setting the test suite relaxes had to be relaxed twice,
+# and the two drifted the first time one of them gained an entry — CI then
+# failed on a difference that had nothing to do with PostgreSQL.
+from .testing import *  # noqa: F403
 
-from .base import *  # noqa: F403
-
-DEBUG = False
 SECRET_KEY = "ci-only-secret-key"
-ALLOWED_HOSTS = ["testserver"]
 
 DATABASES = {
     "default": {
@@ -39,7 +40,3 @@ DATABASES = {
         "TEST": {"MIRROR": "default"},
     },
 }
-
-# The same path the SQLite settings use. Two tests assert against it directly,
-# and the point of this module is to change the database, not the filesystem.
-DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-tests")
