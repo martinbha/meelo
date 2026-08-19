@@ -50,14 +50,7 @@ SPECIFICATION_ROUTES: tuple[SpecificationRoute, ...] = (
     SpecificationRoute("/", "dashboard"),
     SpecificationRoute("/login/", "login"),
     SpecificationRoute("/logout/", "logout"),
-    SpecificationRoute(
-        "/account/security/",
-        "account-security",
-        redirects_to="password-change",
-        note="Password change is the whole of account security today. Two-factor "
-        "enrolment, session listing, and recovery codes arrive with #170-#174, at "
-        "which point this path gets a page instead of a redirect.",
-    ),
+    SpecificationRoute("/account/security/", "account-security"),
     SpecificationRoute("/accounts/", "financial-account-list"),
     SpecificationRoute(
         "/accounts/new/",

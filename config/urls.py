@@ -62,6 +62,7 @@ from apps.transactions.views import (
     TransactionListView,
 )
 from apps.users.views import (
+    AccountSecurityView,
     UserLoginView,
     UserLogoutView,
     UserPasswordChangeView,
@@ -224,13 +225,7 @@ urlpatterns = [
     ),
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("rules/", CategoryRuleListView.as_view(), name="category-rule-list"),
-    # Password change is the whole of account security today; #170-#174 give
-    # this path a page of its own.
-    path(
-        "account/security/",
-        login_required(RedirectView.as_view(pattern_name="password-change", permanent=False)),
-        name="account-security",
-    ),
+    path("account/security/", AccountSecurityView.as_view(), name="account-security"),
     # The detail page already states the processing status. #189 replaces this
     # with the polling endpoint the progress UI needs.
     path(
