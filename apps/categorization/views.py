@@ -16,8 +16,7 @@ from django.shortcuts import redirect, render
 from django.views.generic import View
 
 from apps.core.errors import ApplicationError
-from apps.core.key_management import derive_blind_index_key
-from apps.core.key_scope import request_data_key
+from apps.core.key_scope import request_data_key, request_search_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 from apps.transactions.models import CanonicalTransaction
 
@@ -75,7 +74,7 @@ class CategoryCorrectionView(LoginRequiredMixin, View):
                 encryption_key=data_key,
                 # The same derivation import used, so the rule's index
                 # matches the one on the transaction it was written from.
-                blind_index_key=derive_blind_index_key(data_key),
+                blind_index_key=request_search_key(request),
                 apply_to_existing=form.cleaned_data["apply_to_existing"],
             )
         except ApplicationError as error:

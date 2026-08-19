@@ -35,8 +35,8 @@ from django.utils import timezone
 from apps.core.audit import record_audit_event
 from apps.core.key_management import (
     KEY_SIZE,
-    derive_blind_index_key,
     get_user_data_key,
+    get_user_search_key,
     load_master_key,
     wrap_data_key,
 )
@@ -147,7 +147,7 @@ class Command(BaseCommand):
             old_key=old_key,
             new_key=new_key,
             new_version=new_version,
-            search_key=derive_blind_index_key(new_key),
+            search_key=get_user_search_key(user=user, actor=user, master_key=master_key),
             batch_size=batch_size,
         )
         self.stdout.write(
