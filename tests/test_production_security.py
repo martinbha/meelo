@@ -56,11 +56,24 @@ def test_production_rejects_invalid_boolean(monkeypatch: Any) -> None:
         importlib.reload(module)
 
 
-def test_production_requires_external_master_key_path(monkeypatch: Any) -> None:
+def test_production_does_not_require_the_key_path_to_be_configured(monkeypatch: Any) -> None:
+    """A Docker secret and a systemd credential are found without a path.
+
+    The path used to be a required environment variable, which enforced the
+    wrong thing: that a variable was set, not that a key could be read. A
+    deployment mounting ``/run/secrets/field_encryption_master_key`` had to
+    name a path it did not choose, and one that named a path to a file that did
+    not exist started perfectly happily.
+    """
+
     monkeypatch.setenv("DJANGO_SECRET_KEY", "a" * 64)
     monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "example.com")
     monkeypatch.delenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", raising=False)
     module = importlib.import_module("config.settings.production")
 
-    with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_MASTER_KEY_FILE"):
-        importlib.reload(module)
+    importlib.reload(module)
+
+    assert module.FIELD_ENCRYPTION_MASTER_KEY_FILE == ""
+    # The guarantee moved to startup, where it checks the key rather than the
+    # variable. tests/test_master_key_sources.py holds that end of it.
+    assert module.FIELD_ENCRYPTION_MASTER_KEY_REQUIRED is True

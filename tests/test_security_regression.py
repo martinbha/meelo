@@ -408,7 +408,12 @@ def test_production_settings_keep_the_hardening_on(monkeypatch: Any) -> None:
 
 @pytest.mark.parametrize(
     "missing",
-    ["DJANGO_SECRET_KEY", "DJANGO_ALLOWED_HOSTS", "FIELD_ENCRYPTION_MASTER_KEY_FILE"],
+    # The master key path is deliberately absent from this list. It is no
+    # longer a required variable — a Docker secret and a systemd credential are
+    # found without one — and the guarantee it used to stand for is enforced at
+    # startup instead, where it checks that a key actually loads rather than
+    # that a variable happens to be set.
+    ["DJANGO_SECRET_KEY", "DJANGO_ALLOWED_HOSTS"],
 )
 def test_production_refuses_to_start_without_its_secrets(missing: str, monkeypatch: Any) -> None:
     """A default is how a development secret key reaches production.
