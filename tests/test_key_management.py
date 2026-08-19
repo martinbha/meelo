@@ -31,11 +31,13 @@ def test_master_key_file_requires_valid_external_key(tmp_path: Path) -> None:
     path = tmp_path / "master-key"
     master_key = os.urandom(32)
     path.write_text(base64.urlsafe_b64encode(master_key).decode(), encoding="ascii")
+    path.chmod(0o600)
 
     assert load_master_key(path) == master_key
-    with pytest.raises(KeyManagementError, match="cannot be read"):
+    with pytest.raises(KeyManagementError, match="cannot be inspected"):
         load_master_key(tmp_path / "missing")
     path.write_text("not-a-key", encoding="ascii")
+    path.chmod(0o600)
     with pytest.raises(KeyManagementError, match="base64"):
         load_master_key(path)
 
