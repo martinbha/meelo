@@ -8,7 +8,6 @@ same safety rules apply — a confirmed transaction can never be merged away.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
@@ -16,6 +15,7 @@ from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
+from apps.core.encrypted_values import MalformedPayloadError
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
@@ -136,9 +136,11 @@ def _encrypted_features(
 ) -> str:
     if not features or data_key is None:
         return ""
-    payload = json.dumps(sorted(features), separators=(",", ":"))
-    match.encrypt_fields(
-        {"match_features_json_encrypted": payload}, key=data_key, key_version=key_version
+    match.encrypt_json_field(
+        "match_features_json_encrypted",
+        sorted(features),
+        key=data_key,
+        key_version=key_version,
     )
     return match.match_features_json_encrypted
 
@@ -153,10 +155,13 @@ def decrypt_match_features(match: ReconciliationMatch, *, data_key: bytes) -> tu
 
     if not match.match_features_json_encrypted:
         return ()
-    payload = match.decrypt_field("match_features_json_encrypted", key=data_key)
     try:
-        values = json.loads(payload)
-    except json.JSONDecodeError:
+        values = match.read_json_field(
+            "match_features_json_encrypted", key=data_key, expected=list, default=[]
+        )
+    except MalformedPayloadError:
+        # A candidate whose evidence cannot be read should show no reasons
+        # rather than break the queue it sits in. The score is still there.
         return ()
     return tuple(str(value) for value in values)
 

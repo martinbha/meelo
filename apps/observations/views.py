@@ -7,7 +7,6 @@ bank statement image must never be reachable by anyone who guesses a URL.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from django.contrib import messages
@@ -16,6 +15,7 @@ from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
+from apps.core.encrypted_values import MalformedPayloadError, decode_json
 from apps.core.errors import ApplicationError
 from apps.core.key_scope import request_data_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
@@ -159,14 +159,19 @@ class ObservationReviewView(LoginRequiredMixin, View):
 
 
 def _region(payload: str) -> dict[str, int] | None:
-    """Decode a stored source region into percentages the template can use."""
+    """Decode a stored source region into the box the template highlights.
+
+    A malformed region is not an error worth showing anybody. The row is still
+    reviewable — it just cannot be pointed at on the screenshot — so this
+    returns nothing rather than raising and taking the page with it.
+    """
 
     if not payload:
         return None
     try:
-        region = json.loads(payload)
+        region = decode_json(payload, expected=dict)
         return {key: int(region[key]) for key in ("left", "top", "right", "bottom")}
-    except (ValueError, KeyError, TypeError):
+    except (MalformedPayloadError, KeyError, TypeError, ValueError):
         return None
 
 

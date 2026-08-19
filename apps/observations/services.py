@@ -12,7 +12,6 @@ matter most:
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +21,7 @@ from django.db import transaction as db_transaction
 
 from apps.categorization.normalization import merchant_blind_index, normalize_merchant
 from apps.core.audit import record_audit_event
+from apps.core.encrypted_values import encode_json
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.searchable import approval_code_index
 from apps.core.value_objects import Currency, Money
@@ -84,15 +84,13 @@ def _source_region(observation: ParsedObservation) -> str:
     region = observation.source_region
     if region is None:
         return ""
-    return json.dumps(
+    return encode_json(
         {
             "left": region.left,
             "top": region.top,
             "right": region.right,
             "bottom": region.bottom,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
+        }
     )
 
 
