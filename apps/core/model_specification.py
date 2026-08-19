@@ -464,6 +464,8 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
 #: covers the whole schema rather than only the part the specification tabulates.
 SUPPORTING_MODELS: Mapping[str, str] = {
     "users.UserDataKey": "Per-user wrapped data keys and their versions (specification 22.2).",
+    "users.UserSearchKey": "Per-user wrapped blind-index keys, versioned separately from the "
+    "data keys so the two can rotate on their own schedules (specification 22.4).",
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
     "processing.ProcessingJob": "The database-backed work queue (specification 3.3).",
     "ledger.ChartOfAccounts": "The double-entry chart the ledger posts into (specification 7).",
