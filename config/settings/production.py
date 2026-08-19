@@ -44,5 +44,11 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")  # noqa: F405
-FIELD_ENCRYPTION_MASTER_KEY_FILE = required_env("FIELD_ENCRYPTION_MASTER_KEY_FILE")
+# Optional, because a Docker secret at /run/secrets and a systemd credential are
+# both found without configuration — a deployment using either should not have
+# to name a path it did not choose. Naming one still wins: an operator who set
+# it meant it, and silently reading a different file would be worse than
+# failing. What is *not* optional is that a valid key is found at all, which is
+# what the flag below enforces at startup (specification 22.1).
+FIELD_ENCRYPTION_MASTER_KEY_FILE = os.getenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "")
 FIELD_ENCRYPTION_MASTER_KEY_REQUIRED = True

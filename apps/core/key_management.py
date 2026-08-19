@@ -9,7 +9,6 @@ from typing import Any
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from django.conf import settings
 from django.db import transaction
 
 from apps.users.models import UserDataKey, UserSearchKey
@@ -51,13 +50,23 @@ def _decode_master_key(value: str) -> bytes:
 
 
 def load_master_key(path: str | Path | None = None) -> bytes:
-    resolved = Path(path or settings.FIELD_ENCRYPTION_MASTER_KEY_FILE)
-    if not str(resolved) or str(resolved) == ".":
-        raise KeyManagementError("FIELD_ENCRYPTION_MASTER_KEY_FILE is required.")
+    """The master key, from an explicit path or from the configured sources.
+
+    An explicit ``path`` is for tests and for the bootstrap command, which has
+    to read a file it has just written. Everything else goes through
+    :mod:`apps.core.master_key`, which knows where a Docker secret and a systemd
+    credential live and refuses a file anybody but its owner can read.
+    """
+
+    from .master_key import KeySource, MasterKeySourceError, find_source, read_source
+
     try:
-        value = resolved.read_text(encoding="ascii")
-    except (OSError, UnicodeError) as exc:
-        raise KeyManagementError("The field-encryption master key cannot be read.") from exc
+        source = KeySource(Path(path), "the requested path") if path else find_source()
+        value = read_source(source)
+    except MasterKeySourceError as exc:
+        # Re-raised as a key-management error so callers keep one exception to
+        # catch, with the operator-facing message carried through intact.
+        raise KeyManagementError(str(exc)) from exc
     return _decode_master_key(value)
 
 
