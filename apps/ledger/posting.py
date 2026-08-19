@@ -7,6 +7,7 @@ from typing import Any
 from django.db import transaction as db_transaction
 
 from apps.core.encrypted_fields import require_encryption_key
+from apps.core.encrypted_values import decode_money, encode_money
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.value_objects import Currency, Money
 from apps.transactions.models import CanonicalTransaction
@@ -21,18 +22,10 @@ class Posting:
     amount: Money
 
 
-def serialize_money(amount: Money) -> str:
-    return f"{amount.amount_minor}:{amount.resolved_currency.code}"
-
-
-def deserialize_money(value: str) -> Money:
-    try:
-        amount_minor, currency = value.split(":", maxsplit=1)
-        return Money(int(amount_minor), currency)
-    except (TypeError, ValueError) as exc:
-        raise InvalidRequestError(
-            "Transaction amounts must be encoded as minor_units:CURRENCY."
-        ) from exc
+#: One encoding for money, shared with everything else that stores an amount.
+#: Kept as names here because half the ledger already imports them by these.
+serialize_money = encode_money
+deserialize_money = decode_money
 
 
 def post_balanced_transaction(

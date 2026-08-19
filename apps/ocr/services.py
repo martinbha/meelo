@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import timedelta
 from typing import Any
 
@@ -23,8 +22,7 @@ def _encrypted_json(
     data_key: bytes,
     key_version: int,
 ) -> str:
-    plaintext = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    run.encrypt_fields({field: plaintext}, key=data_key, key_version=key_version)
+    run.encrypt_json_field(field, value, key=data_key, key_version=key_version)
     return str(getattr(run, field))
 
 
