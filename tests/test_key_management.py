@@ -63,8 +63,11 @@ def test_provision_and_access_store_only_wrapped_user_key(user: Any) -> None:
     assert len(data_key) == 32
     assert record.wrapped_key != base64.urlsafe_b64encode(data_key).decode()
     assert UserDataKey.objects.filter(user=user).count() == 1
+    # Both keys are provisioned at once — a value encrypted with no way to
+    # index it is a value nothing can look up — and each says so separately.
     assert list(user.audit_events.values_list("event_type", flat=True)) == [
         AuditEvent.EventType.ENCRYPTION_KEY_PROVISIONED,
+        AuditEvent.EventType.SEARCH_KEY_PROVISIONED,
         AuditEvent.EventType.ENCRYPTION_KEY_ACCESSED,
     ]
 
@@ -81,31 +84,36 @@ def test_user_key_access_rejects_other_users_and_wrong_master(user: Any) -> None
         get_user_data_key(user=user, actor=user, master_key=os.urandom(32))
 
 
-def test_the_search_key_is_derived_rather_than_stored() -> None:
-    """Every caller holding the data key reaches the same search key."""
+def test_the_search_key_derivation_is_stable_per_user_and_version() -> None:
+    """The same master key, user, and version always give the same search key."""
 
-    from apps.core.key_management import derive_blind_index_key
+    from apps.core.key_management import derive_search_key
 
-    data_key = os.urandom(32)
+    master_key = os.urandom(32)
 
-    assert derive_blind_index_key(data_key) == derive_blind_index_key(data_key)
-
-
-def test_the_search_key_is_not_the_data_key() -> None:
-    """An index leak must not hand over the plaintext with it."""
-
-    from apps.core.key_management import derive_blind_index_key
-
-    data_key = os.urandom(32)
-    derived = derive_blind_index_key(data_key)
-
-    assert derived != data_key
-    assert len(derived) == 32
-    assert derived != derive_blind_index_key(os.urandom(32))
+    assert derive_search_key(master_key=master_key, user_id=7, version=1) == derive_search_key(
+        master_key=master_key, user_id=7, version=1
+    )
 
 
-def test_a_malformed_data_key_cannot_derive_a_search_key() -> None:
-    from apps.core.key_management import KeyManagementError, derive_blind_index_key
+def test_the_search_key_differs_by_user_by_version_and_by_master_key() -> None:
+    """Each of the three has to change the key, or one of them is decoration."""
+
+    from apps.core.key_management import derive_search_key
+
+    master_key = os.urandom(32)
+    baseline = derive_search_key(master_key=master_key, user_id=7, version=1)
+
+    assert baseline != derive_search_key(master_key=master_key, user_id=8, version=1)
+    assert baseline != derive_search_key(master_key=master_key, user_id=7, version=2)
+    assert baseline != derive_search_key(master_key=os.urandom(32), user_id=7, version=1)
+    assert len(baseline) == 32
+
+
+def test_a_malformed_master_key_or_version_cannot_derive_a_search_key() -> None:
+    from apps.core.key_management import KeyManagementError, derive_search_key
 
     with pytest.raises(KeyManagementError):
-        derive_blind_index_key(b"short")
+        derive_search_key(master_key=b"short", user_id=1, version=1)
+    with pytest.raises(KeyManagementError):
+        derive_search_key(master_key=os.urandom(32), user_id=1, version=0)

@@ -21,8 +21,8 @@ from apps.categorization.models import Category
 from apps.categorization.normalization import merchant_blind_index
 from apps.core.crypto import encrypt_model_field, envelope_key_version, read_model_field
 from apps.core.key_management import (
-    derive_blind_index_key,
     get_user_data_key,
+    get_user_search_key,
     provision_user_data_key,
 )
 from apps.core.models import AuditEvent
@@ -41,6 +41,19 @@ from tests.factories import make_account, make_user
 pytestmark = pytest.mark.django_db
 
 MERCHANT = "스타벅스 강남점"
+
+
+def search_key_for(user: Any) -> bytes:
+    """One user's stored blind-index key, read the way production reads it.
+
+    Derived from the master key rather than from the data key, so rotating the
+    encryption key leaves it alone — which is what these tests check.
+    """
+
+    from apps.core.key_management import load_master_key
+
+    return get_user_search_key(user=user, actor=user, master_key=load_master_key())
+
 
 TRANSACTIONS = EncryptedModel(
     "transactions.CanonicalTransaction",
@@ -90,7 +103,9 @@ def add(
         currency="KRW",
         transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
         merchant_blind_index=merchant_blind_index(
-            MERCHANT, user_id=owner.pk, key=derive_blind_index_key(data_key)
+            MERCHANT,
+            user_id=owner.pk,
+            key=search_key_for(owner),
         ),
     )
     store_money(transaction, "amount_encrypted", Money(amount_minor, "KRW"), data_key=data_key)
@@ -145,7 +160,7 @@ def test_rotation_re_encrypts_under_the_new_version(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[TRANSACTIONS],
     )
 
@@ -168,7 +183,7 @@ def test_the_old_key_no_longer_opens_a_rotated_row(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[TRANSACTIONS],
     )
 
@@ -177,10 +192,18 @@ def test_the_old_key_no_longer_opens_a_rotated_row(
         read_model_field(transaction, "merchant_encrypted", key=data_key)
 
 
-def test_blind_indexes_are_rebuilt_with_the_new_search_key(
+def test_rotating_the_encryption_key_leaves_the_search_key_alone(
     owner: Any, account: Any, data_key: bytes
 ) -> None:
-    """A rotated merchant whose index came from the old key is unfindable."""
+    """Two keys, two rotations. Moving one must not silently move the other.
+
+    The search key used to be derived from the data key, so rotating the
+    encryption key rebuilt every blind index as a side effect — an index
+    rebuild nobody asked for, hidden inside an operation about something else.
+    Now the search key comes from the master key and stays put, so exact-match
+    lookups keep working across an encryption rotation. Rotating the *search*
+    key, and the reindex that goes with it, is #168.
+    """
 
     transaction = add(owner, account, data_key)
     before = transaction.merchant_blind_index
@@ -191,15 +214,20 @@ def test_blind_indexes_are_rebuilt_with_the_new_search_key(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[TRANSACTIONS],
     )
 
     transaction.refresh_from_db()
-    assert transaction.merchant_blind_index != before
+    assert transaction.merchant_blind_index == before
+    # And the value it indexes is genuinely under the new key, so this is not
+    # simply a rotation that did nothing.
     assert transaction.merchant_blind_index == merchant_blind_index(
-        MERCHANT, user_id=owner.pk, key=derive_blind_index_key(new_key)
+        MERCHANT,
+        user_id=owner.pk,
+        key=search_key_for(owner),
     )
+    assert read_model_field(transaction, "merchant_encrypted", key=new_key) == MERCHANT
 
 
 def test_another_users_rows_are_never_touched(
@@ -216,7 +244,7 @@ def test_another_users_rows_are_never_touched(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[TRANSACTIONS],
     )
 
@@ -237,7 +265,7 @@ def test_an_interrupted_rotation_resumes_by_running_again(
 
     rows = [add(owner, account, data_key, day=index + 1) for index in range(6)]
     new_key = os.urandom(32)
-    search_key = derive_blind_index_key(new_key)
+    search_key = search_key_for(owner)
 
     # A run that dies after the first batch of two.
     from apps.core import rotation as rotation_module
@@ -290,7 +318,7 @@ def test_rotating_an_already_rotated_row_changes_nothing(
 ) -> None:
     transaction = add(owner, account, data_key)
     new_key = os.urandom(32)
-    search_key = derive_blind_index_key(new_key)
+    search_key = search_key_for(owner)
     common = {
         "user": owner,
         "old_key": data_key,
@@ -328,7 +356,7 @@ def test_a_row_written_after_the_new_key_went_active_is_left_alone(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[EncryptedModel("transactions.CanonicalTransaction", ("amount_encrypted",))],
     )
 
@@ -352,7 +380,7 @@ def test_verification_passes_after_a_complete_rotation(
         old_key=data_key,
         new_key=new_key,
         new_version=2,
-        search_key=derive_blind_index_key(new_key),
+        search_key=search_key_for(owner),
         models=[TRANSACTIONS],
     )
 
@@ -488,7 +516,9 @@ def test_reports_and_search_survive_a_full_rotation(
     assert rotated_key != data_key
     # And search still finds the merchant, under the new search key.
     expected = merchant_blind_index(
-        MERCHANT, user_id=owner.pk, key=derive_blind_index_key(rotated_key)
+        MERCHANT,
+        user_id=owner.pk,
+        key=search_key_for(owner),
     )
     assert (
         CanonicalTransaction.objects.filter(user=owner, merchant_blind_index=expected).count() == 4
