@@ -75,9 +75,13 @@ See [DATABASE.md](DATABASE.md#roles) for exactly what each one may do.
 ### 3. The master key
 
 ```bash
-python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' > /srv/finance/master.key
-chmod 600 /srv/finance/master.key
+docker compose run --rm web python manage.py master_key generate --path /srv/finance/master.key
 ```
+
+It writes the file with mode 0600 and refuses if something is already there —
+overwriting a master key does not replace it, it makes every encrypted value in
+the database permanently unreadable, and the rows survive to look fine. There is
+no flag to make it not refuse. The key is never printed.
 
 **Copy this file somewhere that is not this machine, before you put any data in
 the system.** Every amount, merchant, and account name is encrypted under a
@@ -105,6 +109,20 @@ to a path in an environment file:
 
 Setting `FIELD_ENCRYPTION_MASTER_KEY_FILE` overrides both. [SECURITY.md](SECURITY.md)
 has the trade-offs.
+
+### 3a. Check the key still opens what it opened
+
+After a restore, before a rotation, and any time you are about to trust a
+backup:
+
+```bash
+docker compose run --rm web python manage.py master_key verify
+```
+
+It unwraps every stored data key and search key and names any user whose key
+will not open. A wrapped key that does not unwrap is not a warning — it is that
+person's entire history — and this is the only cheap moment to find out. The
+command exits non-zero if anything fails, so it can go in a cron entry.
 
 ### 4. Bring the stack up
 
