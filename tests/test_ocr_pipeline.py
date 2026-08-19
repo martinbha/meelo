@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
+from apps.core.key_scope import worker_data_key_scope
 from apps.ocr.contracts import (
     BoundingBox,
     EngineMetadata,
@@ -60,10 +61,29 @@ class UninspectableEngine(StubEngine):
 
 
 @pytest.fixture
-def user(db: Any) -> Any:
+def master_key(tmp_path: Path, settings: Any) -> bytes:
+    import base64
+
+    key = os.urandom(32)
+    path = tmp_path / "master.key"
+    path.write_text(base64.urlsafe_b64encode(key).decode(), encoding="ascii")
+    settings.FIELD_ENCRYPTION_MASTER_KEY_FILE = str(path)
+    return key
+
+
+@pytest.fixture
+def user(db: Any, master_key: bytes) -> Any:
     from django.contrib.auth import get_user_model
 
-    return get_user_model().objects.create_user("pipeline-owner@example.com", password="password")
+    from apps.core.key_management import provision_user_data_key
+
+    account = get_user_model().objects.create_user(
+        "pipeline-owner@example.com", password="password"
+    )
+    # Both keys, because the handoff writes blind indexes and asks the scope
+    # for the search key by name.
+    provision_user_data_key(user=account, actor=account, master_key=master_key)
+    return account
 
 
 def make_document(user: Any) -> SourceDocument:
@@ -170,15 +190,18 @@ def test_default_handoff_runs_generic_parser_over_persisted_tokens(
                 duration_ms=2,
             )
 
-    runs = orchestrate_document_ocr(
-        document=document,
-        source_path=source,
-        user=user,
-        data_key=key,
-        key_version=1,
-        plans=(EnginePlan(RowEngine("paddleocr"), OcrConfiguration(("ko",))),),
-        preprocessing_settings=PreprocessingSettings(),
-    )
+    # The scope a real job would have opened. The handoff asks it for the
+    # search key, and there is deliberately no fallback that unwraps one.
+    with worker_data_key_scope(document=document):
+        runs = orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=key,
+            key_version=1,
+            plans=(EnginePlan(RowEngine("paddleocr"), OcrConfiguration(("ko",))),),
+            preprocessing_settings=PreprocessingSettings(),
+        )
     selection = parse_ocr_runs(document, runs, data_key=key)
 
     assert selection.metadata.name == "generic"
@@ -213,15 +236,16 @@ def test_handoff_selects_an_institution_parser_for_a_known_app(user: Any, tmp_pa
                 duration_ms=2,
             )
 
-    runs = orchestrate_document_ocr(
-        document=document,
-        source_path=source,
-        user=user,
-        data_key=key,
-        key_version=1,
-        plans=(EnginePlan(TossEngine("paddleocr"), OcrConfiguration(("ko",))),),
-        preprocessing_settings=PreprocessingSettings(),
-    )
+    with worker_data_key_scope(document=document):
+        runs = orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=key,
+            key_version=1,
+            plans=(EnginePlan(TossEngine("paddleocr"), OcrConfiguration(("ko",))),),
+            preprocessing_settings=PreprocessingSettings(),
+        )
     selection = parse_ocr_runs(document, runs, data_key=key)
 
     assert selection.metadata.name == "toss_bank"

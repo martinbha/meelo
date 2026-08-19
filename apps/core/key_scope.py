@@ -34,11 +34,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import ForbiddenError
-from .key_management import get_user_data_key, get_worker_data_key, load_master_key
+from .key_management import (
+    get_user_data_key,
+    get_user_search_key,
+    get_worker_data_key,
+    get_worker_search_key,
+    load_master_key,
+)
 
 
 class KeyScopeError(ForbiddenError):
@@ -47,7 +53,7 @@ class KeyScopeError(ForbiddenError):
 
 @dataclass(frozen=True, slots=True)
 class DataKeyScope:
-    """One user's unwrapped key, for the life of one request or job."""
+    """One user's unwrapped keys, for the life of one request or job."""
 
     user_id: Any
     data_key: bytes
@@ -56,6 +62,10 @@ class DataKeyScope:
     #: audit event so a key access with no logged-in actor is distinguishable
     #: from one a person caused.
     origin: str
+    #: The blind-index key, unwrapped lazily. Most requests never search, and
+    #: unwrapping a second key for a page that only renders values would put a
+    #: second secret in memory for no reason.
+    _search_key: list[bytes] = field(default_factory=list, repr=False, compare=False)
 
     def matches(self, user: Any) -> bool:
         return self.user_id == getattr(user, "pk", None)
@@ -230,3 +240,57 @@ def worker_data_key_scope(
         yield scope
     finally:
         _scope.reset(token)
+
+
+def _scope_search_key(scope: DataKeyScope, *, unwrap: Any) -> bytes:
+    """The scope's search key, unwrapped at most once.
+
+    Held in a one-element list rather than a plain attribute because the scope
+    is frozen — and it is frozen so that nothing can swap a key underneath a
+    request that has already been authorised for it.
+    """
+
+    if not scope._search_key:
+        scope._search_key.append(unwrap())
+    return scope._search_key[0]
+
+
+def request_search_key(request: Any) -> bytes:
+    """The requesting user's blind-index key, from the open scope.
+
+    Separate from the data key all the way down. A caller that wants to search
+    has to ask for the search key by name, so a page that renders values cannot
+    accidentally be holding the key that turns a guess into a confirmed hit.
+    """
+
+    user = request.user
+    scope = _scope.get()
+    if scope is None:
+        request_data_key(request)
+        scope = _scope.get()
+    assert scope is not None
+    if not scope.matches(user):
+        raise KeyScopeError("The open data-key scope belongs to another user.")
+    return _scope_search_key(
+        scope,
+        unwrap=lambda: get_user_search_key(user=user, actor=user, master_key=load_master_key()),
+    )
+
+
+def require_search_key(*, user: Any, document: Any) -> bytes:
+    """The search key inside a worker scope, or a refusal.
+
+    Takes the document for the same reason :func:`worker_data_key_scope` does:
+    the document is what decides whose key may be opened, and worker code should
+    never be in a position to name a user instead.
+    """
+
+    scope = _scope.get()
+    if scope is None:
+        raise KeyScopeError("No data-key scope is open; this code must run inside one.")
+    if not scope.matches(user) or document.user_id != scope.user_id:
+        raise KeyScopeError("The open data-key scope belongs to another user.")
+    return _scope_search_key(
+        scope,
+        unwrap=lambda: get_worker_search_key(document=document, master_key=load_master_key()),
+    )

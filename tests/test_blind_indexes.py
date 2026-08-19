@@ -24,7 +24,6 @@ from apps.core.blind_index import (
     index_version,
     is_current,
 )
-from apps.core.key_management import derive_blind_index_key
 from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import (
     ObservationFacts,
@@ -172,11 +171,21 @@ def test_a_version_starts_at_one() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_search_key_is_derived_not_the_data_key() -> None:
+def test_the_search_key_is_not_the_data_key() -> None:
+    """A leaked data key must not also grant the ability to confirm guesses.
+
+    The search key is derived from the *master* key with its own label, so
+    reaching the plaintext does not also hand over the index.
+    """
+
+    from apps.core.key_management import derive_search_key
+
+    master_key = os.urandom(32)
     data_key = os.urandom(32)
-    search_key = derive_blind_index_key(data_key)
+    search_key = derive_search_key(master_key=master_key, user_id=1, version=1)
 
     assert search_key != data_key
+    assert search_key != master_key
     assert blind_index("merchant", "스타벅스", user_id=1, key=search_key) != blind_index(
         "merchant", "스타벅스", user_id=1, key=data_key
     )

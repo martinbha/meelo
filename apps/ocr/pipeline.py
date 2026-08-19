@@ -8,8 +8,7 @@ from typing import Any
 from django.conf import settings
 
 from apps.core import metrics
-from apps.core.key_management import derive_blind_index_key
-from apps.core.key_scope import require_data_key
+from apps.core.key_scope import require_data_key, require_search_key
 from apps.observations.services import import_parser_selection
 from apps.parsing.contracts import DocumentMetadata, NormalizedToken
 from apps.parsing.generic import GenericTransactionListParser
@@ -145,10 +144,10 @@ def import_document_observations(
         selection=selection,
         data_key=data_key,
         key_version=key_version,
-        # Derived rather than passed in, so every part of the system agrees on
-        # one search key per user and a rule written from review can find the
-        # rows that produced it.
-        blind_index_key=derive_blind_index_key(data_key),
+        # Asked for by name rather than derived from the data key. The two are
+        # separate secrets (specification 22.4), and the scope is what decides
+        # this job is entitled to either of them.
+        blind_index_key=require_search_key(user=user, document=document),
         actor=user,
     )
     return True

@@ -395,11 +395,10 @@ def test_a_rule_written_from_review_fires_on_the_row_that_produced_it(
     """The rule and the transaction have to agree on one search key."""
 
     from apps.categorization.services import categorize_transaction
-    from apps.core.key_management import derive_blind_index_key
+    from apps.core.key_management import get_user_search_key
 
     account = make_account(web_owner, name_blind_index="rule-web-fires")
-    data_key = get_user_data_key(user=web_owner, actor=web_owner, master_key=master_key)
-    search_key = derive_blind_index_key(data_key)
+    search_key = get_user_search_key(user=web_owner, actor=web_owner, master_key=master_key)
     corrected = make_transaction(
         web_owner,
         account,
