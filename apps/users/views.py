@@ -95,7 +95,7 @@ class UserPasswordResetConfirmView(PasswordResetConfirmView):
         return response
 
 
-class AccountSecurityView(LoginRequiredMixin, TemplateView):  # type: ignore[type-arg]
+class AccountSecurityView(LoginRequiredMixin, TemplateView):
     """One page for the state of this account, and nothing about its money.
 
     Every action it links to lives somewhere else; this page exists so a person
