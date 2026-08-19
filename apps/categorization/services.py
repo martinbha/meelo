@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from django.db import transaction as db_transaction
@@ -84,11 +85,30 @@ def create_merchant_alias(
 
 
 def find_merchant_alias(
-    *, user: Any, merchant: str, blind_index_key: bytes, payment_instrument_id: Any | None = None
+    *,
+    user: Any,
+    merchant: str,
+    blind_index_key: bytes,
+    payment_instrument_id: Any | None = None,
+    additional_keys: Sequence[bytes] = (),
 ) -> MerchantAlias | None:
-    lookup = merchant_blind_index(merchant, user_id=user.pk, key=blind_index_key)
+    """The alias for one merchant, matched against every live search key.
+
+    ``additional_keys`` carries the retired search key during a rotation. A
+    lookup that knew about only the current one would find the rows already
+    reindexed and miss the rest — and report that as "no alias", which is a
+    perfectly ordinary answer and therefore invisible (#168).
+    """
+
+    from apps.core.management.commands.rotate_search_key import any_version
+
+    tokens = [merchant_blind_index(merchant, user_id=user.pk, key=blind_index_key)]
+    tokens.extend(
+        merchant_blind_index(merchant, user_id=user.pk, key=key) for key in additional_keys
+    )
     return (
-        MerchantAlias.objects.filter(user=user, alias_blind_index=lookup)
+        MerchantAlias.objects.filter(user=user)
+        .filter(any_version("alias_blind_index", tokens))
         .filter(Q(payment_instrument_id=payment_instrument_id) | Q(payment_instrument__isnull=True))
         .annotate(
             scope_rank=Case(
