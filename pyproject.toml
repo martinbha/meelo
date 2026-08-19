@@ -77,5 +77,13 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 exclude = ["migrations"]
 
+# django-otp ships no type information. Scoped to that package rather than
+# turned on globally: a blanket ignore would also swallow a genuine missing
+# import in first-party code, which is the one this setting exists to catch.
+[[tool.mypy.overrides]]
+module = ["django_otp", "django_otp.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
 [tool.django-stubs]
 django_settings_module = "config.settings.base"
