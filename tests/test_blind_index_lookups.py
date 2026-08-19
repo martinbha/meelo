@@ -400,8 +400,6 @@ def explain(queryset: Any) -> str:
     ids=lambda value: value if isinstance(value, str) else value.__name__,
 )
 def test_every_lookup_pair_has_an_index_behind_it(model: Any, column: str) -> None:
-    """A covering index that exists but is not used is not an index."""
-
     pairs = {
         tuple(index.fields)
         for index in model._meta.indexes
@@ -415,14 +413,64 @@ def test_every_lookup_pair_has_an_index_behind_it(model: Any, column: str) -> No
     assert pairs or unique_pairs, f"{model.__name__}.{column} has no (user, column) index."
 
 
-def test_the_query_plan_uses_the_index_rather_than_scanning(
-    owner: Any, data_key: bytes, search_key: bytes
+def seed_many(owner: Any, account: Any, *, count: int, target: str) -> None:
+    """Enough rows that a planner has a reason to prefer the index.
+
+    Written with ``bulk_create`` and no encryption, because what is under test
+    is the plan for a lookup, not the write path — and a few thousand real
+    encrypted inserts would make this test slow enough that somebody would
+    eventually delete it.
+
+    Every row gets a distinct token except one, so the value being searched for
+    is as selective as a real merchant lookup. Seeding two thousand identical
+    tokens would give the planner a good reason to scan, and the test would then
+    be measuring the seed rather than the index.
+    """
+
+    rows = [
+        CanonicalTransaction(
+            user=owner,
+            created_by=owner,
+            financial_account=account,
+            occurred_at=date(2026, 8, 1 + index % 28),
+            amount_encrypted=f"{1000 + index}:KRW",
+            currency="KRW",
+            transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+            merchant_blind_index=f"1:{index:064x}",
+        )
+        for index in range(count)
+    ]
+    rows[0].merchant_blind_index = target
+    CanonicalTransaction.objects.bulk_create(rows, batch_size=500)
+
+
+def test_the_query_plan_uses_the_index_on_a_realistic_row_count(
+    owner: Any, search_key: bytes
 ) -> None:
-    make_unindexed(owner, data_key, 40)
-    backfill_user(user=owner, data_key=data_key, search_key=search_key)
-    lookup = merchant_blind_index(MERCHANT, user_id=owner.pk, key=search_key)
+    """The acceptance criterion, on enough rows for the planner to have a choice.
 
-    plan = explain(CanonicalTransaction.objects.filter(user=owner, merchant_blind_index=lookup))
+    On forty rows PostgreSQL scans, and it is right to — the whole table fits in
+    a page. A test that passed there would be asserting nothing about what
+    happens on a year of transactions.
+    """
 
-    assert "transaction_merchant_idx" in plan or "using index" in plan, plan
-    assert "scan canonicaltransaction" not in plan, plan
+    account = make_account(owner, name_blind_index="lookup-plan")
+    target = merchant_blind_index(MERCHANT, user_id=owner.pk, key=search_key)
+    seed_many(owner, account, count=2_000, target=target)
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            # Without fresh statistics the planner is guessing at selectivity.
+            cursor.execute("ANALYZE transactions_canonicaltransaction")
+
+    # ``order_by()`` clears the model's default ordering. A lookup asks "which
+    # rows match this token", and the sort the default ordering adds is what
+    # tips the planner towards a scan for reasons that have nothing to do with
+    # the index under test.
+    plan = explain(
+        CanonicalTransaction.objects.filter(user=owner, merchant_blind_index=target).order_by()
+    )
+
+    assert "transaction_merchant_idx" in plan, plan
+    if connection.vendor == "postgresql":
+        assert "index scan" in plan or "bitmap" in plan, plan
+        assert "seq scan" not in plan, plan
