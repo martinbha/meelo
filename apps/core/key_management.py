@@ -10,6 +10,7 @@ from typing import Any
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.db import transaction
+from django.utils import timezone
 
 from apps.users.models import UserDataKey, UserSearchKey
 
@@ -248,6 +249,67 @@ def get_user_search_key(*, user: Any, actor: Any, master_key: bytes) -> bytes:
     if record is None:
         raise InvalidRequestError("No active search key exists for this user.")
     return unwrap_search_key(record, master_key=master_key)
+
+
+def get_user_search_keys(*, user: Any, master_key: bytes) -> dict[int, bytes]:
+    """Every search key version this user still has, by version.
+
+    Plural because a rotation leaves two live at once: tokens written before it
+    started are under the old key and tokens written since are under the new
+    one, and a search has to look for both or it silently finds half the rows.
+    The old version stops being returned when it is retired, which is the point
+    at which nothing is indexed under it any more.
+    """
+
+    return {
+        record.version: unwrap_search_key(record, master_key=master_key)
+        for record in UserSearchKey.objects.filter(user=user).order_by("-version")
+    }
+
+
+@transaction.atomic
+def provision_next_search_key(*, user: Any, actor: Any, master_key: bytes) -> UserSearchKey:
+    """Add the next search key version and make it the active one.
+
+    The old row is kept, not deleted. Every token in the database is still
+    under it until the reindex catches up, and a key removed before its tokens
+    are gone is a search that returns nothing for reasons nobody can see.
+    """
+
+    _assert_owner(user=user, actor=actor, action="rotation")
+    locked_user = type(user).objects.select_for_update().get(pk=user.pk)
+    current = UserSearchKey.objects.filter(user=locked_user).order_by("-version").first()
+    version = (current.version if current else 0) + 1
+    search_key = derive_search_key(master_key=master_key, user_id=locked_user.pk, version=version)
+    UserSearchKey.objects.filter(user=locked_user, is_active=True).update(
+        is_active=False, retired_at=timezone.now()
+    )
+    record = UserSearchKey.objects.create(
+        user=locked_user,
+        version=version,
+        wrapped_key=wrap_data_key(
+            search_key,
+            master_key=master_key,
+            user_id=locked_user.pk,
+            version=version,
+            model=SEARCH_KEY_MODEL,
+        ),
+    )
+    record_audit_event(
+        user=locked_user,
+        event_type="search_key_rotated",
+        obj=record,
+        metadata={
+            "from_version": current.version if current else 0,
+            "to_version": version,
+        },
+    )
+    return record
+
+
+def active_search_key_version(*, user: Any) -> int:
+    record = UserSearchKey.objects.filter(user=user, is_active=True).first()
+    return record.version if record else 0
 
 
 @transaction.atomic
