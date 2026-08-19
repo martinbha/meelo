@@ -185,10 +185,43 @@ of them in seconds. HMAC with a key they do not have removes that entirely.
 
 ## The search key
 
-Derived from the user's data key by `derive_blind_index_key`, never stored. Kept
-apart from the encryption key so an index leak does not hand over the plaintext,
-and derived rather than stored so no second secret has to be wrapped, rotated,
-and backed up alongside the first.
+Derived from the **master** key with its own label — `derive_search_key` — and
+stored wrapped in `UserSearchKey`, beside but not inside the wrapped data key.
+
+It used to be derived from the data key, and that was the flaw. Two keys derived
+from one are one secret wearing two hats: anyone who reaches the plaintext can
+also build search tokens, and then confirm guesses against every index in the
+database, including rows they could not otherwise read. Deriving from the master
+key with a distinct label breaks that link — compromise of one no longer grants
+the other (specification 22.4).
+
+Three consequences:
+
+- **Separate versions.** `UserSearchKey` has its own version, `is_active`, and
+  retirement, so the search key rotates without re-encrypting anything and the
+  data key rotates without rebuilding every index. Sharing a row would force one
+  whenever the other was wanted, and rotation that is expensive is rotation that
+  does not happen. The reindex itself is #168.
+- **Rotating encryption leaves indexes alone.** Previously an encryption
+  rotation silently rebuilt every blind index as a side effect — an index
+  rebuild nobody asked for, hidden inside an operation about something else.
+- **Stored, though derivable.** Deriving on demand would work and would leave
+  the search key with no version to rotate and no row to retire. A stored row
+  makes it a thing with a lifecycle.
+
+The wrapped search key is bound to `users.usersearchkey` in its associated data,
+so a wrapped *data* key pasted into that column fails to open rather than quietly
+becoming a search key and reuniting the two secrets.
+
+Both keys are provisioned together, because a value encrypted with no way to
+index it is a value nothing can look up. Provisioned together is not the same as
+derived from each other.
+
+It is reached only through the scope — `request_search_key` for a request,
+`require_search_key` for a worker job, which takes the *document* for the same
+reason the data-key door does. A caller that wants to search asks for the search
+key by name, so a page that merely renders values is not also holding the key
+that turns a guess into a confirmed hit.
 
 It is a secret of the same standing as the encryption key.
 
