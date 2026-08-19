@@ -20,3 +20,10 @@ DATABASES = {
     },
 }
 DOCUMENT_TMP_ROOT = Path("/tmp/finance-ocr-tests")
+
+#: Off, so a fixture can build a row without a key store behind it. The
+#: production setting is exercised deliberately by
+#: ``tests/test_plaintext_encryption.py``, which turns it back on and drives the
+#: real services through it — an off switch nothing tests is an off switch that
+#: turns out to have been on.
+FIELD_ENCRYPTION_REQUIRED = False

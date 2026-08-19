@@ -112,6 +112,12 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+#: Whether a write with no data key is an error rather than a plaintext store.
+#: On everywhere that matters; the test settings turn it off so fixtures do not
+#: all have to carry a key, and tests/test_plaintext_encryption.py turns it back
+#: on to exercise the production configuration.
+FIELD_ENCRYPTION_REQUIRED = True
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
 PASSWORD_HASHERS = [

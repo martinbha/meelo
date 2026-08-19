@@ -34,6 +34,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar
 
+from django.conf import settings
 from django.db import models
 
 from .crypto import (
@@ -47,6 +48,37 @@ from .crypto import (
 
 class UndeclaredEncryptedFieldError(EncryptionError):
     """A field was written through the shared path without being declared."""
+
+
+class PlaintextWriteError(EncryptionError):
+    """A sensitive value was about to be stored without a key to seal it."""
+
+
+def encryption_required() -> bool:
+    """Whether a missing key is an error rather than a plaintext write.
+
+    True everywhere except the test settings. Several write paths accept
+    ``data_key=None`` and store the value in clear — a convenience for tests and
+    for fixtures that predate encryption, and a hole in production, where the
+    column would then hold a readable merchant name that looks exactly like a
+    working one.
+
+    A setting rather than a hard requirement because closing the hole outright
+    means every fixture in the suite has to carry a key, and a suite that is
+    tedious to write is a suite that gets thinner. The compensation is
+    ``tests/test_plaintext_encryption.py``, which turns the requirement on and
+    drives the real services through it — so the production configuration is
+    tested even though it is not the default the other tests run under.
+    """
+
+    return bool(getattr(settings, "FIELD_ENCRYPTION_REQUIRED", True))
+
+
+def require_encryption_key(data_key: bytes | None, *, field: str) -> None:
+    """Refuse to store a sensitive value in clear where that is not allowed."""
+
+    if data_key is None and encryption_required():
+        raise PlaintextWriteError(f"{field!r} is an encrypted column and no key was supplied.")
 
 
 def encrypted_column_names(model: type[models.Model]) -> tuple[str, ...]:
