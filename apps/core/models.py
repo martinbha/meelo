@@ -55,6 +55,7 @@ class AuditEvent(models.Model):
         ENCRYPTION_KEY_PROVISIONED = "encryption_key_provisioned", "Encryption key provisioned"
         ENCRYPTION_KEY_ACCESSED = "encryption_key_accessed", "Encryption key accessed"
         WORKER_KEY_ACCESSED = "worker_key_accessed", "Worker opened the owner's key"
+        SEARCH_KEY_PROVISIONED = "search_key_provisioned", "Search key provisioned"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
