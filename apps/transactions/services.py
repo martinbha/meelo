@@ -9,6 +9,7 @@ from django.db import transaction as db_transaction
 from apps.categorization.models import Category
 from apps.categorization.normalization import merchant_blind_index
 from apps.core.audit import record_audit_event
+from apps.core.blind_index import SearchKey
 from apps.core.encrypted_fields import require_encryption_key
 from apps.core.errors import InvalidRequestError
 from apps.core.ownership import owned_queryset
@@ -55,7 +56,7 @@ def _apply_blind_indexes(
     *,
     merchant: str,
     counterparty: str,
-    blind_index_key: bytes | None,
+    blind_index_key: SearchKey | bytes | None,
 ) -> None:
     """Write the tokens that make this row findable.
 
@@ -103,7 +104,7 @@ def create_manual_transaction(
     counterparty: str = "",
     notes: str = "",
     data_key: bytes | None = None,
-    blind_index_key: bytes | None = None,
+    blind_index_key: SearchKey | bytes | None = None,
     key_version: int = 1,
 ) -> CanonicalTransaction:
     _validate_related_objects(
@@ -175,7 +176,7 @@ def update_manual_transaction(
     counterparty: str = "",
     notes: str = "",
     data_key: bytes | None = None,
-    blind_index_key: bytes | None = None,
+    blind_index_key: SearchKey | bytes | None = None,
     key_version: int = 1,
 ) -> CanonicalTransaction:
     transaction = (

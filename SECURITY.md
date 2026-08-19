@@ -326,6 +326,46 @@ pattern in `merchant_pattern_blind_index` whatever the rule is about, so
 indexed in the merchant domain is compared against a counterparty token and can
 never fire, for any input, silently.
 
+## Rotating the search key
+
+The search key rotates on its own schedule (#161), and rotating it means
+recomputing every token rather than re-encrypting any value. Nothing in this
+operation decrypts a value or writes one; only the tokens beside them move.
+
+The window is the whole problem. Between a new key becoming active and the last
+token being rebuilt, a table holds tokens under two keys, and a lookup that
+knows about only one finds half the rows and reports that as an answer. Nobody
+files a bug against a search that quietly returned less than it should.
+
+Three things hold together:
+
+**The prefix names the search key version**, not the token scheme. That
+distinction is load-bearing: a scheme version would be identical before and
+after a rotation, so a half-reindexed table would be indistinguishable from a
+finished one. The version is inside the HMAC as well, so a token cannot be
+relabelled by editing its prefix.
+
+**The version travels with the key.** `SearchKey` carries both, because a
+version passed alongside a key is a version somebody eventually forgets to pass
+— and then a token built under the new key is stamped with the old version,
+looks stale forever, and matches nothing. Callers holding plain `bytes` still
+work and are treated as version one.
+
+**Lookups search every live version.** `index_candidates` builds one token per
+key version and the query matches any of them. Outside a rotation that is a
+single token and the query is what it always was.
+
+```bash
+manage.py rotate_search_key            # new key, then rebuild every token
+manage.py rotate_search_key --dry-run  # how much there is, no key, no writes
+manage.py rotate_search_key --retire   # only once no token is on the old key
+```
+
+Retirement is refused while anything is still indexed under the old key —
+removing it then would make those rows unsearchable forever, with no error
+anywhere. The rebuild is checkpointed like the data-key rotation, under its own
+`key_kind` so the two cannot be mistaken for one another.
+
 ## Backfilling
 
 `manage.py backfill_blind_indexes` rebuilds tokens that are missing or stale. It

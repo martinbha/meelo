@@ -56,6 +56,7 @@ class AuditEvent(models.Model):
         ENCRYPTION_KEY_ACCESSED = "encryption_key_accessed", "Encryption key accessed"
         WORKER_KEY_ACCESSED = "worker_key_accessed", "Worker opened the owner's key"
         SEARCH_KEY_PROVISIONED = "search_key_provisioned", "Search key provisioned"
+        SEARCH_KEY_ROTATED = "search_key_rotated", "Search key rotated"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -131,6 +132,11 @@ class RotationCheckpoint(models.Model):
     #: says nothing about this one, so the version is part of the identity
     #: rather than a column that gets overwritten.
     key_version = models.PositiveIntegerField()
+    #: Which key this rotation is moving: the data key that encrypts values, or
+    #: the search key that indexes them. They rotate separately (#161), so a
+    #: checkpoint for one says nothing about the other and the two must not
+    #: share a row.
+    key_kind = models.CharField(max_length=16, default="data")
     model_label = models.CharField(max_length=128)
     #: The primary key of the last row this rotation finished. Text, because
     #: the models it tracks use UUIDs and one column has to hold all of them.
@@ -141,10 +147,10 @@ class RotationCheckpoint(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("user", "key_version", "model_label")
+        ordering = ("user", "key_kind", "key_version", "model_label")
         constraints = [
             models.UniqueConstraint(
-                fields=("user", "key_version", "model_label"),
+                fields=("user", "key_kind", "key_version", "model_label"),
                 name="rotation_checkpoint_unique",
             ),
         ]
@@ -157,4 +163,4 @@ class RotationCheckpoint(models.Model):
         return self.completed_at is not None
 
     def __str__(self) -> str:
-        return f"{self.model_label} -> v{self.key_version}"
+        return f"{self.key_kind}:{self.model_label} -> v{self.key_version}"

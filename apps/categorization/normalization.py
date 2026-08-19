@@ -35,7 +35,7 @@ from typing import Any
 
 from rapidfuzz.fuzz import ratio
 
-from apps.core.blind_index import blind_index
+from apps.core.blind_index import SearchKey, blind_index
 from apps.core.errors import InvalidRequestError
 
 #: Company forms that say how a business is incorporated, not which one it is.
@@ -142,7 +142,7 @@ def display_merchant(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).split())
 
 
-def merchant_blind_index(value: str, *, user_id: Any, key: bytes) -> str:
+def merchant_blind_index(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     """A searchable token for one merchant, revealing nothing about the name.
 
     Built from the *normalized* form, which is what lets three spellings of one

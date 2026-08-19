@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 from django.core.management import call_command
 
+from apps.core.blind_index import SearchKey
 from apps.core.crypto import envelope_key_version
 from apps.core.key_management import (
     get_user_data_key,
@@ -72,7 +73,7 @@ def data_key(owner: Any, master_key: bytes) -> bytes:
 
 
 @pytest.fixture
-def search_key(owner: Any, master_key: bytes) -> bytes:
+def search_key(owner: Any, master_key: bytes) -> SearchKey:
     return get_user_search_key(user=owner, actor=owner, master_key=master_key)
 
 
@@ -112,7 +113,7 @@ def versions(owner: Any) -> set[int]:
 
 
 def test_a_completed_rotation_records_a_checkpoint(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     add_rows(owner, data_key, 5)
 
@@ -134,7 +135,7 @@ def test_a_completed_rotation_records_a_checkpoint(
 
 
 def test_an_interrupted_rotation_resumes_after_its_checkpoint(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     """The walk starts after the last finished row, not at the first one."""
 
@@ -176,7 +177,7 @@ def test_an_interrupted_rotation_resumes_after_its_checkpoint(
 
 
 def test_resuming_is_still_correct_when_the_checkpoint_is_missing(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     """The version check is what guarantees correctness; the checkpoint is speed."""
 
@@ -239,7 +240,7 @@ def test_a_completed_checkpoint_does_not_skip_a_rerun(owner: Any) -> None:
 
 
 def test_a_row_still_on_the_old_key_is_readable_mid_rotation(
-    owner: Any, data_key: bytes, search_key: bytes, master_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey, master_key: bytes
 ) -> None:
     """Both versions are live between the key switch and the last row moving."""
 
@@ -290,7 +291,7 @@ def test_a_value_readable_under_no_key_still_fails_loudly(owner: Any, data_key: 
 
 
 def test_a_dry_run_writes_nothing_and_creates_no_key(
-    owner: Any, data_key: bytes, search_key: bytes, capsys: Any
+    owner: Any, data_key: bytes, search_key: SearchKey, capsys: Any
 ) -> None:
     add_rows(owner, data_key, 3)
     before = {row.pk: row.merchant_encrypted for row in CanonicalTransaction.objects.all()}
@@ -305,7 +306,7 @@ def test_a_dry_run_writes_nothing_and_creates_no_key(
 
 
 def test_a_dry_run_at_the_module_level_reports_without_writing(
-    owner: Any, data_key: bytes, search_key: bytes
+    owner: Any, data_key: bytes, search_key: SearchKey
 ) -> None:
     add_rows(owner, data_key, 3)
 

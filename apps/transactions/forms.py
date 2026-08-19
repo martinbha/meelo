@@ -6,6 +6,7 @@ from typing import Any
 from django import forms
 
 from apps.categorization.models import Category
+from apps.core.blind_index import SearchKey
 from apps.core.crypto import is_encrypted_value
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -74,7 +75,7 @@ class ManualTransactionForm(forms.Form):
         self,
         *,
         data_key: bytes | None = None,
-        blind_index_key: bytes | None = None,
+        blind_index_key: SearchKey | bytes | None = None,
         key_version: int = 1,
     ) -> CanonicalTransaction:
         """Persist the entry, encrypting its values when a key is supplied.

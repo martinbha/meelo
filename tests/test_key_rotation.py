@@ -19,6 +19,7 @@ from django.core.management import call_command
 
 from apps.categorization.models import Category
 from apps.categorization.normalization import merchant_blind_index
+from apps.core.blind_index import SearchKey
 from apps.core.crypto import encrypt_model_field, envelope_key_version, read_model_field
 from apps.core.key_management import (
     get_user_data_key,
@@ -43,7 +44,7 @@ pytestmark = pytest.mark.django_db
 MERCHANT = "스타벅스 강남점"
 
 
-def search_key_for(user: Any) -> bytes:
+def search_key_for(user: Any) -> SearchKey:
     """One user's stored blind-index key, read the way production reads it.
 
     Derived from the master key rather than from the data key, so rotating the

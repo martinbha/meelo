@@ -28,7 +28,7 @@ import re
 import unicodedata
 from typing import Any
 
-from .blind_index import blind_index
+from .blind_index import SearchKey, blind_index
 
 _SEPARATORS = re.compile(r"[\s\-_./\\()\[\]]+")
 _NON_DIGITS = re.compile(r"\D+")
@@ -62,21 +62,21 @@ def normalize_name(value: str) -> str:
     return _WHITESPACE.sub(" ", _folded(value))
 
 
-def approval_code_index(value: str, *, user_id: Any, key: bytes) -> str:
+def approval_code_index(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     normalized = normalize_approval_code(value)
     return blind_index("approval_code", normalized, user_id=user_id, key=key) if normalized else ""
 
 
-def identifier_index(value: str, *, user_id: Any, key: bytes) -> str:
+def identifier_index(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     normalized = normalize_identifier(value)
     return blind_index("identifier", normalized, user_id=user_id, key=key) if normalized else ""
 
 
-def institution_index(value: str, *, user_id: Any, key: bytes) -> str:
+def institution_index(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     normalized = normalize_name(value)
     return blind_index("institution", normalized, user_id=user_id, key=key) if normalized else ""
 
 
-def counterparty_index(value: str, *, user_id: Any, key: bytes) -> str:
+def counterparty_index(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     normalized = normalize_name(value)
     return blind_index("counterparty", normalized, user_id=user_id, key=key) if normalized else ""

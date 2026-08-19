@@ -31,6 +31,7 @@ from typing import Any, Protocol
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction as db_transaction
 
+from apps.core.blind_index import SearchKey
 from apps.core.key_management import get_user_search_key, load_master_key
 from apps.core.searchable import approval_code_index, counterparty_index, identifier_index
 from apps.users.models import User
@@ -39,10 +40,10 @@ from apps.users.models import User
 class Indexer(Protocol):
     """How a stored value becomes a token, given its owner and the search key."""
 
-    def __call__(self, value: str, *, user_id: Any, key: bytes) -> str: ...
+    def __call__(self, value: str, *, user_id: Any, key: SearchKey | bytes) -> str: ...
 
 
-def _merchant(value: str, *, user_id: Any, key: bytes) -> str:
+def _merchant(value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     from apps.categorization.normalization import merchant_blind_index
 
     return merchant_blind_index(value, user_id=user_id, key=key) if value else ""
@@ -134,7 +135,7 @@ def backfill_user(
     *,
     user: User,
     data_key: bytes,
-    search_key: bytes,
+    search_key: SearchKey | bytes,
     models: Sequence[IndexedModel] = INDEXED_MODELS,
     batch_size: int = 500,
     dry_run: bool = False,

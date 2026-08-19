@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from django.db import transaction as db_transaction
@@ -8,6 +9,7 @@ from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from apps.core.audit import record_audit_event
+from apps.core.blind_index import SearchKey
 from apps.core.crypto import InvalidCiphertextError
 from apps.core.errors import ConflictError, InvalidRequestError
 from apps.core.searchable import counterparty_index
@@ -41,7 +43,7 @@ def create_merchant_alias(
     alias: str,
     normalized_merchant: str,
     encryption_key: bytes,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     key_version: int,
     default_category: Category | None = None,
     payment_instrument: Any | None = None,
@@ -84,11 +86,30 @@ def create_merchant_alias(
 
 
 def find_merchant_alias(
-    *, user: Any, merchant: str, blind_index_key: bytes, payment_instrument_id: Any | None = None
+    *,
+    user: Any,
+    merchant: str,
+    blind_index_key: SearchKey | bytes,
+    payment_instrument_id: Any | None = None,
+    additional_keys: Sequence[SearchKey | bytes] = (),
 ) -> MerchantAlias | None:
-    lookup = merchant_blind_index(merchant, user_id=user.pk, key=blind_index_key)
+    """The alias for one merchant, matched against every live search key.
+
+    ``additional_keys`` carries the retired search key during a rotation. A
+    lookup that knew about only the current one would find the rows already
+    reindexed and miss the rest — and report that as "no alias", which is a
+    perfectly ordinary answer and therefore invisible (#168).
+    """
+
+    from apps.core.management.commands.rotate_search_key import any_version
+
+    tokens = [merchant_blind_index(merchant, user_id=user.pk, key=blind_index_key)]
+    tokens.extend(
+        merchant_blind_index(merchant, user_id=user.pk, key=key) for key in additional_keys
+    )
     return (
-        MerchantAlias.objects.filter(user=user, alias_blind_index=lookup)
+        MerchantAlias.objects.filter(user=user)
+        .filter(any_version("alias_blind_index", tokens))
         .filter(Q(payment_instrument_id=payment_instrument_id) | Q(payment_instrument__isnull=True))
         .annotate(
             scope_rank=Case(
@@ -141,7 +162,7 @@ def suggest_merchant_aliases(
     return rank_candidates(merchant, by_name)[:limit]
 
 
-def rule_pattern_index(rule_type: str, value: str, *, user_id: Any, key: bytes) -> str:
+def rule_pattern_index(rule_type: str, value: str, *, user_id: Any, key: SearchKey | bytes) -> str:
     """The token a rule of this type must store to ever match anything.
 
     Blind indexes are domain-separated on purpose: a merchant named ``4200`` and
@@ -168,7 +189,7 @@ def create_exact_merchant_rule(
     merchant: str,
     category: Category,
     encryption_key: bytes,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     key_version: int,
     payment_instrument: Any | None = None,
     financial_account: Any | None = None,

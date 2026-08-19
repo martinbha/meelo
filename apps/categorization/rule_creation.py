@@ -27,6 +27,7 @@ from typing import Any
 from django.db import transaction as db_transaction
 
 from apps.core.audit import record_audit_event
+from apps.core.blind_index import SearchKey
 from apps.core.errors import InvalidRequestError
 from apps.observations.models import ImportedObservation
 from apps.transactions.models import CanonicalTransaction
@@ -157,7 +158,7 @@ def create_rule_from_correction(
     transaction: CanonicalTransaction,
     category: Category,
     scope: str | RuleScope,
-    blind_index_key: bytes,
+    blind_index_key: SearchKey | bytes,
     encryption_key: bytes,
     key_version: int = 1,
     merchant: str,

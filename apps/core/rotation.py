@@ -58,6 +58,7 @@ from typing import Any
 
 from django.db import transaction as db_transaction
 
+from .blind_index import SearchKey
 from .crypto import (
     EncryptionError,
     envelope_key_version,
@@ -226,7 +227,7 @@ def _rebuild_indexes(
     spec: EncryptedModel,
     *,
     plaintexts: dict[str, str],
-    search_key: bytes,
+    search_key: SearchKey,
 ) -> int:
     """Rebuild the blind indexes derived from fields this row just moved."""
 
@@ -248,7 +249,7 @@ def _rebuild_indexes(
     return rebuilt
 
 
-def resume_point(*, user: Any, new_version: int, label: str) -> str:
+def resume_point(*, user: Any, new_version: int, label: str, kind: str = "data") -> str:
     """The primary key a resumed rotation should start after, if any.
 
     Returns ``""`` when there is nothing to resume from — no checkpoint, a
@@ -261,7 +262,7 @@ def resume_point(*, user: Any, new_version: int, label: str) -> str:
     from .models import RotationCheckpoint
 
     checkpoint = RotationCheckpoint.objects.filter(
-        user_id=user.pk, key_version=new_version, model_label=label
+        user_id=user.pk, key_kind=kind, key_version=new_version, model_label=label
     ).first()
     if checkpoint is None or checkpoint.is_complete:
         return ""
@@ -269,14 +270,21 @@ def resume_point(*, user: Any, new_version: int, label: str) -> str:
 
 
 def _record_progress(
-    *, user: Any, new_version: int, label: str, last_record_id: str, rows: int, complete: bool
+    *,
+    user: Any,
+    new_version: int,
+    label: str,
+    last_record_id: str,
+    rows: int,
+    complete: bool,
+    kind: str = "data",
 ) -> None:
     from django.utils import timezone
 
     from .models import RotationCheckpoint
 
     checkpoint, _ = RotationCheckpoint.objects.get_or_create(
-        user_id=user.pk, key_version=new_version, model_label=label
+        user_id=user.pk, key_kind=kind, key_version=new_version, model_label=label
     )
     checkpoint.last_record_id = last_record_id
     checkpoint.rows_rotated += rows
@@ -292,7 +300,7 @@ def rotate_model(
     old_key: bytes,
     new_key: bytes,
     new_version: int,
-    search_key: bytes,
+    search_key: SearchKey,
     batch_size: int = DEFAULT_BATCH_SIZE,
     dry_run: bool = False,
     resume: bool = True,
@@ -388,7 +396,7 @@ def rotate_user(
     old_key: bytes,
     new_key: bytes,
     new_version: int,
-    search_key: bytes,
+    search_key: SearchKey,
     batch_size: int = DEFAULT_BATCH_SIZE,
     models: Sequence[EncryptedModel] | None = None,
     dry_run: bool = False,
