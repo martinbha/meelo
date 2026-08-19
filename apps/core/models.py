@@ -103,3 +103,58 @@ class AuditEvent(models.Model):
         if not self.digest:
             self.digest = self.calculate_digest()
         super().save(*args, **kwargs)  # type: ignore[arg-type]
+
+
+class RotationCheckpoint(models.Model):
+    """How far a key rotation got, per user, per model.
+
+    The envelope version already makes rotation *correct* to re-run: a row
+    sealed under the target version is skipped. What it does not make it is
+    cheap. Without a checkpoint every resumed run re-reads the whole history
+    from the first row to find the point it stopped at, and on the rotation
+    that matters — the one over years of transactions, resumed after a crash —
+    that is the difference between minutes and hours.
+
+    So this records where the walk got to and the next run starts after it. It
+    is an optimisation, deliberately: if the checkpoint is wrong, stale, or
+    missing, the worst outcome is work done twice, never a row left behind. The
+    skip-by-version check remains the thing that guarantees correctness.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="rotation_checkpoints",
+    )
+    #: The version being rotated *to*. A checkpoint from an earlier rotation
+    #: says nothing about this one, so the version is part of the identity
+    #: rather than a column that gets overwritten.
+    key_version = models.PositiveIntegerField()
+    model_label = models.CharField(max_length=128)
+    #: The primary key of the last row this rotation finished. Text, because
+    #: the models it tracks use UUIDs and one column has to hold all of them.
+    last_record_id = models.CharField(max_length=64, blank=True)
+    rows_rotated = models.PositiveIntegerField(default=0)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("user", "key_version", "model_label")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "key_version", "model_label"),
+                name="rotation_checkpoint_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("user", "key_version"), name="rotation_checkpoint_idx"),
+        ]
+
+    @property
+    def is_complete(self) -> bool:
+        return self.completed_at is not None
+
+    def __str__(self) -> str:
+        return f"{self.model_label} -> v{self.key_version}"
