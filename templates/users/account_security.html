@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Account security · Finance workspace{% endblock %}
+
+{% block content %}
+<section class="account-security" aria-labelledby="security-heading">
+  <h1 id="security-heading">Account security</h1>
+  <p class="field-help">{{ overview.email }}</p>
+
+  <section aria-labelledby="password-heading">
+    <h2 id="password-heading">Password</h2>
+    {% if overview.password_changed_at %}
+      <p>
+        Last changed {{ overview.password_changed_at|date:"j F Y" }}
+        ({{ overview.password_age_days }} day{{ overview.password_age_days|pluralize }} ago).
+      </p>
+      {% if overview.password_is_old %}
+        <p class="message message-warning">
+          That is over a year ago. There is no expiry policy — forced rotation makes
+          people choose worse passwords — but it is worth a thought.
+        </p>
+      {% endif %}
+    {% else %}
+      <p>Unchanged since the account was created.</p>
+    {% endif %}
+    <p><a href="{% url 'password-change' %}">Change password</a></p>
+  </section>
+
+  <section aria-labelledby="two-factor-heading">
+    <h2 id="two-factor-heading">Two-factor authentication</h2>
+    {% if overview.two_factor_enabled %}
+      <p>
+        On, with {{ overview.confirmed_device_count }}
+        confirmed device{{ overview.confirmed_device_count|pluralize }}.
+      </p>
+      <p>
+        {{ overview.recovery_codes_remaining }} recovery
+        code{{ overview.recovery_codes_remaining|pluralize }} remaining.
+      </p>
+    {% else %}
+      <p>Off. Enrolment arrives with the authenticator setup flow.</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="sessions-heading">
+    <h2 id="sessions-heading">Signed in</h2>
+    <p class="field-help">
+      Sessions are identified by a short prefix. The full identifier is a
+      credential — anyone who reads it is signed in as you.
+    </p>
+    <ul>
+      {% for session in overview.sessions %}
+        <li>
+          {{ session.label }} · expires {{ session.expires_at|date:"j F Y H:i" }}
+          {% if session.is_current %}<strong>(this one)</strong>{% endif %}
+        </li>
+      {% empty %}
+        <li>No stored sessions.</li>
+      {% endfor %}
+    </ul>
+    {% if overview.other_session_count %}
+      <p>
+        {{ overview.other_session_count }} other
+        session{{ overview.other_session_count|pluralize }}. Signing out
+        everywhere arrives with session revocation.
+      </p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="activity-heading">
+    <h2 id="activity-heading">Recent security activity</h2>
+    {% if overview.failed_logins_recently %}
+      <p class="message message-warning">
+        {{ overview.failed_logins_recently }} failed sign-in
+        attempt{{ overview.failed_logins_recently|pluralize }} in the last 30 days.
+      </p>
+    {% endif %}
+    {% if overview.recent_events %}
+      <table>
+        <thead><tr><th>Event</th><th>Code</th><th>When</th></tr></thead>
+        <tbody>
+          {% for event in overview.recent_events %}
+            <tr {% if event.is_notable %}class="notable"{% endif %}>
+              <td>{{ event.label }}</td>
+              <td><code>{{ event.code }}</code></td>
+              <td>{{ event.occurred_at|date:"j F Y H:i" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="field-help">
+        Events are shown by code. What each one recorded beyond that is in the
+        audit log, which is not rendered anywhere.
+      </p>
+    {% else %}
+      <p>Nothing recorded yet.</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

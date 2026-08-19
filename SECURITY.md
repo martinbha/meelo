@@ -4,6 +4,37 @@
 
 How a financial value is stored, and what that buys.
 
+# The Account Security Page
+
+`/account/security/` answers the four questions a person actually asks: when did
+I last change my password, is two-factor on, what else is signed in as me, and
+has anything happened to this account that I did not do.
+
+**Nothing on it comes from a financial model**, and that is a privacy property
+rather than tidiness. This is the page somebody opens *because* they are uneasy
+— often at a desk, often not alone — so an amount rendered here is an amount
+shown to whoever is standing there. A test asserts it rather than trusting the
+template to stay that way.
+
+**Audit entries are shown as codes.** An event's metadata carries identifiers
+and counts that were safe to store precisely because nothing renders them;
+putting them on a page would make that assumption false everywhere at once. Only
+account events appear — a list of everything somebody did last week is a
+different page with different properties.
+
+**Session identifiers are truncated to eight characters.** The full key is a
+bearer credential: anybody who reads it off the screen is signed in as that
+person.
+
+Password age comes from the audit log, because Django does not record it and
+that is the only place it exists. An account that has never changed its password
+falls back to its join date. A password over a year old is *mentioned* and not
+expired — forced rotation makes people choose worse passwords and write them
+down.
+
+Revoking a session (#174) and enrolling a device (#171) are not here yet; the
+page describes the state and links to what exists.
+
 # Two-Factor Storage
 
 `django_otp`, `otp_totp`, and `otp_static` are installed, and `OTPMiddleware`

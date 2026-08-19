@@ -10,10 +10,12 @@ from django.contrib.auth.views import (
 )
 from django.http import HttpRequest, HttpResponse
 from django.urls import reverse_lazy
+from django.views.generic import TemplateView
 
 from apps.core.audit import record_audit_event
 
 from .forms import EmailAuthenticationForm
+from .security import security_overview
 
 
 class UserLoginView(LoginView):
@@ -91,3 +93,25 @@ class UserPasswordResetConfirmView(PasswordResetConfirmView):
             user_agent=self.request.META.get("HTTP_USER_AGENT"),
         )
         return response
+
+
+class AccountSecurityView(LoginRequiredMixin, TemplateView):
+    """One page for the state of this account, and nothing about its money.
+
+    Every action it links to lives somewhere else; this page exists so a person
+    worried about their account has one place to look rather than four. What it
+    deliberately does not have is a single financial figure — it is the page
+    somebody opens *because* they are uneasy, often not alone.
+    """
+
+    template_name = "users/account_security.html"
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        context["overview"] = security_overview(
+            self.request.user,
+            # Named so the page can say which session is the one being used to
+            # read it. Only a prefix of any key is ever rendered.
+            current_session_key=self.request.session.session_key or "",
+        )
+        return context
