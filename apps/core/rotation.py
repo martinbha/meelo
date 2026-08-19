@@ -248,7 +248,7 @@ def _rebuild_indexes(
     return rebuilt
 
 
-def resume_point(*, user: Any, new_version: int, label: str) -> str:
+def resume_point(*, user: Any, new_version: int, label: str, kind: str = "data") -> str:
     """The primary key a resumed rotation should start after, if any.
 
     Returns ``""`` when there is nothing to resume from — no checkpoint, a
@@ -261,7 +261,7 @@ def resume_point(*, user: Any, new_version: int, label: str) -> str:
     from .models import RotationCheckpoint
 
     checkpoint = RotationCheckpoint.objects.filter(
-        user_id=user.pk, key_version=new_version, model_label=label
+        user_id=user.pk, key_kind=kind, key_version=new_version, model_label=label
     ).first()
     if checkpoint is None or checkpoint.is_complete:
         return ""
@@ -269,14 +269,21 @@ def resume_point(*, user: Any, new_version: int, label: str) -> str:
 
 
 def _record_progress(
-    *, user: Any, new_version: int, label: str, last_record_id: str, rows: int, complete: bool
+    *,
+    user: Any,
+    new_version: int,
+    label: str,
+    last_record_id: str,
+    rows: int,
+    complete: bool,
+    kind: str = "data",
 ) -> None:
     from django.utils import timezone
 
     from .models import RotationCheckpoint
 
     checkpoint, _ = RotationCheckpoint.objects.get_or_create(
-        user_id=user.pk, key_version=new_version, model_label=label
+        user_id=user.pk, key_kind=kind, key_version=new_version, model_label=label
     )
     checkpoint.last_record_id = last_record_id
     checkpoint.rows_rotated += rows
