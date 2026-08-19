@@ -96,6 +96,43 @@ be correlated with a person at a keyboard.
 a fallback there would restore the owner-as-their-own-actor rule that this door
 exists to replace.
 
+## Structures and amounts
+
+An envelope holds a string, so anything else has to become one first. Every
+service used to do that for itself, and the encoding is not the risky part —
+the decoding is. `json.loads` returns whatever the payload happened to be, so a
+caller expecting a mapping and handed a string finds out several frames later,
+somewhere with no idea which column it came from.
+
+`apps.core.encrypted_values` gives both directions one implementation:
+
+| Helper | Property |
+| --- | --- |
+| `encode_json` | Sorted keys, no incidental whitespace, Unicode kept as itself |
+| `decode_json(payload, expected=...)` | States the shape and refuses anything else |
+| `encode_money` / `decode_money` | `minor_units:CURRENCY`, currency **inside** the ciphertext |
+| `money_from_minor` | Refuses floats, `Decimal`, strings, and `bool` |
+
+Keys are sorted because two equal values must encode identically — otherwise
+the same features written twice produce different ciphertexts and nothing can
+compare them. Sequence order is preserved: a list is data, a mapping's key order
+is not.
+
+The currency travels inside the amount's payload rather than in a column beside
+it, so the associated data covers both. A currency edited in the database to
+make an amount mean something else fails to open instead of reporting a
+different figure.
+
+Failure is closed at both layers. A truncated or altered payload fails the
+cipher's authentication and never reaches the decoder; one that authenticates
+but decodes to the wrong shape raises rather than being coerced. Half a value is
+not a value.
+
+`money_from_minor` refuses a float rather than rounding it. `0.1 + 0.2` is not
+`0.3`, and a total built from values that were each nearly right is wrong by an
+amount nobody can account for. `bool` is refused too — Python says `True` is an
+`int`, and `Money(True, "KRW")` is not what anybody meant to write.
+
 ## One door in and out
 
 `EncryptedFieldsMixin` is the only way an encrypted column is written or read.
