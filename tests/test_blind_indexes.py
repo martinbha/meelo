@@ -16,7 +16,7 @@ import pytest
 
 from apps.categorization.normalization import merchant_blind_index
 from apps.core.blind_index import (
-    BLIND_INDEX_VERSION,
+    DEFAULT_KEY_VERSION,
     DOMAINS,
     MINIMUM_KEY_BYTES,
     BlindIndexError,
@@ -135,8 +135,8 @@ def test_the_same_value_always_gives_the_same_token() -> None:
 def test_a_token_says_which_scheme_produced_it() -> None:
     token = blind_index("merchant", "스타벅스", user_id=1, key=KEY)
 
-    assert token.startswith(f"{BLIND_INDEX_VERSION}:")
-    assert index_version(token) == BLIND_INDEX_VERSION
+    assert token.startswith(f"{DEFAULT_KEY_VERSION}:")
+    assert index_version(token) == DEFAULT_KEY_VERSION
     assert is_current(token)
 
 

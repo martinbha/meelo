@@ -19,8 +19,9 @@ Three properties follow, and each is tested:
   in another.
 - **Per-user scoping.** Two people who shop at the same café get different
   tokens, so the database cannot reveal that they have anything in common.
-- **A visible version.** Every token says which scheme produced it, so a
-  reindex can find the old ones rather than guessing (#168).
+- **A visible key version.** Every token says which search key produced it, so
+  a reindex can find the old ones without holding either key, and a query
+  during a rotation can look for both at once (#168).
 
 The key itself is derived from the user's data key and never stored — see
 :func:`apps.core.key_management.derive_blind_index_key`. It is a secret of the
@@ -36,9 +37,18 @@ from typing import Any
 
 from .errors import InvalidRequestError
 
-#: Bumped when the token construction changes. Written into every token, so a
-#: reindex can select the rows that still carry an older one.
-BLIND_INDEX_VERSION = 1
+#: Bumped when the token *construction* changes — a different digest, a
+#: different payload layout. It lives inside the HMAC rather than in the
+#: prefix, because it is not what a reindex selects on.
+BLIND_INDEX_SCHEME = 1
+
+#: What the prefix carries: which **search key** built the token. That is the
+#: thing that changes on a rotation, and the thing a query has to be able to
+#: recognise without holding either key. A scheme version in the prefix would
+#: have been useless for the operation the prefix exists to support — rotating
+#: the key produces a different digest under an identical prefix, so a partly
+#: reindexed table would be indistinguishable from a fully reindexed one.
+DEFAULT_KEY_VERSION = 1
 
 #: Minimum key length. Shorter than the digest gains nothing and hides the
 #: mistake of passing something that is not a key at all.
@@ -69,7 +79,7 @@ def blind_index(
     *,
     user_id: Any,
     key: bytes,
-    version: int = BLIND_INDEX_VERSION,
+    version: int = DEFAULT_KEY_VERSION,
 ) -> str:
     """A searchable token for one value, revealing nothing about it.
 
@@ -83,22 +93,24 @@ def blind_index(
     if len(key) < MINIMUM_KEY_BYTES:
         raise BlindIndexError(f"Blind-index keys must contain at least {MINIMUM_KEY_BYTES} bytes.")
     if version < 1:
-        raise BlindIndexError("Blind-index versions start at one.")
+        raise BlindIndexError("Blind-index key versions start at one.")
     if not value:
         raise BlindIndexError("An empty value has no blind index.")
 
-    # The domain, version, and owner are inside the digest, so a token cannot be
-    # replayed against another column, another scheme, or another person.
-    payload = f"{version}|{domain}|{user_id}|{value}".encode()
+    # The scheme, domain, key version, and owner all go inside the digest, so a
+    # token cannot be replayed against another column, another scheme, another
+    # key version, or another person. The key version is repeated outside it
+    # because a query has to read it without holding the key.
+    payload = f"{BLIND_INDEX_SCHEME}|{version}|{domain}|{user_id}|{value}".encode()
     return f"{version}:{hmac.new(key, payload, hashlib.sha256).hexdigest()}"
 
 
 def index_version(token: str) -> int:
-    """Which scheme produced this token, for a reindex to select on.
+    """Which search key version produced this token.
 
-    Returns 0 for anything that carries no version — tokens written before the
-    version was introduced. Those need rebuilding, and saying so is more useful
-    than raising in the middle of a migration over a million rows.
+    Returns 0 for anything that carries no version — a token written before the
+    prefix existed, or an empty column. Those need rebuilding, and saying so is
+    more useful than raising in the middle of a reindex over a million rows.
     """
 
     prefix, separator, _ = token.partition(":")
@@ -110,7 +122,7 @@ def index_version(token: str) -> int:
         return 0
 
 
-def is_current(token: str) -> bool:
-    """Whether this token was built by the scheme in force now."""
+def is_current(token: str, *, key_version: int = DEFAULT_KEY_VERSION) -> bool:
+    """Whether this token was built by the search key currently in force."""
 
-    return index_version(token) == BLIND_INDEX_VERSION
+    return index_version(token) == key_version
