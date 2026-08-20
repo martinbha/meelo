@@ -143,4 +143,4 @@ def test_postgres_ci_runs_migrations_and_the_full_suite() -> None:
     assert "uv run python manage.py migrate" in postgres
     assert "uv run python manage.py makemigrations --check --dry-run" in postgres
     assert "uv run pytest" in postgres
-    assert 'DJANGO_SETTINGS_MODULE: config.settings.ci' in postgres
+    assert "DJANGO_SETTINGS_MODULE: config.settings.ci" in postgres
