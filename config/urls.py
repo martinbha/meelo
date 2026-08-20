@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import (
@@ -263,3 +265,7 @@ urlpatterns = [
     ),
     path("reports/", RedirectView.as_view(pattern_name="report-overview", permanent=True)),
 ]
+
+# Only the collected STATIC_ROOT is exposed. Uploads, exports, and temporary
+# processing files live outside it and have no static URL.
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

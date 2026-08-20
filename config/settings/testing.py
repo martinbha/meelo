@@ -2,6 +2,13 @@ from pathlib import Path
 
 from .base import *  # noqa: F403
 
+# Tests render templates from the source tree without running collectstatic.
+# Production and the image use the manifest backend configured in base settings.
+STORAGES = {
+    **STORAGES,  # noqa: F405
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
 DEBUG = False
 SECRET_KEY = "test-only-secret-key"
 ALLOWED_HOSTS = ["testserver"]
