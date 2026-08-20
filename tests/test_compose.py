@@ -34,6 +34,23 @@ def test_the_database_is_not_reachable_from_the_host() -> None:
     assert "ports" not in compose["services"]["worker"]
 
 
+def test_services_are_bounded_and_restartable() -> None:
+    import yaml
+
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
+    for name in ("web", "worker", "postgres", "proxy"):
+        service = compose["services"][name]
+        limits = service["deploy"]["resources"]["limits"]
+        assert limits["cpus"]
+        assert limits["memory"]
+        assert service["restart"] == "unless-stopped"
+        assert service["healthcheck"]["retries"] > 0
+
+    tmp_volume = compose["volumes"]["finance_ocr_tmp"]
+    assert tmp_volume["driver_opts"]["type"] == "tmpfs"
+    assert "size=512m" in tmp_volume["driver_opts"]["o"]
+
+
 def test_the_web_process_does_not_connect_as_the_superuser() -> None:
     """The role that is exposed to the network is not the one that owns the schema."""
 
