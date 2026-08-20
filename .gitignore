@@ -10,4 +10,5 @@ __pycache__/
 .ruff_cache/
 .coverage
 coverage.xml
+coverage.json
 *.py[cod]
