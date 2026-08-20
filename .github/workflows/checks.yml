@@ -48,7 +48,7 @@ jobs:
         run: |
           uv run coverage run --branch -m pytest
           uv run coverage report
-          uv run coverage json --output=coverage.json
+          uv run coverage json -o coverage.json
           uv run python scripts/check_coverage.py coverage.json
 
   postgres:
