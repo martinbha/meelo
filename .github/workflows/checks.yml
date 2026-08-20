@@ -44,8 +44,12 @@ jobs:
       - name: Parser regression tests
         run: uv run pytest tests/test_institution_parsers.py -v
 
-      - name: Tests
-        run: uv run pytest
+      - name: Tests and coverage
+        run: |
+          uv run coverage run --branch -m pytest
+          uv run coverage report
+          uv run coverage json --output=coverage.json
+          uv run python scripts/check_coverage.py coverage.json
 
   postgres:
     # The suite runs on SQLite above because it is fast. It runs here on the
