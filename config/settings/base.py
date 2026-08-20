@@ -126,6 +126,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"},
+}
 #: Whether a write with no data key is an error rather than a plaintext store.
 #: On everywhere that matters; the test settings turn it off so fixtures do not
 #: all have to carry a key, and tests/test_plaintext_encryption.py turns it back

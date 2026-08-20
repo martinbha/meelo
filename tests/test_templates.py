@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 
@@ -17,6 +18,13 @@ def test_login_uses_shared_template_shell(client: Client) -> None:
     assert 'src="/static/js/app.js"' in content
     assert 'name="csrfmiddlewaretoken"' in content
     assert '<form method="post" hx-boost="false">' in content
+
+
+def test_static_files_use_manifest_storage_and_a_dedicated_root() -> None:
+    from config.settings import base
+
+    assert base.STORAGES["staticfiles"]["BACKEND"].endswith("ManifestStaticFilesStorage")
+    assert settings.STATIC_ROOT.name == "staticfiles"
 
 
 def test_base_shell_exposes_progress_indicator(client: Client) -> None:
