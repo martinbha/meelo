@@ -591,3 +591,18 @@ Upload-specific defences — path traversal, executable content, oversized image
 MIME sniffing — stay in `tests/test_uploads.py`, and login throttling and
 session expiry stay in `tests/test_authentication.py`, next to the code they
 constrain.
+
+## Vulnerability response policy
+
+Every pull request audits the locked production dependencies and scans the
+built application image with Trivy. Advisory lookups use the package indexes;
+source code and private data are not uploaded. Unfixed findings are reported
+for triage because a base-image advisory can exist before an upstream fix.
+
+Triage is time-bound: a critical exploitable finding is contained or patched
+within 24 hours, a high finding within seven days, and medium or lower findings
+within the next planned dependency update. The maintainer records the affected
+package or image component, fixed version, decision, and validation in the
+change that resolves it. A finding may be accepted only when it is unreachable
+in this deployment or has no available fix; the rationale and a review date are
+required, and the CI scan remains enabled.

@@ -96,3 +96,35 @@ jobs:
         run: uv run pytest
         env:
           DJANGO_SETTINGS_MODULE: config.settings.ci
+
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Audit locked dependencies
+        run: |
+          uv export --frozen --no-dev --format requirements-txt -o /tmp/requirements.txt
+          uv run --with pip-audit pip-audit --strict -r /tmp/requirements.txt
+
+      - name: Build application image
+        run: docker build --tag finance-ocr:ci .
+
+      - name: Scan application image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: finance-ocr:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          # The scan remains visible for base-image triage. Dependency findings
+          # fail above; distribution CVEs without a fixed package are warnings
+          # until the base image publishes a patched build.
+          exit-code: 0
