@@ -87,6 +87,11 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: config.settings.ci
 
+      - name: Check migrations against PostgreSQL
+        run: uv run python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
+
       - name: Tests against PostgreSQL
         run: uv run pytest
         env:
