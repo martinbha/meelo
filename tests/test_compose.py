@@ -135,3 +135,12 @@ def test_the_migration_alias_uses_its_own_role() -> None:
     # development database still works.
     assert 'os.getenv("POSTGRES_MIGRATION_USER"' in source
     assert "POSTGRES_MIGRATION_PASSWORD" in source
+
+
+def test_postgres_ci_runs_migrations_and_the_full_suite() -> None:
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "checks.yml").read_text()
+    postgres = workflow.split("  postgres:", 1)[1]
+    assert "uv run python manage.py migrate" in postgres
+    assert "uv run python manage.py makemigrations --check --dry-run" in postgres
+    assert "uv run pytest" in postgres
+    assert 'DJANGO_SETTINGS_MODULE: config.settings.ci' in postgres
