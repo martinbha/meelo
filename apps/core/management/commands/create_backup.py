@@ -15,6 +15,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.core.backup import create_backup
+from apps.core.key_management import KeyManagementError, load_master_key
 
 PASSPHRASE_ENV = "MEELO_BACKUP_PASSPHRASE"
 
@@ -28,6 +29,12 @@ class Command(BaseCommand):
             "--skip-documents",
             action="store_true",
             help="Back up the database only, leaving retained screenshots out.",
+        )
+        parser.add_argument(
+            "--retention-label",
+            choices=("adhoc", "daily", "weekly", "monthly"),
+            default="adhoc",
+            help="Retention class recorded in the manifest.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -43,10 +50,16 @@ class Command(BaseCommand):
             if options["skip_documents"]
             else Path(getattr(settings, "DOCUMENT_TMP_ROOT", "") or ".")
         )
+        try:
+            master_key = load_master_key()
+        except KeyManagementError:
+            master_key = None
         manifest = create_backup(
             Path(options["destination"]),
             passphrase=passphrase,
             document_root=document_root,
+            retention_label=options["retention_label"],
+            master_key=master_key,
         )
         self.stdout.write(
             f"Wrote {options['destination']}: "

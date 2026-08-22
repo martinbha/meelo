@@ -24,6 +24,7 @@ from django.core.management.base import CommandError
 from apps.core.backup import (
     BACKUP_FORMAT,
     BackupError,
+    assert_master_key_separate,
     create_backup,
     read_manifest,
     unpack_backup,
@@ -245,6 +246,33 @@ def test_the_manifest_records_the_schema_and_the_rows(
     assert manifest.latest_migrations["transactions"]
     assert manifest.row_counts["transactions.canonicaltransaction"] == 1
     assert manifest.row_counts["users.userdatakey"] == 1
+
+
+def test_the_manifest_records_the_retention_class(owner: Any, tmp_path: Path) -> None:
+    archive = tmp_path / "weekly.enc"
+
+    manifest = create_backup(archive, passphrase=PASSPHRASE, retention_label="weekly")
+
+    assert manifest.retention_label == "weekly"
+    assert read_manifest(archive, passphrase=PASSPHRASE).retention_label == "weekly"
+
+
+def test_key_material_and_key_files_are_rejected_from_database_backups(
+    master_key: bytes, tmp_path: Path
+) -> None:
+    with pytest.raises(BackupError, match="master-key material"):
+        assert_master_key_separate(master_key, master_key=master_key)
+
+    import io
+
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+        member = tarfile.TarInfo("secrets/master.key")
+        member.size = len(master_key)
+        archive.addfile(member, io.BytesIO(master_key))
+
+    with pytest.raises(BackupError, match="master-key file"):
+        assert_master_key_separate(payload.getvalue())
 
 
 def test_a_truncated_archive_is_caught_by_its_counts(
