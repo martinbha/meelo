@@ -186,6 +186,15 @@ The passphrase comes from the environment, never an argument — an argument lan
 in shell history and in the process list where every other user on the machine
 can read it.
 
+Create the separate encrypted master-key backup whenever the key is created or
+changed. Keep its file and passphrase on a different storage system from the
+database archives:
+
+```bash
+export MEELO_KEY_BACKUP_PASSPHRASE='...'
+./scripts/backup_master_key.sh /srv/finance/master.key /secure-key-backups/meelo-master-key.backup
+```
+
 ### What is in the archive
 
 Database rows, the wrapped per-user data keys, the migration state, and the
@@ -213,11 +222,14 @@ never do.
 | Monthly | 12 months | Off-site |
 
 Run `verify_backup` on every archive as it is written. Run a full restore
-rehearsal monthly:
+rehearsal monthly. The disposable-database procedure and evidence checklist
+are in [docs/restore-rehearsal.md](docs/restore-rehearsal.md):
 
 ```bash
-uv run python manage.py restore_backup /backups/meelo-2026-08-01.enc /tmp/rehearsal
-uv run python manage.py restore_backup /backups/meelo-2026-08-01.enc /tmp/rehearsal --load
+./scripts/rehearse_restore.sh \
+  /backups/meelo-2026-08-01.enc \
+  /secure-key-backups/meelo-master-key.backup \
+  /tmp/rehearsal
 ```
 
 Unpacking and loading are separate steps on purpose. A rehearsal should be able to
@@ -227,12 +239,12 @@ is not testing what will happen.
 
 ### Restoring for real
 
-1. Provision a database and run `migrate --database=migration`.
-2. Put the master key in place (from wherever it is stored — **not** the archive).
-3. `restore_backup <archive> <directory> --load`.
-4. Confirm a transaction from before the backup reads back correctly.
+1. Provision a database and run `scripts/restore_master_key.sh` with the
+   separately stored key backup.
+2. Run `scripts/restore_database.sh <archive> <directory>`.
+3. Confirm a transaction from before the backup reads back correctly.
 
-Step 4 is the one that matters. Rows restored without the master key load fine and
+Step 3 is the one that matters. Rows restored without the master key load fine and
 stay unreadable, which looks like success until somebody opens a report.
 
 ## Metrics and observability

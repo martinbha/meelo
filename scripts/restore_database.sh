@@ -22,6 +22,7 @@ if [[ -n "${MEELO_PYTHON_COMMAND:-}" ]]; then
     read -r -a python_command <<< "$MEELO_PYTHON_COMMAND"
 fi
 
+"${python_command[@]}" manage.py verify_backup "$archive"
 "${python_command[@]}" manage.py migrate --database=migration
 restore_args=(manage.py restore_backup "$archive" "$destination" --load)
 if [[ "$allow_non_empty" == "--allow-non-empty" ]]; then
