@@ -19,6 +19,7 @@ dependencies = [
     "psycopg[binary]>=3.2,<4",
     "pytesseract>=0.3.13,<1",
     "rapidfuzz>=3.10,<4",
+    "sentry-sdk>=2,<3",
 ]
 
 [dependency-groups]

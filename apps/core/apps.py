@@ -8,6 +8,9 @@ class CoreConfig(AppConfig):
     label = "core"
 
     def ready(self) -> None:
+        from .sentry import configure_sentry
+
+        configure_sentry()
         if settings.FIELD_ENCRYPTION_MASTER_KEY_REQUIRED:
             from .key_management import load_master_key
 
