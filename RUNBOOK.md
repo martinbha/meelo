@@ -247,7 +247,25 @@ Three things must survive independently for a restore to be possible: **the
 archive**, **its passphrase**, and **the master key file**. Any two of them
 without the third is not a backup. Keep them in different places.
 
+Create the encrypted key backup from a host that can read the 0600 key file:
+
+```bash
+export MEELO_KEY_BACKUP_PASSPHRASE='...'
+./scripts/backup_master_key.sh /srv/finance/master.key /secure-key-backups/meelo-master-key.backup
+```
+
+The key-backup format is independent of Django, so it can restore a missing
+master key before the application starts:
+
+```bash
+./scripts/restore_master_key.sh /secure-key-backups/meelo-master-key.backup /srv/finance/master.key
+```
+
 ### The restore walkthrough
+
+For a complete disposable-database drill, follow
+[docs/restore-rehearsal.md](docs/restore-rehearsal.md). The shorter sequence
+below is the same restore path used for an outage.
 
 Practise this before you need it. On a machine that is not the production host:
 
@@ -261,24 +279,25 @@ The command reports what it unpacked: the
 database fixture, the document files, and the manifest recording when the
 archive was made and what version wrote it.
 
-**2. Put the master key in place.** From wherever you stored it in step 3 of the
-first deployment — not from the archive, which does not contain it.
+**2. Put the master key in place.** From the separate key backup — not from the
+archive, which does not contain it.
 
 ```bash
-cp /path/to/master.key /srv/finance/master.key && chmod 600 /srv/finance/master.key
+MEELO_KEY_BACKUP_PASSPHRASE=... \
+./scripts/restore_master_key.sh /secure-key-backups/meelo-master-key.backup /srv/finance/master.key
 ```
 
 **3. Create the schema, then load the data.**
 
 ```bash
-python manage.py migrate && python manage.py loaddata /tmp/restored/database.json
+./scripts/restore_database.sh /backups/2026-08-18.enc /tmp/restored
 ```
 
 Into an empty database. Loading a fixture over existing rows collides on
 primary keys, and a partial load is worse than no load.
 
-**4. Restore the files** by copying `/tmp/restored/documents/` to the path
-`DOCUMENT_TMP_ROOT` points at.
+**4. Restore the files.** `restore_database.sh` copies the retained documents
+from `/tmp/restored/documents/` to the path `DOCUMENT_TMP_ROOT` points at.
 
 **5. Confirm it worked.** Sign in and open a report for a month you have data
 for. If the figures are right, the round trip is proved end to end: the database

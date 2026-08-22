@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import logging
 import shutil
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
 from django.utils import timezone
+
+from apps.reports.exports import ExportError
+from apps.reports.models import TransactionExport
+from apps.reports.services import export_file
 
 from .models import SourceDocument
 from .storage import document_directory, safe_document_path
@@ -19,6 +24,121 @@ ACTIVE_STATUSES = {
     SourceDocument.Status.OCR_RUNNING,
     SourceDocument.Status.PARSING,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupCandidate:
+    """One file-system object selected by the cleanup policy."""
+
+    kind: str
+    identifier: str
+    path: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupReport:
+    """The same candidate set is used for dry-run and deletion."""
+
+    candidates: tuple[CleanupCandidate, ...]
+    removed: int
+    failed: int
+
+
+def stale_document_candidates(*, cutoff: datetime) -> tuple[CleanupCandidate, ...]:
+    """Find stale document directories without changing the file system."""
+
+    root = Path(settings.DOCUMENT_TMP_ROOT)
+    if not root.exists() or root.is_symlink():
+        return ()
+    candidates: list[CleanupCandidate] = []
+    for directory in root.iterdir():
+        if not directory.is_dir() or directory.is_symlink():
+            continue
+        try:
+            document_id = UUID(directory.name)
+        except ValueError:
+            continue
+        document = SourceDocument.objects.filter(pk=document_id).first()
+        if document is not None and document.processing_status in ACTIVE_STATUSES:
+            continue
+        try:
+            modified_at = datetime.fromtimestamp(
+                directory.stat().st_mtime, tz=timezone.get_current_timezone()
+            )
+        except OSError:
+            continue
+        if modified_at < cutoff:
+            candidates.append(CleanupCandidate("document_directory", str(document_id), directory))
+    return tuple(candidates)
+
+
+def expired_export_candidates(*, now: datetime | None = None) -> tuple[CleanupCandidate, ...]:
+    """Find expired export files, including rows whose path is malformed."""
+
+    moment = now or timezone.now()
+    candidates: list[CleanupCandidate] = []
+    for record in TransactionExport.objects.filter(
+        deleted_at__isnull=True, expires_at__lte=moment
+    ).order_by("expires_at", "pk"):
+        try:
+            path: Path | None = export_file(record)
+        except ExportError:
+            path = None
+        candidates.append(CleanupCandidate("export_file", str(record.pk), path))
+    return tuple(candidates)
+
+
+def collect_cleanup_candidates(
+    *, cutoff: datetime, now: datetime | None = None
+) -> tuple[CleanupCandidate, ...]:
+    """Return document and export candidates in the order an operator sees."""
+
+    return (*stale_document_candidates(cutoff=cutoff), *expired_export_candidates(now=now))
+
+
+def _remove_candidates(candidates: tuple[CleanupCandidate, ...]) -> tuple[int, int]:
+    removed = 0
+    failed = 0
+    for candidate in candidates:
+        try:
+            if candidate.path is None:
+                raise ValueError("The stored path is invalid.")
+            if candidate.kind == "document_directory":
+                document = SourceDocument.objects.filter(pk=candidate.identifier).first()
+                if candidate.path.exists():
+                    shutil.rmtree(candidate.path)
+                if document is not None:
+                    document.cleanup_error_code = ""
+                    document.save(update_fields=["cleanup_error_code"])
+            else:
+                record = TransactionExport.objects.get(pk=candidate.identifier)
+                if candidate.path.exists():
+                    candidate.path.unlink()
+                record.deleted_at = timezone.now()
+                record.save(update_fields=["deleted_at"])
+            removed += 1
+        except (ExportError, OSError, ValueError, TransactionExport.DoesNotExist) as exc:
+            failed += 1
+            logger.warning(
+                "Cleanup failed for %s %s: %s", candidate.kind, candidate.identifier, exc
+            )
+            if candidate.kind == "document_directory":
+                SourceDocument.objects.filter(pk=candidate.identifier).update(
+                    cleanup_error_code="CLEANUP_FAILED"
+                )
+    return removed, failed
+
+
+def run_cleanup(
+    *, cutoff: datetime, now: datetime | None = None, dry_run: bool = False
+) -> CleanupReport:
+    """Report or remove one immutable candidate set."""
+
+    candidates = collect_cleanup_candidates(cutoff=cutoff, now=now)
+    if dry_run:
+        return CleanupReport(candidates, removed=0, failed=0)
+    removed, failed = _remove_candidates(candidates)
+    return CleanupReport(candidates, removed=removed, failed=failed)
 
 
 def cleanup_document_storage(document_id: UUID, temporary_path: str) -> bool:
@@ -44,36 +164,4 @@ def cleanup_document_storage(document_id: UUID, temporary_path: str) -> bool:
 def cleanup_stale_directories(*, cutoff: datetime) -> tuple[int, int]:
     """Remove old orphaned directories and return (removed, failed)."""
 
-    root = Path(settings.DOCUMENT_TMP_ROOT)
-    if not root.exists() or root.is_symlink():
-        return 0, 0
-    removed = 0
-    failed = 0
-    for directory in root.iterdir():
-        if not directory.is_dir() or directory.is_symlink():
-            continue
-        try:
-            document_id = UUID(directory.name)
-        except ValueError:
-            continue
-        document = SourceDocument.objects.filter(pk=document_id).first()
-        if document is not None and document.processing_status in ACTIVE_STATUSES:
-            continue
-        try:
-            modified_at = datetime.fromtimestamp(
-                directory.stat().st_mtime, tz=timezone.get_current_timezone()
-            )
-        except OSError:
-            continue
-        if modified_at >= cutoff:
-            continue
-        try:
-            shutil.rmtree(directory)
-            removed += 1
-        except OSError:
-            failed += 1
-            if document is not None:
-                SourceDocument.objects.filter(pk=document.pk).update(
-                    cleanup_error_code="CLEANUP_FAILED"
-                )
-    return removed, failed
+    return _remove_candidates(stale_document_candidates(cutoff=cutoff))

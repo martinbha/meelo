@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from apps.core import metrics
 from apps.transactions.classification import bucket_of, is_settlement
 from apps.transactions.models import CanonicalTransaction
 
@@ -214,5 +215,6 @@ def period_overview(
     """Income against spending for one user over one period."""
 
     resolved = currency.upper()
-    rows = list(reportable_transactions(user, start=start, end=end).filter(currency=resolved))
+    with metrics.timed(metrics.DATABASE_REPORT, status="overview"):
+        rows = list(reportable_transactions(user, start=start, end=end).filter(currency=resolved))
     return summarize(rows, currency=resolved, start=start, end=end, data_key=data_key)

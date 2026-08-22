@@ -48,6 +48,12 @@ MATCH_REJECTED = "reconciliation.rejected"
 QUEUE_DEPTH = "queue.depth"
 CLEANUP_FAILED = "cleanup.failed"
 DATABASE_LATENCY = "database.latency_ms"
+DATABASE_QUEUE_CLAIM = "database.queue_claim_ms"
+DATABASE_IMPORT = "database.import_ms"
+DATABASE_REPORT = "database.report_ms"
+DATABASE_CONNECTION_FAILED = "database.connection_failed"
+DATABASE_POOL_EXHAUSTED = "database.pool_exhausted"
+QUALITY_DAILY_AGGREGATE = "quality.daily_aggregate"
 
 METRIC_NAMES: frozenset[str] = frozenset(
     {
@@ -66,6 +72,12 @@ METRIC_NAMES: frozenset[str] = frozenset(
         QUEUE_DEPTH,
         CLEANUP_FAILED,
         DATABASE_LATENCY,
+        DATABASE_QUEUE_CLAIM,
+        DATABASE_IMPORT,
+        DATABASE_REPORT,
+        DATABASE_CONNECTION_FAILED,
+        DATABASE_POOL_EXHAUSTED,
+        QUALITY_DAILY_AGGREGATE,
     }
 )
 

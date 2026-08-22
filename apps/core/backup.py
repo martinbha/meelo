@@ -44,6 +44,7 @@ from apps.reports.exports import ExportError, open_archive, seal_archive
 
 #: Written into the manifest so a file found in three years explains itself.
 BACKUP_FORMAT = "meelo-backup-v1"
+RETENTION_LABELS = frozenset({"adhoc", "daily", "weekly", "monthly"})
 
 #: Entry names inside the archive.
 MANIFEST_NAME = "manifest.json"
@@ -82,6 +83,7 @@ class BackupManifest:
     latest_migrations: dict[str, str]
     row_counts: dict[str, int]
     document_count: int
+    retention_label: str = "adhoc"
     #: Always false. Present so a restore reads a statement rather than an
     #: absence, and so a file claiming otherwise is visibly not ours.
     includes_master_key: bool = False
@@ -94,6 +96,7 @@ class BackupManifest:
             "latest_migrations": self.latest_migrations,
             "row_counts": self.row_counts,
             "document_count": self.document_count,
+            "retention_label": self.retention_label,
             "includes_master_key": self.includes_master_key,
             "master_key_note": (
                 "The field-encryption master key is stored separately on purpose. "
@@ -111,9 +114,11 @@ def _models() -> list[Any]:
     ]
 
 
-def build_manifest(*, document_count: int) -> BackupManifest:
+def build_manifest(*, document_count: int, retention_label: str = "adhoc") -> BackupManifest:
     """Describe the system as it stands, before anything is written."""
 
+    if retention_label not in RETENTION_LABELS:
+        raise BackupError(f"Unknown backup retention label: {retention_label!r}.")
     applied = MigrationRecorder.Migration.objects.order_by("app", "name")
     latest: dict[str, str] = {}
     for migration in applied:
@@ -128,6 +133,7 @@ def build_manifest(*, document_count: int) -> BackupManifest:
             for model in _models()
         },
         document_count=document_count,
+        retention_label=retention_label,
     )
 
 
@@ -149,6 +155,8 @@ def create_backup(
     *,
     passphrase: str,
     document_root: Path | None = None,
+    retention_label: str = "adhoc",
+    master_key: bytes | None = None,
 ) -> BackupManifest:
     """Write one sealed archive, and return what went into it.
 
@@ -159,7 +167,7 @@ def create_backup(
     """
 
     documents = _document_paths(document_root)
-    manifest = build_manifest(document_count=len(documents))
+    manifest = build_manifest(document_count=len(documents), retention_label=retention_label)
 
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w:gz") as archive:
@@ -179,6 +187,7 @@ def create_backup(
             # Screenshots are already encrypted at rest; they travel as they are.
             archive.add(path, arcname=f"{DOCUMENTS_PREFIX}{relative}")
 
+    assert_master_key_separate(payload.getvalue(), master_key=master_key)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(seal_archive(payload.getvalue(), passphrase=passphrase))
     destination.chmod(0o600)
@@ -223,7 +232,31 @@ def manifest_from(body: bytes) -> BackupManifest:
         latest_migrations=payload["latest_migrations"],
         row_counts=payload["row_counts"],
         document_count=payload["document_count"],
+        retention_label=payload.get("retention_label", "adhoc"),
     )
+
+
+def assert_master_key_separate(body: bytes, *, master_key: bytes | None = None) -> None:
+    """Reject an archive that contains the field-encryption key or its file."""
+
+    if master_key:
+        import base64
+
+        encoded = base64.urlsafe_b64encode(master_key)
+        if master_key in body or encoded in body:
+            raise BackupError("The database backup contains master-key material.")
+
+    with tarfile.open(fileobj=io.BytesIO(body)) as archive:
+        names = {member.name.casefold() for member in archive.getmembers()}
+    forbidden_names = {
+        name
+        for name in names
+        if "master_key" in name
+        or "field-encryption-master-key" in name
+        or name.endswith("master.key")
+    }
+    if forbidden_names:
+        raise BackupError("The database backup contains a master-key file.")
 
 
 def read_manifest(path: Path, *, passphrase: str) -> BackupManifest:
@@ -256,7 +289,12 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     """
 
     # One decryption for both the manifest and the contents.
-    body = _open(path, passphrase=passphrase)
+    return _unpack_body(_open(path, passphrase=passphrase), destination=destination)
+
+
+def _unpack_body(body: bytes, *, destination: Path) -> RestoreReport:
+    """Unpack an already-opened archive body without deriving its key again."""
+
     manifest = manifest_from(body)
     destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(body)) as archive:
@@ -285,13 +323,18 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     return report
 
 
-def verify_backup(path: Path, *, passphrase: str) -> list[str]:
+def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = None) -> list[str]:
     """Check an archive opens and is internally consistent. Returns problems."""
 
     import tempfile
 
     with tempfile.TemporaryDirectory() as scratch:
-        report = unpack_backup(path, passphrase=passphrase, destination=Path(scratch))
+        body = _open(path, passphrase=passphrase)
+        try:
+            assert_master_key_separate(body, master_key=master_key)
+        except BackupError as error:
+            return [str(error)]
+        report = _unpack_body(body, destination=Path(scratch))
         problems = list(report.problems)
         try:
             rows = json.loads(report.database_path.read_text())

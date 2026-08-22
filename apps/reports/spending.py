@@ -30,6 +30,7 @@ from typing import Any
 
 from django.db.models import QuerySet
 
+from apps.core import metrics
 from apps.core.ownership import owned_queryset
 from apps.core.value_objects import Money
 from apps.transactions.classification import OPENING_TYPES, bucket_of
@@ -200,12 +201,6 @@ def monthly_spending(
     """What one month cost this user, per currency."""
 
     start, end = month_bounds(year, month)
-    return MonthlySpending(
-        year=year,
-        month=month,
-        start=start,
-        end=end,
-        by_currency=accumulate(
-            reportable_transactions(user, start=start, end=end), data_key=data_key
-        ),
-    )
+    with metrics.timed(metrics.DATABASE_REPORT, status="monthly"):
+        totals = accumulate(reportable_transactions(user, start=start, end=end), data_key=data_key)
+    return MonthlySpending(year=year, month=month, start=start, end=end, by_currency=totals)

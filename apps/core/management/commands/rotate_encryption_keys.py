@@ -76,6 +76,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["batch_size"] < 1:
+            raise CommandError("--batch-size must be at least 1.")
         master_key = load_master_key()
         users = User.objects.all()
         if options["email"]:

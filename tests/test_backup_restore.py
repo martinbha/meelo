@@ -24,6 +24,7 @@ from django.core.management.base import CommandError
 from apps.core.backup import (
     BACKUP_FORMAT,
     BackupError,
+    assert_master_key_separate,
     create_backup,
     read_manifest,
     unpack_backup,
@@ -247,6 +248,33 @@ def test_the_manifest_records_the_schema_and_the_rows(
     assert manifest.row_counts["users.userdatakey"] == 1
 
 
+def test_the_manifest_records_the_retention_class(owner: Any, tmp_path: Path) -> None:
+    archive = tmp_path / "weekly.enc"
+
+    manifest = create_backup(archive, passphrase=PASSPHRASE, retention_label="weekly")
+
+    assert manifest.retention_label == "weekly"
+    assert read_manifest(archive, passphrase=PASSPHRASE).retention_label == "weekly"
+
+
+def test_key_material_and_key_files_are_rejected_from_database_backups(
+    master_key: bytes, tmp_path: Path
+) -> None:
+    with pytest.raises(BackupError, match="master-key material"):
+        assert_master_key_separate(master_key, master_key=master_key)
+
+    import io
+
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+        member = tarfile.TarInfo("secrets/master.key")
+        member.size = len(master_key)
+        archive.addfile(member, io.BytesIO(master_key))
+
+    with pytest.raises(BackupError, match="master-key file"):
+        assert_master_key_separate(payload.getvalue())
+
+
 def test_a_truncated_archive_is_caught_by_its_counts(
     owner: Any, data_key: bytes, documents: Path, tmp_path: Path
 ) -> None:
@@ -394,10 +422,28 @@ def test_the_restore_command_loads_when_asked(
     run("create_backup", str(archive), skip_documents=True)
     CanonicalTransaction.objects.all().delete()
 
-    output = run("restore_backup", str(archive), str(tmp_path / "out"), load=True)
+    output = run(
+        "restore_backup",
+        str(archive),
+        str(tmp_path / "out"),
+        load=True,
+        allow_non_empty=True,
+    )
 
     assert "Loaded" in output
     assert CanonicalTransaction.objects.filter(pk=original.pk).exists()
+
+
+def test_the_restore_command_refuses_a_non_empty_database(
+    owner: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    make_account(owner, name_blind_index="backup-account")
+    monkeypatch.setenv(PASSPHRASE_ENV, PASSPHRASE)
+    archive = tmp_path / "backup.enc"
+    run("create_backup", str(archive), skip_documents=True)
+
+    with pytest.raises(CommandError, match="not empty"):
+        run("restore_backup", str(archive), str(tmp_path / "out"), load=True)
 
 
 def test_the_verify_command_fails_loudly_on_a_bad_archive(
@@ -431,4 +477,8 @@ def test_an_archive_is_decrypted_once_per_operation(
 
     unpack_backup(archive, passphrase=PASSPHRASE, destination=tmp_path / "out")
 
+    assert opens["count"] == 1
+
+    opens["count"] = 0
+    assert verify_backup(archive, passphrase=PASSPHRASE) == []
     assert opens["count"] == 1
