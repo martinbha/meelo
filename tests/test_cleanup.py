@@ -11,9 +11,15 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from apps.processing.cleanup import cleanup_document_storage
+from apps.processing.cleanup import (
+    cleanup_document_storage,
+    collect_cleanup_candidates,
+    run_cleanup,
+)
 from apps.processing.models import SourceDocument
 from apps.processing.storage import document_directory
+from apps.reports.exports import safe_export_path
+from apps.reports.models import TransactionExport
 
 
 @pytest.fixture
@@ -62,3 +68,37 @@ def test_cleanup_command_removes_old_orphaned_directory(user: Any, capsys: Any) 
 
     assert not orphan.exists()
     assert "Removed 1 stale document directory" in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+def test_cleanup_dry_run_and_real_run_select_the_same_candidates(user: Any) -> None:
+    orphan = Path("/tmp/finance-ocr-tests") / str(uuid4())
+    orphan.mkdir(parents=True, exist_ok=True)
+    (orphan / "stale.png").write_bytes(b"stale")
+    old_timestamp = (timezone.now() - timedelta(hours=48)).timestamp()
+    os.utime(orphan, (old_timestamp, old_timestamp))
+
+    export_path = safe_export_path("expired.csv")
+    export_path.write_bytes(b"csv")
+    export = TransactionExport.objects.create(
+        user=user,
+        export_format=TransactionExport.Format.CSV,
+        file_path=str(export_path),
+        expires_at=timezone.now() - timedelta(hours=1),
+    )
+
+    now = timezone.now()
+    candidates = collect_cleanup_candidates(
+        cutoff=now - timedelta(hours=24), now=now
+    )
+    dry_run = run_cleanup(cutoff=now - timedelta(hours=24), now=now, dry_run=True)
+    real_run = run_cleanup(cutoff=now - timedelta(hours=24), now=now)
+
+    assert dry_run.candidates == candidates
+    assert real_run.candidates == candidates
+    assert real_run.removed == 2
+    assert real_run.failed == 0
+    assert not orphan.exists()
+    assert not export_path.exists()
+    assert export.refresh_from_db() is None
+    assert export.deleted_at is not None

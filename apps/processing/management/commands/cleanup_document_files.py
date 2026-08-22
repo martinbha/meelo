@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.processing.cleanup import cleanup_stale_directories
+from apps.processing.cleanup import cleanup_stale_directories, stale_document_candidates
 
 
 class Command(BaseCommand):
@@ -19,7 +19,11 @@ class Command(BaseCommand):
         age_hours = max(int(str(options["age_hours"])), 1)
         cutoff = timezone.now() - timedelta(hours=age_hours)
         if options["dry_run"]:
-            self.stdout.write(f"Would inspect files older than {cutoff.isoformat()}.")
+            candidates = stale_document_candidates(cutoff=cutoff)
+            self.stdout.write(
+                f"Would remove {len(candidates)} stale document director"
+                f"{'y' if len(candidates) == 1 else 'ies'} older than {cutoff.isoformat()}."
+            )
             return
         removed, failed = cleanup_stale_directories(cutoff=cutoff)
         self.stdout.write(
