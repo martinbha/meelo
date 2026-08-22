@@ -27,9 +27,7 @@ def backup_age_hours(path: Path, *, now: datetime | None = None) -> float:
     return max(0.0, (current - modified).total_seconds() / 3600)
 
 
-def require_recent_backup(
-    path: Path, *, max_age_hours: float, now: datetime | None = None
-) -> None:
+def require_recent_backup(path: Path, *, max_age_hours: float, now: datetime | None = None) -> None:
     """Refuse rotation unless the named backup is recent enough to restore."""
 
     if max_age_hours <= 0:

@@ -34,9 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = _parser().parse_args(argv)
     age_hours = max(options.age_hours, 1)
     now = timezone.now()
-    report = run_cleanup(
-        cutoff=now - timedelta(hours=age_hours), now=now, dry_run=options.dry_run
-    )
+    report = run_cleanup(cutoff=now - timedelta(hours=age_hours), now=now, dry_run=options.dry_run)
     document_count = sum(candidate.kind == "document_directory" for candidate in report.candidates)
     export_count = sum(candidate.kind == "export_file" for candidate in report.candidates)
     prefix = "DRY_RUN" if options.dry_run else "CLEANUP"

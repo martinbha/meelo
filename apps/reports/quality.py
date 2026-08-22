@@ -99,17 +99,17 @@ def aggregate_day(day: date) -> tuple[QualityMetricDaily, ...]:
         match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
     ).values_list("left_observation_id", "status")
     for observation_id, status in matches:
-        dimension = observation_dimensions.get(observation_id)
-        if dimension is None:
-            observation = (
+        match_dimension: tuple[str, str] | None = observation_dimensions.get(observation_id)
+        if match_dimension is None:
+            match_observation = (
                 ImportedObservation.objects.select_related("source_document")
                 .filter(pk=observation_id)
                 .first()
             )
-            if observation is None:
+            if match_observation is None:
                 continue
-            dimension = _dimension(observation)
-        counts = grouped[dimension]
+            match_dimension = _dimension(match_observation)
+        counts = grouped[match_dimension]
         counts.duplicate_candidates += 1
         counts.duplicate_confirmed += int(status == ReconciliationMatch.Status.CONFIRMED)
 

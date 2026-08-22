@@ -91,7 +91,7 @@ class Command(BaseCommand):
 
     def _database_has_rows(self) -> bool:
         return any(
-            model.objects.exists()
+            model._default_manager.exists()
             for app_label in BACKED_UP_APPS
             for model in apps.get_app_config(app_label).get_models()
         )
@@ -101,9 +101,7 @@ class Command(BaseCommand):
         for migration in MigrationRecorder.Migration.objects.order_by("app", "name"):
             current[migration.app] = migration.name
         missing = [
-            app
-            for app, name in manifest.latest_migrations.items()
-            if current.get(app) != name
+            app for app, name in manifest.latest_migrations.items() if current.get(app) != name
         ]
         if missing:
             raise CommandError(

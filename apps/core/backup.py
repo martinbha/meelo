@@ -318,9 +318,7 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     return report
 
 
-def verify_backup(
-    path: Path, *, passphrase: str, master_key: bytes | None = None
-) -> list[str]:
+def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = None) -> list[str]:
     """Check an archive opens and is internally consistent. Returns problems."""
 
     import tempfile

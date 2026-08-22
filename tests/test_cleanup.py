@@ -88,9 +88,7 @@ def test_cleanup_dry_run_and_real_run_select_the_same_candidates(user: Any) -> N
     )
 
     now = timezone.now()
-    candidates = collect_cleanup_candidates(
-        cutoff=now - timedelta(hours=24), now=now
-    )
+    candidates = collect_cleanup_candidates(cutoff=now - timedelta(hours=24), now=now)
     dry_run = run_cleanup(cutoff=now - timedelta(hours=24), now=now, dry_run=True)
     real_run = run_cleanup(cutoff=now - timedelta(hours=24), now=now)
 
@@ -100,5 +98,5 @@ def test_cleanup_dry_run_and_real_run_select_the_same_candidates(user: Any) -> N
     assert real_run.failed == 0
     assert not orphan.exists()
     assert not export_path.exists()
-    assert export.refresh_from_db() is None
+    export.refresh_from_db()
     assert export.deleted_at is not None

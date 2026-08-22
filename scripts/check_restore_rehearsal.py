@@ -26,7 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest = json.loads((options.unpacked / "manifest.json").read_text(encoding="utf-8"))
     expected = manifest["row_counts"]
     actual = {
-        f"{model._meta.app_label}.{model._meta.model_name}": model.objects.count()
+        f"{model._meta.app_label}.{model._meta.model_name}": model._default_manager.count()
         for app_label in BACKED_UP_APPS
         for model in apps.get_app_config(app_label).get_models()
     }

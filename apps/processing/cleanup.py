@@ -68,9 +68,7 @@ def stale_document_candidates(*, cutoff: datetime) -> tuple[CleanupCandidate, ..
         except OSError:
             continue
         if modified_at < cutoff:
-            candidates.append(
-                CleanupCandidate("document_directory", str(document_id), directory)
-            )
+            candidates.append(CleanupCandidate("document_directory", str(document_id), directory))
     return tuple(candidates)
 
 

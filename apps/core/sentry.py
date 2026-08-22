@@ -65,7 +65,8 @@ def configure_sentry() -> bool:
 
     import sentry_sdk
 
-    sentry_sdk.init(
+    initializer: Any = sentry_sdk.init
+    initializer(
         dsn=dsn,
         environment=getattr(settings, "SENTRY_ENVIRONMENT", "production"),
         send_default_pii=False,
