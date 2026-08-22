@@ -318,7 +318,9 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     return report
 
 
-def verify_backup(path: Path, *, passphrase: str) -> list[str]:
+def verify_backup(
+    path: Path, *, passphrase: str, master_key: bytes | None = None
+) -> list[str]:
     """Check an archive opens and is internally consistent. Returns problems."""
 
     import tempfile
@@ -326,7 +328,7 @@ def verify_backup(path: Path, *, passphrase: str) -> list[str]:
     with tempfile.TemporaryDirectory() as scratch:
         body = _open(path, passphrase=passphrase)
         try:
-            assert_master_key_separate(body)
+            assert_master_key_separate(body, master_key=master_key)
         except BackupError as error:
             return [str(error)]
         report = unpack_backup(path, passphrase=passphrase, destination=Path(scratch))

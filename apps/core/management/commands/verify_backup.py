@@ -14,6 +14,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.core.backup import read_manifest, verify_backup
+from apps.core.key_management import KeyManagementError, load_master_key
 
 from .create_backup import PASSPHRASE_ENV
 
@@ -35,7 +36,11 @@ class Command(BaseCommand):
             f"{sum(manifest.row_counts.values())} row(s), "
             f"{manifest.document_count} document(s)."
         )
-        problems = verify_backup(path, passphrase=passphrase)
+        try:
+            master_key = load_master_key()
+        except KeyManagementError:
+            master_key = None
+        problems = verify_backup(path, passphrase=passphrase, master_key=master_key)
         for problem in problems:
             self.stderr.write(f"  {problem}")
         if problems:
