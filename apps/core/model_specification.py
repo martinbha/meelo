@@ -477,6 +477,7 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
     "core.RotationCheckpoint": "How far a key rotation got, so a resumed run does not re-read "
     "the whole history to find where it stopped (specification 22.6).",
+    "core.WorkerHeartbeat": "Latest worker liveness timestamps for operational health checks.",
     "processing.ProcessingJob": "The database-backed work queue (specification 3.3).",
     "ledger.ChartOfAccounts": "The double-entry chart the ledger posts into (specification 7).",
     "ledger.LedgerAccount": "Ledger accounts and their normal balances (specification 7).",
@@ -484,4 +485,6 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "reconciliation.NearDuplicateDocument": "Perceptually similar screenshots, kept apart from "
     "transaction matches (specification 16.2).",
     "reports.TransactionExport": "Generated exports and their expiry (specification 25.5).",
+    "reports.QualityMetricDaily": "Daily privacy-safe parser quality aggregates "
+    "(specification 31.3).",
 }

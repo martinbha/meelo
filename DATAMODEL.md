@@ -98,10 +98,12 @@ schema rather than the part that happens to be tabulated.
 | `users.UserDataKey` | 22.2, per-user wrapped data keys and their versions |
 | `core.AuditEvent` | 23, the hash-chained audit log |
 | `processing.ProcessingJob` | 3.3, the database-backed work queue |
+| `core.WorkerHeartbeat` | Operational worker liveness timestamps used by health checks |
 | `ledger.ChartOfAccounts`, `ledger.LedgerAccount` | 7, the double-entry chart the ledger posts into |
 | `categorization.CategoryRule` | 18, user categorization rules |
 | `reconciliation.NearDuplicateDocument` | 16.2, perceptually similar screenshots — kept apart from transaction matches, because two images looking alike is a statement about pixels and must never be presented as though money had been matched |
 | `reports.TransactionExport` | 25.5, generated exports and their expiry |
+| `reports.QualityMetricDaily` | 31.3, daily privacy-safe parser quality aggregates |
 
 ## Enumerations
 
