@@ -93,3 +93,44 @@ class TransactionExport(models.Model):
 
     def __str__(self) -> str:
         return f"{self.export_format} export ({self.row_count} rows)"
+
+
+class QualityMetricDaily(models.Model):
+    """Privacy-safe daily quality aggregates.
+
+    The dimensions are parser and source-type names, not user data. Every other
+    value is a count or a rate, so this table can be used for trend analysis
+    without becoming a second financial ledger.
+    """
+
+    day = models.DateField()
+    institution = models.CharField(max_length=64)
+    source_type = models.CharField(max_length=40)
+    observations_count = models.PositiveIntegerField(default=0)
+    corrected_count = models.PositiveIntegerField(default=0)
+    disagreement_count = models.PositiveIntegerField(default=0)
+    duplicate_candidates_count = models.PositiveIntegerField(default=0)
+    duplicate_confirmed_count = models.PositiveIntegerField(default=0)
+    ocr_issue_count = models.PositiveIntegerField(default=0)
+    parser_issue_count = models.PositiveIntegerField(default=0)
+    correction_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    disagreement_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    duplicate_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    ocr_issue_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    parser_issue_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("day", "institution", "source_type"),
+                name="quality_metric_daily_dimension_unique",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("day", "institution"), name="quality_metric_daily_day_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.day}: {self.institution}/{self.source_type}"

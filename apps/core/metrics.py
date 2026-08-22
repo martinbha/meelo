@@ -53,6 +53,7 @@ DATABASE_IMPORT = "database.import_ms"
 DATABASE_REPORT = "database.report_ms"
 DATABASE_CONNECTION_FAILED = "database.connection_failed"
 DATABASE_POOL_EXHAUSTED = "database.pool_exhausted"
+QUALITY_DAILY_AGGREGATE = "quality.daily_aggregate"
 
 METRIC_NAMES: frozenset[str] = frozenset(
     {
@@ -76,6 +77,7 @@ METRIC_NAMES: frozenset[str] = frozenset(
         DATABASE_REPORT,
         DATABASE_CONNECTION_FAILED,
         DATABASE_POOL_EXHAUSTED,
+        QUALITY_DAILY_AGGREGATE,
     }
 )
 
