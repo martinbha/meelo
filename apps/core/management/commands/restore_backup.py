@@ -17,6 +17,7 @@ from django.apps import apps
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 
 from apps.core.backup import BACKED_UP_APPS, BackupManifest, unpack_backup
@@ -77,12 +78,13 @@ class Command(BaseCommand):
             raise CommandError(
                 f"The master key must be restored separately before loading: {error}"
             ) from error
-        call_command("loaddata", str(report.database_path))
-        verification = verify_wrapped_keys(master_key=master_key)
-        if not verification.is_clean:
-            raise CommandError(
-                f"{len(verification.unreadable)} restored wrapped key(s) could not be opened."
-            )
+        with transaction.atomic():
+            call_command("loaddata", str(report.database_path))
+            verification = verify_wrapped_keys(master_key=master_key)
+            if not verification.is_clean:
+                raise CommandError(
+                    f"{len(verification.unreadable)} restored wrapped key(s) could not be opened."
+                )
         self._restore_documents(report)
         self.stdout.write(
             "Loaded. The master key is not in the archive — restore it separately "

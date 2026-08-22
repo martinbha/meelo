@@ -289,7 +289,12 @@ def unpack_backup(path: Path, *, passphrase: str, destination: Path) -> RestoreR
     """
 
     # One decryption for both the manifest and the contents.
-    body = _open(path, passphrase=passphrase)
+    return _unpack_body(_open(path, passphrase=passphrase), destination=destination)
+
+
+def _unpack_body(body: bytes, *, destination: Path) -> RestoreReport:
+    """Unpack an already-opened archive body without deriving its key again."""
+
     manifest = manifest_from(body)
     destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(body)) as archive:
@@ -329,7 +334,7 @@ def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = Non
             assert_master_key_separate(body, master_key=master_key)
         except BackupError as error:
             return [str(error)]
-        report = unpack_backup(path, passphrase=passphrase, destination=Path(scratch))
+        report = _unpack_body(body, destination=Path(scratch))
         problems = list(report.problems)
         try:
             rows = json.loads(report.database_path.read_text())

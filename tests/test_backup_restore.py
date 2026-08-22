@@ -478,3 +478,7 @@ def test_an_archive_is_decrypted_once_per_operation(
     unpack_backup(archive, passphrase=PASSPHRASE, destination=tmp_path / "out")
 
     assert opens["count"] == 1
+
+    opens["count"] = 0
+    assert verify_backup(archive, passphrase=PASSPHRASE) == []
+    assert opens["count"] == 1
