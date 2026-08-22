@@ -106,6 +106,35 @@ class AuditEvent(models.Model):
         super().save(*args, **kwargs)  # type: ignore[arg-type]
 
 
+class WorkerHeartbeat(models.Model):
+    """Last-seen state for database-backed workers.
+
+    A heartbeat is deliberately an operational row rather than a network
+    endpoint. The worker has no listener to expose, and the web process can
+    still report a stale worker from the same database it already trusts.
+    """
+
+    worker_id = models.CharField(max_length=128, primary_key=True)
+    last_seen_at = models.DateTimeField()
+    last_job_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=("-last_seen_at",), name="worker_heartbeat_seen_idx")]
+
+    @classmethod
+    def touch(cls, worker_id: str, *, job_seen: bool = False) -> None:
+        """Record one poll without storing task payloads or user data."""
+
+        from django.utils import timezone
+
+        now = timezone.now()
+        defaults = {"last_seen_at": now}
+        if job_seen:
+            defaults["last_job_at"] = now
+        cls.objects.update_or_create(worker_id=worker_id, defaults=defaults)
+
+
 class RotationCheckpoint(models.Model):
     """How far a key rotation got, per user, per model.
 

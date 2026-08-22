@@ -191,8 +191,10 @@ class ProcessingJob(models.Model):
     def claim_next(cls) -> Self | None:
         """Atomically claim the oldest available queued job."""
 
+        from apps.core import metrics
+
         now = timezone.now()
-        with transaction.atomic():
+        with metrics.timed(metrics.DATABASE_QUEUE_CLAIM), transaction.atomic():
             job = (
                 cls.objects.select_for_update(skip_locked=True)
                 .filter(status=cls.Status.QUEUED, available_at__lte=now)

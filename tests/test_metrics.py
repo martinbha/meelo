@@ -15,11 +15,14 @@ from typing import Any
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from apps.core import metrics
 from apps.core.context import request_id_context, task_id_context
 from apps.core.logging import RequestContextFilter, StructuredFormatter
 from apps.core.metrics import MetricError, record, timed
+from apps.core.models import WorkerHeartbeat
+from apps.processing.models import ProcessingJob
 
 
 class _Collector(logging.Handler):
@@ -269,6 +272,41 @@ def test_the_status_command_can_emit_its_readings_as_metrics(emitted: Any) -> No
     assert metrics.QUEUE_DEPTH in names
     assert metrics.CLEANUP_FAILED in names
     assert metrics.DATABASE_LATENCY in names
+
+
+@pytest.mark.django_db
+def test_the_status_command_reports_worker_heartbeat_and_thresholds() -> None:
+    WorkerHeartbeat.touch("test-worker")
+    out = StringIO()
+
+    call_command("operational_status", "--json", stdout=out)
+
+    reading = json.loads(out.getvalue())
+    assert reading["worker_available"] == 1
+    assert reading["worker_heartbeat_age_seconds"] >= 0
+    assert reading["healthy"] == 1
+
+
+@pytest.mark.django_db
+def test_the_status_command_returns_nonzero_when_a_threshold_is_breached() -> None:
+    with pytest.raises(CommandError, match="thresholds"):
+        call_command("operational_status", "--max-queue-depth", "-1", stdout=StringIO())
+
+
+@pytest.mark.django_db
+def test_queue_claim_records_database_latency(emitted: Any) -> None:
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("metrics-owner@example.com", password="password")
+    ProcessingJob.objects.create(
+        user=user,
+        document_id="00000000-0000-0000-0000-000000000001",
+        task_name="test",
+    )
+
+    ProcessingJob.claim_next()
+
+    assert any(payload["metric"] == metrics.DATABASE_QUEUE_CLAIM for payload in emitted)
 
 
 # ---------------------------------------------------------------------------

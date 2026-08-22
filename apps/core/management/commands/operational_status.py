@@ -12,17 +12,19 @@ import json
 import time
 from typing import Any
 
-from django.core.management.base import BaseCommand
-from django.db import connection
+from django.core.management.base import BaseCommand, CommandError
+from django.db import DatabaseError, connection
 from django.db.models import Count
+from django.utils import timezone
 
 from apps.core import metrics
+from apps.core.models import WorkerHeartbeat
 from apps.observations.models import ImportedObservation
-from apps.processing.models import SourceDocument
+from apps.processing.models import ProcessingJob, SourceDocument
 
 
 class Command(BaseCommand):
-    help = "Report queue depth, cleanup failures, and database latency."
+    help = "Report queue depth, worker health, cleanup failures, and database latency."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -36,21 +38,52 @@ class Command(BaseCommand):
             action="store_true",
             help="Also record the readings as metrics, for a scheduled run.",
         )
+        for name, help_text in (
+            ("queue-depth", "Maximum queued job count."),
+            ("failed-documents", "Maximum failed document count."),
+            ("cleanup-failures", "Maximum cleanup failure count."),
+            ("unreviewed-observations", "Maximum unreviewed observation count."),
+            ("database-latency-ms", "Maximum database probe latency."),
+            ("worker-heartbeat-age-seconds", "Maximum age of the newest worker heartbeat."),
+        ):
+            parser.add_argument(
+                f"--max-{name}",
+                type=float,
+                default=None,
+                help=help_text,
+            )
 
     def handle(self, *args: Any, **options: Any) -> None:
         started = time.perf_counter()
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
-        latency_ms = round((time.perf_counter() - started) * 1000, 3)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            latency_ms = round((time.perf_counter() - started) * 1000, 3)
+            database_available = 1
+        except DatabaseError as error:
+            latency_ms = -1
+            database_available = 0
+            _record_database_failure(error)
+
+        if not database_available:
+            reading = {
+                "queue_depth": -1,
+                "processing": -1,
+                "failed": -1,
+                "cleanup_failures": -1,
+                "unreviewed_observations": -1,
+                "database_latency_ms": latency_ms,
+                "database_available": database_available,
+                "worker_heartbeat_age_seconds": -1,
+                "worker_available": 0,
+                "healthy": 0,
+            }
+            self._write(reading, options)
+            raise CommandError("The database health probe failed.")
 
         statuses = dict(
             SourceDocument.objects.values_list("processing_status").annotate(total=Count("pk"))
-        )
-        waiting = (
-            SourceDocument.Status.PENDING,
-            SourceDocument.Status.VALIDATING,
-            SourceDocument.Status.QUEUED,
         )
         running = (
             SourceDocument.Status.PREPROCESSING,
@@ -60,7 +93,7 @@ class Command(BaseCommand):
         reading = {
             # Depth is what has not started, not what is in flight: a queue that
             # looks empty because everything is mid-OCR is not an empty queue.
-            "queue_depth": sum(statuses.get(status, 0) for status in waiting),
+            "queue_depth": ProcessingJob.objects.filter(status=ProcessingJob.Status.QUEUED).count(),
             "processing": sum(statuses.get(status, 0) for status in running),
             "failed": statuses.get(SourceDocument.Status.FAILED, 0),
             "cleanup_failures": SourceDocument.objects.exclude(cleanup_error_code="").count(),
@@ -68,15 +101,61 @@ class Command(BaseCommand):
                 review_status=ImportedObservation.ReviewStatus.UNREVIEWED
             ).count(),
             "database_latency_ms": latency_ms,
+            "database_available": database_available,
         }
+
+        heartbeat = WorkerHeartbeat.objects.order_by("-last_seen_at").first()
+        if heartbeat is None:
+            reading["worker_heartbeat_age_seconds"] = -1
+            reading["worker_available"] = 0
+        else:
+            age = max(0.0, (timezone.now() - heartbeat.last_seen_at).total_seconds())
+            reading["worker_heartbeat_age_seconds"] = round(age, 3)
+            reading["worker_available"] = 1
+
+        reading["healthy"] = int(not self._violations(reading, options))
 
         if options["emit_metrics"]:
             metrics.record(metrics.QUEUE_DEPTH, value=reading["queue_depth"], status="pending")
             metrics.record(metrics.CLEANUP_FAILED, value=reading["cleanup_failures"])
             metrics.record(metrics.DATABASE_LATENCY, value=latency_ms)
+            if not reading["worker_available"]:
+                metrics.record(metrics.QUEUE_DEPTH, value=0, status="worker_missing")
 
+        self._write(reading, options)
+        if not reading["healthy"]:
+            raise CommandError("One or more requested health thresholds were breached.")
+
+    def _write(self, reading: dict[str, Any], options: dict[str, Any]) -> None:
         if options["as_json"]:
             self.stdout.write(json.dumps(reading, sort_keys=True))
             return
         for name, value in sorted(reading.items()):
             self.stdout.write(f"{name}: {value}")
+
+    def _violations(self, reading: dict[str, Any], options: dict[str, Any]) -> list[str]:
+        checks = {
+            "queue_depth": options["max_queue_depth"],
+            "failed": options["max_failed_documents"],
+            "cleanup_failures": options["max_cleanup_failures"],
+            "unreviewed_observations": options["max_unreviewed_observations"],
+            "database_latency_ms": options["max_database_latency_ms"],
+            "worker_heartbeat_age_seconds": options["max_worker_heartbeat_age_seconds"],
+        }
+        return [
+            name
+            for name, threshold in checks.items()
+            if threshold is not None and (reading[name] < 0 or reading[name] > threshold)
+        ]
+
+
+def _record_database_failure(error: DatabaseError) -> None:
+    kind = type(error).__name__.casefold()
+    message = str(error).casefold()
+    reason = "pool_exhausted" if "pool" in kind or "pool" in message else "connection"
+    metric = (
+        metrics.DATABASE_POOL_EXHAUSTED
+        if reason == "pool_exhausted"
+        else metrics.DATABASE_CONNECTION_FAILED
+    )
+    metrics.record(metric, reason=reason)

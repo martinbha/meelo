@@ -20,6 +20,7 @@ from django.db import IntegrityError
 from django.db import transaction as db_transaction
 
 from apps.categorization.normalization import merchant_blind_index, normalize_merchant
+from apps.core import metrics
 from apps.core.audit import record_audit_event
 from apps.core.blind_index import SearchKey
 from apps.core.encrypted_values import encode_json
@@ -287,7 +288,8 @@ def import_parser_selection(
         records.append(record)
 
     try:
-        created = ImportedObservation.objects.bulk_create(records)
+        with metrics.timed(metrics.DATABASE_IMPORT, parser=parser_name):
+            created = ImportedObservation.objects.bulk_create(records)
     except IntegrityError as exc:
         raise ConflictError("These observations were already imported for this OCR run.") from exc
 
