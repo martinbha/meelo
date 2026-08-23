@@ -326,6 +326,14 @@ way in a log line, a status field, and this table.
 
 ### Processing failed
 
+Transient processing errors use bounded exponential backoff: the base delay
+starts at one second, doubles after each attempt, and is capped at five
+minutes with small positive jitter. Each job stops after its configured
+`max_attempts` (three by default). While a retry is waiting, the source
+document remains `queued` and exposes both `processing_attempt_count` and
+`next_processing_attempt_at`; an exhausted job leaves the document `failed`
+with its final error code.
+
 | Error | Meaning | What to do |
 | --- | --- | --- |
 | `OcrConfigurationError` | Language data missing from the image. | The `worker` image is wrong or stale. Rebuild it. |
