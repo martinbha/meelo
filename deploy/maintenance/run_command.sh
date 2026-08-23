@@ -21,6 +21,10 @@ lock_dir="${MEELO_MAINTENANCE_LOCK_DIR:-/run/lock/finance-ocr}"
 lock_file="$lock_dir/$command_name.lock"
 
 mkdir -p "$lock_dir"
+if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required to run scheduled maintenance safely." >&2
+    exit 127
+fi
 exec 9>"$lock_file"
 if ! flock -n 9; then
     echo "Skipped $command_name: another run already holds $lock_file." >&2
