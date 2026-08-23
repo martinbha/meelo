@@ -4,6 +4,8 @@ from typing import Any
 
 from django import forms
 
+from apps.core.errors import ApplicationError, public_error_message
+
 from .models import SourceDocument
 from .overrides import institution_choices
 from .validation import validate_uploaded_file
@@ -22,8 +24,10 @@ class ScreenshotUploadForm(forms.Form):
         uploaded = self.cleaned_data["screenshot"]
         try:
             validate_uploaded_file(uploaded)
+        except ApplicationError as exc:
+            raise forms.ValidationError(exc.public_message) from exc
         except Exception as exc:
-            raise forms.ValidationError(str(exc)) from exc
+            raise forms.ValidationError(public_error_message("UNKNOWN_ERROR")) from exc
         return uploaded
 
 

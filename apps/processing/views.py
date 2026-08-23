@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
+from apps.core.errors import ApplicationError
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .forms import ScreenshotUploadForm
@@ -44,7 +45,10 @@ class UploadCreateView(LoginRequiredMixin, FormView):  # type: ignore[type-arg]
                 retention_policy=form.cleaned_data["retention_policy"],
             )
         except DuplicateUploadError as exc:
-            form.add_error("screenshot", f"Already uploaded as document {exc.document.pk}.")
+            form.add_error("screenshot", exc.public_message)
+            return self.form_invalid(form)
+        except ApplicationError as exc:
+            form.add_error("screenshot", exc.public_message)
             return self.form_invalid(form)
         messages.success(self.request, "Screenshot queued for processing.")
         return super().form_valid(form)

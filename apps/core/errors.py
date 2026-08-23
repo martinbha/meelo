@@ -71,7 +71,8 @@ ERROR_CATALOGUE: Final[Mapping[str, ErrorDefinition]] = MappingProxyType(
             "Choose a smaller screenshot and try again.",
         ),
         "INVALID_FILE_TYPE": _definition(
-            "The screenshot format is not supported.", "Use a PNG, JPEG, or WebP screenshot."
+            "The screenshot format or declared content type is not supported.",
+            "Use a PNG, JPEG, or WebP screenshot.",
         ),
         "IMAGE_DECODE_FAILED": _definition(
             "The screenshot could not be read.",

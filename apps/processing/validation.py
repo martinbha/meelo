@@ -27,6 +27,14 @@ class UploadValidationError(InvalidRequestError):
     """An upload failed a safe boundary check with a stable machine code."""
 
 
+class FileTooLargeError(UploadValidationError):
+    code = "FILE_TOO_LARGE"
+
+
+class InvalidFileTypeError(UploadValidationError):
+    code = "INVALID_FILE_TYPE"
+
+
 class ImageDecodeError(UploadValidationError):
     code = "IMAGE_DECODE_FAILED"
 
@@ -64,7 +72,7 @@ def validate_uploaded_file(uploaded_file: Any) -> ValidatedUpload:
 
     declared_size = int(getattr(uploaded_file, "size", 0))
     if declared_size <= 0 or declared_size > settings.MAX_UPLOAD_SIZE:
-        raise InvalidRequestError("The screenshot is empty or exceeds the upload size limit.")
+        raise FileTooLargeError("The screenshot is empty or exceeds the upload size limit.")
     previous_pixel_limit = Image.MAX_IMAGE_PIXELS
     try:
         uploaded_file.seek(0)
@@ -74,9 +82,11 @@ def validate_uploaded_file(uploaded_file: Any) -> ValidatedUpload:
             with Image.open(uploaded_file) as image:
                 detected_mime = FORMAT_MIME_TYPES.get(image.format or "")
                 if detected_mime not in ALLOWED_UPLOAD_TYPES:
-                    raise InvalidRequestError("The screenshot format is not supported.")
+                    raise InvalidFileTypeError("The screenshot format is not supported.")
                 if uploaded_file.content_type and uploaded_file.content_type != detected_mime:
-                    raise InvalidRequestError("The declared content type does not match the image.")
+                    raise InvalidFileTypeError(
+                        "The declared content type does not match the image."
+                    )
                 width, height = image.size
                 if width * height > settings.MAX_IMAGE_PIXELS:
                     raise ImageDimensionsTooLargeError(
