@@ -30,7 +30,8 @@ def _error_response(request: HttpRequest, error: ApplicationError) -> HttpRespon
     payload = {
         "error": {
             "code": error.code,
-            "message": error.message,
+            "message": error.public_message,
+            "recovery_hint": error.public_recovery_hint,
             "request_id": request_id,
             "details": error.details,
         }

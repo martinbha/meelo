@@ -7,7 +7,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.test import RequestFactory, override_settings
 
 from apps.core.context import request_id_context
-from apps.core.errors import ResourceNotFoundError
+from apps.core.errors import ApplicationError, ResourceNotFoundError, public_error_message
 from apps.core.logging import StructuredFormatter
 from apps.core.middleware import ErrorHandlingMiddleware, RequestContextMiddleware
 
@@ -56,6 +56,16 @@ def test_expected_errors_have_json_code_and_request_reference() -> None:
     assert response["X-Error-Code"] == "RESOURCE_NOT_FOUND"
     assert body["error"]["code"] == "RESOURCE_NOT_FOUND"
     assert body["error"]["request_id"] == response["X-Request-ID"]
+    assert body["error"]["message"] == "The requested item could not be found."
+    assert body["error"]["recovery_hint"] == "Return to the previous page and try again."
+
+
+def test_catalogue_never_renders_exception_text_or_unknown_codes() -> None:
+    error = ApplicationError("SELECT * FROM accounts WHERE amount = 123")
+
+    assert error.public_message == "The request could not be completed."
+    assert "SELECT" not in public_error_message("not-in-catalogue")
+    assert "accounts" not in public_error_message("not-in-catalogue")
 
 
 @override_settings(DEBUG=False)

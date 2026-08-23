@@ -5,7 +5,8 @@
 {% block content %}
   <section aria-labelledby="error-heading">
     <h1 id="error-heading">We could not complete that request</h1>
-    <p>{{ error.message }}</p>
+    <p>{{ error.public_message }}</p>
+    <p>{{ error.public_recovery_hint }}</p>
     <p>Reference: <code>{{ request_id }}</code></p>
   </section>
 {% endblock %}
