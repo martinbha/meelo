@@ -297,25 +297,33 @@ class ProcessingJob(models.Model):
         """Return abandoned running jobs to the queue."""
 
         now = timezone.now()
-        stale = cls.objects.filter(status=cls.Status.RUNNING, locked_at__lt=cutoff)
-        document_ids = list(stale.values_list("document_id", flat=True))
-        recovered = stale.update(
-            status=cls.Status.QUEUED,
-            available_at=now,
-            locked_at=None,
-            started_at=None,
-            updated_at=now,
-        )
-        SourceDocument.objects.filter(
-            id__in=document_ids,
-            processing_status__in=[
-                SourceDocument.Status.VALIDATING,
-                SourceDocument.Status.PREPROCESSING,
-                SourceDocument.Status.OCR_RUNNING,
-                SourceDocument.Status.PARSING,
-            ],
-        ).update(
-            processing_status=SourceDocument.Status.QUEUED,
-            next_processing_attempt_at=now,
-        )
+        with transaction.atomic():
+            stale = list(
+                cls.objects.select_for_update(skip_locked=True).filter(
+                    status=cls.Status.RUNNING, locked_at__lt=cutoff
+                )
+            )
+            if not stale:
+                return 0
+            job_ids = [job.pk for job in stale]
+            document_ids = [job.document_id for job in stale]
+            recovered = cls.objects.filter(pk__in=job_ids).update(
+                status=cls.Status.QUEUED,
+                available_at=now,
+                locked_at=None,
+                started_at=None,
+                updated_at=now,
+            )
+            SourceDocument.objects.filter(
+                id__in=document_ids,
+                processing_status__in=[
+                    SourceDocument.Status.VALIDATING,
+                    SourceDocument.Status.PREPROCESSING,
+                    SourceDocument.Status.OCR_RUNNING,
+                    SourceDocument.Status.PARSING,
+                ],
+            ).update(
+                processing_status=SourceDocument.Status.QUEUED,
+                next_processing_attempt_at=now,
+            )
         return recovered

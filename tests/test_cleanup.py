@@ -71,6 +71,28 @@ def test_cleanup_command_removes_old_orphaned_directory(user: Any, capsys: Any) 
 
 
 @pytest.mark.django_db
+def test_cleanup_does_not_remove_a_queued_document_directory(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="queued.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    directory = document_directory(document.pk)
+    directory.mkdir(parents=True)
+    (directory / "original.png").write_bytes(b"queued")
+    old_timestamp = (timezone.now() - timedelta(hours=48)).timestamp()
+    os.utime(directory, (old_timestamp, old_timestamp))
+
+    report = run_cleanup(cutoff=timezone.now() - timedelta(hours=24))
+
+    assert report.removed == 0
+    assert directory.exists()
+
+
+@pytest.mark.django_db
 def test_cleanup_dry_run_and_real_run_select_the_same_candidates(user: Any) -> None:
     orphan = Path("/tmp/finance-ocr-tests") / str(uuid4())
     orphan.mkdir(parents=True, exist_ok=True)

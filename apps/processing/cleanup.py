@@ -8,17 +8,20 @@ from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from apps.reports.exports import ExportError
 from apps.reports.models import TransactionExport
 from apps.reports.services import export_file
 
-from .models import SourceDocument
+from .models import ProcessingJob, SourceDocument
 from .storage import document_directory, safe_document_path
 
 logger = logging.getLogger(__name__)
 ACTIVE_STATUSES = {
+    SourceDocument.Status.PENDING,
+    SourceDocument.Status.QUEUED,
     SourceDocument.Status.VALIDATING,
     SourceDocument.Status.PREPROCESSING,
     SourceDocument.Status.OCR_RUNNING,
@@ -104,12 +107,29 @@ def _remove_candidates(candidates: tuple[CleanupCandidate, ...]) -> tuple[int, i
             if candidate.path is None:
                 raise ValueError("The stored path is invalid.")
             if candidate.kind == "document_directory":
-                document = SourceDocument.objects.filter(pk=candidate.identifier).first()
-                if candidate.path.exists():
-                    shutil.rmtree(candidate.path)
-                if document is not None:
-                    document.cleanup_error_code = ""
-                    document.save(update_fields=["cleanup_error_code"])
+                with transaction.atomic():
+                    running_job = (
+                        ProcessingJob.objects.select_for_update()
+                        .filter(
+                            document_id=candidate.identifier,
+                            status=ProcessingJob.Status.RUNNING,
+                        )
+                        .first()
+                    )
+                    document = (
+                        SourceDocument.objects.select_for_update()
+                        .filter(pk=candidate.identifier)
+                        .first()
+                    )
+                    if running_job is not None or (
+                        document is not None and document.processing_status in ACTIVE_STATUSES
+                    ):
+                        continue
+                    if candidate.path.exists():
+                        shutil.rmtree(candidate.path)
+                    if document is not None:
+                        document.cleanup_error_code = ""
+                        document.save(update_fields=["cleanup_error_code"])
             else:
                 record = TransactionExport.objects.get(pk=candidate.identifier)
                 if candidate.path.exists():

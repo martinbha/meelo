@@ -47,16 +47,17 @@ def delete_document(document_id: Any, *, user: Any) -> SourceDocument:
 
 def expire_documents(*, now: Any | None = None) -> int:
     cutoff = now or timezone.now()
-    documents = SourceDocument.objects.filter(
-        retention_deadline__lte=cutoff,
-        processing_status__in=[
-            SourceDocument.Status.READY_FOR_REVIEW,
-            SourceDocument.Status.CONFIRMED,
-            SourceDocument.Status.FAILED,
-        ],
-    )
     count = 0
-    for document in documents.iterator():
-        delete_document(document.pk, user=document.user)
-        count += 1
+    with transaction.atomic():
+        documents = SourceDocument.objects.select_for_update(skip_locked=True).filter(
+            retention_deadline__lte=cutoff,
+            processing_status__in=[
+                SourceDocument.Status.READY_FOR_REVIEW,
+                SourceDocument.Status.CONFIRMED,
+                SourceDocument.Status.FAILED,
+            ],
+        )
+        for document in documents.iterator():
+            delete_document(document.pk, user=document.user)
+            count += 1
     return count
