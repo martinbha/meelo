@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Callable
 
 import pytest
@@ -12,6 +14,7 @@ from apps.core.error_views import (
     permission_denied,
     server_error,
 )
+from apps.core.logging import RequestContextFilter, StructuredFormatter
 from apps.core.middleware import RequestContextMiddleware
 
 ErrorHandler = Callable[..., HttpResponse]
@@ -58,6 +61,25 @@ def test_server_error_handler_renders_without_exception_details() -> None:
     assert response["X-Request-ID"] == "request-500"
     assert "Traceback" not in content
     assert "settings" not in content.lower()
+
+
+def test_generated_error_page_request_id_is_used_by_structured_log() -> None:
+    request = RequestFactory().get("/broken/")
+    request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+    records: list[logging.LogRecord] = []
+    logger = logging.getLogger("django.request")
+    handler = logging.Handler()
+    handler.emit = records.append
+    handler.addFilter(RequestContextFilter())
+    logger.addHandler(handler)
+    try:
+        response = page_not_found(request, None)
+    finally:
+        logger.removeHandler(handler)
+
+    assert records
+    logged = json.loads(StructuredFormatter().format(records[-1]))
+    assert logged["request_id"] == response["X-Request-ID"]
 
 
 def test_missing_route_renders_safe_full_page_with_request_reference(client: Client) -> None:

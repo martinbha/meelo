@@ -50,25 +50,32 @@ def render_error_page(
     code = error.code if error is not None else ERROR_CODES[template_status]
     definition = definition_for(code)
     request_id = _request_id(request)
-    response = render(
-        request,
-        ERROR_TEMPLATES[template_status],
-        {
-            "error_code": code,
-            "heading": ERROR_HEADINGS[template_status],
-            "status_code": response_status,
-            "message": error.public_message if error is not None else definition.message,
-            "recovery_hint": (
-                error.public_recovery_hint if error is not None else definition.recovery_hint
-            ),
-            "request_id": request_id,
-        },
-        status=response_status,
-    )
-    response["X-Request-ID"] = request_id
-    response["X-Error-Code"] = code
-    logger.warning("Rendered safe error page: %s", code)
-    return response
+    token = None
+    if request_id_context.get() != request_id:
+        token = request_id_context.set(request_id)
+    try:
+        response = render(
+            request,
+            ERROR_TEMPLATES[template_status],
+            {
+                "error_code": code,
+                "heading": ERROR_HEADINGS[template_status],
+                "status_code": response_status,
+                "message": error.public_message if error is not None else definition.message,
+                "recovery_hint": (
+                    error.public_recovery_hint if error is not None else definition.recovery_hint
+                ),
+                "request_id": request_id,
+            },
+            status=response_status,
+        )
+        response["X-Request-ID"] = request_id
+        response["X-Error-Code"] = code
+        logger.warning("Rendered safe error page: %s", code)
+        return response
+    finally:
+        if token is not None:
+            request_id_context.reset(token)
 
 
 def bad_request(request: HttpRequest, exception: Any) -> HttpResponse:
