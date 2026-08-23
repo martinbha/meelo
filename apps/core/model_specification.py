@@ -311,6 +311,8 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "updated_at",
         ),
         additional={
+            "import_key": "Deterministic document, OCR run, parser, and row identity backed by "
+            "a database uniqueness constraint, so duplicate imports fail closed.",
             "ocr_run_id": "Which run produced this candidate, so a reprocessed document can "
             "show old and new side by side.",
             "row_index": "Position on the screenshot, so review reads top to bottom.",

@@ -63,7 +63,7 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
     #: Stable identity for one parser row. It deliberately includes the OCR
     #: run so a later pass can preserve reviewed evidence while replacing only
     #: the old open queue.
-    import_key = models.CharField(max_length=64, editable=False, blank=True)
+    import_key = models.CharField(max_length=64, default="", editable=False, blank=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
