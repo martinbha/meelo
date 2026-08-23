@@ -1,7 +1,7 @@
 # Database Access
 
-Four roles, because the process exposed to the network should not be the one
-that can drop a table.
+Four runtime roles, because the process exposed to the network should not be
+the one that can drop a table.
 
 | Role | Used by | Can |
 | --- | --- | --- |
@@ -9,6 +9,7 @@ that can drop a table.
 | `finance_migrate` | `manage.py migrate`, during a deploy | Own and change the schema |
 | `finance_app` | The web and worker processes | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on rows |
 | `finance_backup` | `pg_dump` | `SELECT`, and nothing else |
+| `finance_readonly` | Reporting and verification jobs | `SELECT`, and nothing else |
 
 The split is about blast radius. `finance_app` runs continuously and is reachable
 from the proxy, so it gets the narrowest grant that still lets the application
@@ -34,6 +35,34 @@ uv run python manage.py migrate --database=migration
 should not stay connected for the life of the container. In tests the alias
 mirrors `default`, because it is one database reached two ways rather than two
 databases.
+
+## Rotating role passwords
+
+The role passwords are independent. Rotate one role at a time during a planned
+maintenance window:
+
+1. Change the role password from an owner session without putting the new value
+   in shell history or a command-line argument:
+
+   ```text
+   docker compose exec postgres psql -U finance_owner -d finance_ocr
+   \password finance_app
+   ```
+
+   Replace `finance_app` with the role being rotated. The owner session is only
+   used for this administrative action; no application process uses it.
+2. Update the matching secret (`POSTGRES_APP_PASSWORD`,
+   `POSTGRES_MIGRATION_PASSWORD`, `POSTGRES_BACKUP_PASSWORD`, or
+   `POSTGRES_READONLY_PASSWORD`) in the deployment secret store.
+3. Recreate the process that uses the role so new connections receive the new
+   password. For the application role, recreate both `web` and `worker`; the
+   migration, backup, and read-only jobs should be restarted before their next
+   run.
+4. Verify the service health check and a connection using the rotated role
+   before ending the maintenance window.
+
+The init script creates missing roles on first boot, but it is not a password
+rotation mechanism and is not rerun for an existing PostgreSQL volume.
 
 ## The database is not on the network
 
@@ -93,7 +122,7 @@ uv run pytest tests/test_compose.py tests/test_production_security.py
 
 ## Roles
 
-`deploy/postgres/init/10-roles.sh` creates three login roles on first boot, none
+`deploy/postgres/init/10-roles.sh` creates four login roles on first boot, none
 of which is the superuser the container starts with. `PUBLIC` is stripped of
 everything on both the database and the `public` schema first, so a role has
 exactly what it was granted and nothing inherited.
@@ -103,6 +132,7 @@ exactly what it was granted and nothing inherited.
 | `finance_migrate` | Everything on the schema — create, alter, drop. | — |
 | `finance_app` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables; use sequences. | Alter or drop anything. |
 | `finance_backup` | `SELECT`. | Write anything at all. |
+| `finance_readonly` | `SELECT`. | Write anything at all, or use sequences. |
 
 The split is what turns two whole classes of failure into smaller ones. A SQL
 injection reaching the application's connection cannot drop a table, because
