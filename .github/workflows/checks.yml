@@ -134,6 +134,9 @@ jobs:
       - name: Build application image
         run: docker build --tag finance-ocr:ci .
 
+      - name: Smoke test application image
+        run: ./scripts/smoke_test_image.sh finance-ocr:ci
+
       - name: Scan application image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
