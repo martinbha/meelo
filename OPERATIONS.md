@@ -86,6 +86,18 @@ docker compose ps
 docker compose --profile processing ps
 ```
 
+After building an application image, verify that it can render the sign-in page
+and serve its collected stylesheet before publishing the tag:
+
+```bash
+docker build --tag finance-ocr:local .
+./scripts/smoke_test_image.sh finance-ocr:local
+```
+
+The smoke test starts the image with synthetic settings, requests `/login/`,
+extracts the hashed application stylesheet URL from the response, and requests
+that asset too. CI runs the same check against the image it scans.
+
 ### Shared temporary screenshot storage
 
 The `finance_ocr_tmp` volume is mounted at `/run/finance-ocr` in both `web` and
