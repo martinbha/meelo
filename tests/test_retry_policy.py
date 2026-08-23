@@ -21,7 +21,7 @@ def test_error_code_catalogue_is_disjoint_and_terminal_by_default() -> None:
 def test_backoff_increases_with_jitter_and_is_capped() -> None:
     delays = [retry_delay(attempt, jitter=lambda _low, high: high) for attempt in range(1, 11)]
 
-    assert delays[:8] == sorted(delays[:8])
+    assert all(left < right for left, right in zip(delays[:7], delays[1:8], strict=True))
     assert delays[8:] == [timedelta(seconds=BACKOFF_MAX_SECONDS)] * 2
     assert all(delay <= timedelta(seconds=BACKOFF_MAX_SECONDS) for delay in delays)
 
