@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -71,3 +73,29 @@ def test_systemd_timers_are_persistent_and_cover_the_scheduled_commands() -> Non
     ).read_text()
     assert "Persistent=true" in key_timer
     assert "rotate_encryption_keys --verify-only" in key_service
+
+
+def test_maintenance_runner_propagates_management_command_exit_code(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker = fake_bin / "docker"
+    docker.write_text("#!/bin/sh\nexit 17\n")
+    docker.chmod(0o755)
+    flock = fake_bin / "flock"
+    flock.write_text("#!/bin/sh\nexit 0\n")
+    flock.chmod(0o755)
+
+    environment = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "MEELO_PROJECT_DIR": str(tmp_path),
+        "MEELO_MAINTENANCE_LOCK_DIR": str(tmp_path / "locks"),
+    }
+    result = subprocess.run(
+        [str(PROJECT_ROOT / "deploy" / "maintenance" / "run_command.sh"), "operational_status"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 17
