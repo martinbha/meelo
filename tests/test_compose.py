@@ -175,3 +175,11 @@ def test_backup_restore_ci_uses_a_disposable_postgres_runner() -> None:
 
     assert "Backup and restore integration" in backup_restore
     assert "./scripts/run_postgres_backup_tests.sh" in backup_restore
+
+
+def test_security_ci_smoke_tests_the_built_application_image() -> None:
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "checks.yml").read_text()
+    security = workflow.split("  security:", 1)[1]
+
+    assert "docker build --tag finance-ocr:ci ." in security
+    assert "./scripts/smoke_test_image.sh finance-ocr:ci" in security

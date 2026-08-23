@@ -1,5 +1,4 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import (
@@ -8,8 +7,10 @@ from django.contrib.auth.views import (
     PasswordResetDoneView,
     PasswordResetView,
 )
-from django.urls import path
+from django.http import HttpRequest, HttpResponseBase
+from django.urls import path, re_path
 from django.views.generic import RedirectView
+from django.views.static import serve as serve_static
 
 from apps.categorization.views import (
     CategoryCorrectionView,
@@ -70,6 +71,13 @@ from apps.users.views import (
     UserPasswordChangeView,
     UserPasswordResetConfirmView,
 )
+
+
+def _serve_collected_static(request: HttpRequest, path: str) -> HttpResponseBase:
+    """Serve only the files produced by collectstatic, including in production."""
+
+    return serve_static(request, path, document_root=str(settings.STATIC_ROOT))
+
 
 urlpatterns = [
     path("health/", health_check, name="health-check"),
@@ -267,5 +275,8 @@ urlpatterns = [
 ]
 
 # Only the collected STATIC_ROOT is exposed. Uploads, exports, and temporary
-# processing files live outside it and have no static URL.
-urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+# processing files live outside it and have no static URL. Django's
+# ``django.conf.urls.static.static`` helper intentionally disables itself when
+# DEBUG is false, so use the same safe file-serving view explicitly for this
+# small self-contained deployment.
+urlpatterns += [re_path(r"^static/(?P<path>.*)$", _serve_collected_static)]
