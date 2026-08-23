@@ -26,6 +26,9 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Check logging sources
+        run: uv run python scripts/check_logging.py
+
       - name: Formatting
         run: uv run ruff format --check .
 
