@@ -20,7 +20,11 @@ docker run --detach \
     --env DJANGO_SETTINGS_MODULE=config.settings.production \
     --env DJANGO_SECRET_KEY=image-smoke-test-secret \
     --env DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost \
-    "$image" >/dev/null
+    --env FIELD_ENCRYPTION_MASTER_KEY_FILE=/tmp/image-smoke-master-key \
+    --entrypoint /bin/sh \
+    "$image" \
+    -c 'umask 077; python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())" > "$FIELD_ENCRYPTION_MASTER_KEY_FILE"; exec gunicorn config.wsgi:application --bind 0.0.0.0:8000' \
+    >/dev/null
 
 attempt=0
 until curl --fail --silent --show-error "$base_url/login/" >/dev/null 2>&1; do
