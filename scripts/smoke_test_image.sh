@@ -20,6 +20,7 @@ docker run --detach \
     --env DJANGO_SETTINGS_MODULE=config.settings.production \
     --env DJANGO_SECRET_KEY=image-smoke-test-secret \
     --env DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost \
+    --env DJANGO_SECURE_SSL_REDIRECT=false \
     --env FIELD_ENCRYPTION_MASTER_KEY_FILE=/tmp/image-smoke-master-key \
     --entrypoint /bin/sh \
     "$image" \
@@ -31,6 +32,7 @@ until curl --fail --silent --show-error "$base_url/login/" >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
         echo "The application image did not serve /login/ within 60 seconds." >&2
+        docker logs "$container_name" >&2 || true
         exit 1
     fi
     sleep 1
