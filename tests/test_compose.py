@@ -167,3 +167,11 @@ def test_postgres_ci_runs_migrations_and_the_full_suite() -> None:
     assert "uv run python manage.py makemigrations --check --dry-run" in postgres
     assert "uv run pytest" in postgres
     assert "DJANGO_SETTINGS_MODULE: config.settings.ci" in postgres
+
+
+def test_backup_restore_ci_uses_a_disposable_postgres_runner() -> None:
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "checks.yml").read_text()
+    backup_restore = workflow.split("  backup_restore:", 1)[1]
+
+    assert "Backup and restore integration" in backup_restore
+    assert "./scripts/run_postgres_backup_tests.sh" in backup_restore
