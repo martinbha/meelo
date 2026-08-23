@@ -20,6 +20,15 @@ from apps.core.middleware import RequestContextMiddleware
 ErrorHandler = Callable[..., HttpResponse]
 
 
+class CapturingHandler(logging.Handler):
+    def __init__(self, records: list[logging.LogRecord]) -> None:
+        super().__init__()
+        self.records = records
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
 @pytest.mark.parametrize(
     ("handler", "status", "code"),
     [
@@ -68,8 +77,7 @@ def test_generated_error_page_request_id_is_used_by_structured_log() -> None:
     request.user = type("AnonymousUser", (), {"is_authenticated": False})()
     records: list[logging.LogRecord] = []
     logger = logging.getLogger("django.request")
-    handler = logging.Handler()
-    handler.emit = records.append
+    handler = CapturingHandler(records)
     handler.addFilter(RequestContextFilter())
     logger.addHandler(handler)
     try:
