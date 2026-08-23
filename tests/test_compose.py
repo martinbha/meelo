@@ -70,7 +70,7 @@ def test_the_web_process_does_not_connect_as_the_superuser() -> None:
 def test_the_role_bootstrap_grants_least_privilege() -> None:
     script = (PROJECT_ROOT / "deploy" / "postgres" / "init" / "10-roles.sh").read_text()
 
-    for role in ("finance_migrate", "finance_app", "finance_backup"):
+    for role in ("finance_migrate", "finance_app", "finance_backup", "finance_readonly"):
         assert f"CREATE ROLE {role} LOGIN" in script
     # The application gets rows, not structure.
     assert (
@@ -81,11 +81,15 @@ def test_the_role_bootstrap_grants_least_privilege() -> None:
     # Backup reads and never writes.
     assert "GRANT SELECT ON ALL TABLES IN SCHEMA public TO finance_backup" in script
     assert "INSERT" not in script.split("finance_backup;")[-1]
+    # Read-only access is explicit and cannot retain stale table or sequence grants.
+    assert "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM finance_readonly" in script
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA public TO finance_readonly" in script
+    assert "REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM finance_readonly" in script
     # Nothing is granted to everybody.
     assert "REVOKE ALL ON SCHEMA public FROM PUBLIC" in script
     assert "REVOKE ALL ON DATABASE" in script
     # And a table created by the next migration is covered too.
-    assert script.count("ALTER DEFAULT PRIVILEGES") == 3
+    assert script.count("ALTER DEFAULT PRIVILEGES") == 4
 
 
 def test_role_passwords_are_never_interpolated_into_sql() -> None:
@@ -97,12 +101,13 @@ def test_role_passwords_are_never_interpolated_into_sql() -> None:
         "POSTGRES_APP_PASSWORD",
         "POSTGRES_MIGRATION_PASSWORD",
         "POSTGRES_BACKUP_PASSWORD",
+        "POSTGRES_READONLY_PASSWORD",
     ):
         # Passed as a psql variable, never pasted into the statement text.
         assert f"${{{name}}}" not in script
         assert f'--set {name.split("_")[1].lower()}_password="${name}"' in script
     # And quoted by psql with %L rather than by hand.
-    assert script.count("PASSWORD %L") == 3
+    assert script.count("PASSWORD %L") == 4
 
 
 def test_django_reads_the_application_role_outside_compose() -> None:
@@ -119,7 +124,7 @@ def test_the_bootstrap_is_idempotent() -> None:
 
     script = (PROJECT_ROOT / "deploy" / "postgres" / "init" / "10-roles.sh").read_text()
 
-    assert script.count("WHERE NOT EXISTS (SELECT FROM pg_roles") == 3
+    assert script.count("WHERE NOT EXISTS (SELECT FROM pg_roles") == 4
 
 
 def test_every_role_password_is_required_rather_than_defaulted() -> None:
@@ -132,6 +137,7 @@ def test_every_role_password_is_required_rather_than_defaulted() -> None:
         "POSTGRES_APP_PASSWORD",
         "POSTGRES_MIGRATION_PASSWORD",
         "POSTGRES_BACKUP_PASSWORD",
+        "POSTGRES_READONLY_PASSWORD",
     ):
         assert f"${{{name}:?" in compose
 
