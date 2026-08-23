@@ -27,6 +27,22 @@ def test_static_files_use_manifest_storage_and_a_dedicated_root() -> None:
     assert settings.STATIC_ROOT.name == "staticfiles"
 
 
+def test_collected_static_files_are_served_when_debug_is_off(
+    client: Client, settings: Any, tmp_path: Any
+) -> None:
+    css = tmp_path / "css"
+    css.mkdir()
+    (css / "app.css").write_text("body { color: black; }", encoding="utf-8")
+    settings.STATIC_ROOT = tmp_path
+    settings.DEBUG = False
+
+    response = client.get("/static/css/app.css")
+
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("text/css")
+    assert b"".join(response.streaming_content) == b"body { color: black; }"
+
+
 def test_base_shell_exposes_progress_indicator(client: Client) -> None:
     response = client.get(reverse("login"))
 
