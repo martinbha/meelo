@@ -224,7 +224,7 @@ class ObservationActionView(LoginRequiredMixin, View):
         try:
             handler(request, observation)
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
         return redirect("observation-review", pk=observation.source_document_id)
 
     def _correct(self, request: HttpRequest, observation: ImportedObservation) -> None:
@@ -300,7 +300,7 @@ class DocumentOverrideView(LoginRequiredMixin, View):
                 institution=form.cleaned_data["institution"],
             )
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return redirect("observation-review", pk=document.pk)
         if not change.changed:
             messages.info(request, "That is already how this screenshot is being read.")
@@ -321,7 +321,7 @@ class DocumentReprocessView(LoginRequiredMixin, View):
         try:
             request_reprocess(document.pk, user=request.user)
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
         else:
             messages.success(request, "The screenshot was queued for another pass.")
         return redirect("observation-review", pk=document.pk)

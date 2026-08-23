@@ -42,6 +42,8 @@ FLAG_FACTORS = ("requires_review",)
 class ObservationImportError(InvalidRequestError):
     """Parser output could not be stored as observations."""
 
+    code = "OBSERVATION_IMPORT_FAILED"
+
 
 @dataclass(frozen=True, slots=True)
 class ImportResult:

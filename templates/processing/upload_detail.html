@@ -14,6 +14,10 @@
       {% csrf_token %}
       <button type="submit">Delete screenshot</button>
     </form>
-    {% if document.error_code %}<p>Processing error: {{ document.error_code }}</p>{% endif %}
+    {% if document.error_code %}
+      <p>Processing error: {{ document.error_code }}</p>
+      <p>{{ error_definition.message }}</p>
+      <p>{{ error_definition.recovery_hint }}</p>
+    {% endif %}
   </section>
 {% endblock %}

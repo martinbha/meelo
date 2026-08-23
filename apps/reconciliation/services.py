@@ -48,6 +48,8 @@ MANUAL_LINK_SCORE = 100
 class ReconciliationError(InvalidRequestError):
     """A reconciliation candidate cannot be created or acted on."""
 
+    code = "RECONCILIATION_INVALID"
+
 
 def _ordered(left: Any, right: Any) -> tuple[Any, Any]:
     """Order a pair so the same relationship is always stored the same way."""

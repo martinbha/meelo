@@ -46,6 +46,7 @@ def test_document_state_machine_records_progress_and_errors(
     assert failed.processing_attempt_count == 1
     assert failed.processing_completed_at is not None
     assert failed.error_code == "IMAGE_DECODE_FAILED"
+    assert failed.error_message_encrypted == "The screenshot could not be read."
     with pytest.raises(ConflictError):
         transition_document(document.pk, user=user, status=SourceDocument.Status.CONFIRMED)
 

@@ -78,7 +78,7 @@ class CategoryCorrectionView(LoginRequiredMixin, View):
                 apply_to_existing=form.cleaned_data["apply_to_existing"],
             )
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return render(
                 request,
                 "categorization/category_correction.html",

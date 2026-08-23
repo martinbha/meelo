@@ -84,6 +84,8 @@ FLAGS_CLEARED_BY: Mapping[str, tuple[str, ...]] = {
 class ObservationActionError(InvalidRequestError):
     """A review action cannot be applied to this observation."""
 
+    code = "OBSERVATION_ACTION_INVALID"
+
 
 @dataclass(frozen=True, slots=True)
 class DecryptedObservation:

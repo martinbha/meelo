@@ -121,7 +121,7 @@ class TransactionDeleteView(LoginRequiredMixin, View):
                 data_key=_data_key(request),
             )
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return redirect("transaction-delete", pk=transaction.pk)
         released = result.released_observation_count
         messages.success(

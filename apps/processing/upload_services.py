@@ -8,12 +8,12 @@ from django.db import IntegrityError, transaction
 
 from apps.core import metrics
 from apps.core.audit import record_audit_event
-from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.errors import ConflictError
 
 from .models import ProcessingJob, SourceDocument
 from .retention import retention_deadline
 from .storage import store_uploaded_file
-from .validation import fingerprint_uploaded_file, validate_uploaded_file
+from .validation import FileTooLargeError, fingerprint_uploaded_file, validate_uploaded_file
 
 
 class DuplicateUploadError(ConflictError):
@@ -48,7 +48,7 @@ def create_uploaded_document(
     if size > settings.MAX_UPLOAD_SIZE:
         path.unlink(missing_ok=True)
         path.parent.rmdir()
-        raise InvalidRequestError("The screenshot exceeds the upload size limit.")
+        raise FileTooLargeError("The screenshot exceeds the upload size limit.")
     try:
         with transaction.atomic():
             document = SourceDocument.objects.create(

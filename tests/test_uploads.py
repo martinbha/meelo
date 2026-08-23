@@ -102,6 +102,27 @@ def test_upload_detail_shows_processing_attempt_and_next_retry(user: Any, client
 
 
 @pytest.mark.django_db
+def test_upload_detail_renders_catalogued_processing_failure(user: Any, client: Any) -> None:
+    client.force_login(user)
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=os.urandom(32).hex(),
+        original_filename_encrypted="failed.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.FAILED,
+        error_code="IMAGE_DECODE_FAILED",
+    )
+
+    response = client.get(reverse("upload-detail", args=[document.pk]))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "The screenshot could not be read." in content
+    assert "Export the screenshot again and upload the new copy." in content
+
+
+@pytest.mark.django_db
 def test_service_rejects_malformed_image_before_persistence(user: Any) -> None:
     with pytest.raises(InvalidRequestError, match="decoded"):
         create_uploaded_document(
