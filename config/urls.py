@@ -280,3 +280,8 @@ urlpatterns = [
 # DEBUG is false, so use the same safe file-serving view explicitly for this
 # small self-contained deployment.
 urlpatterns += [re_path(r"^static/(?P<path>.*)$", _serve_collected_static)]
+
+handler400 = "apps.core.error_views.bad_request"
+handler403 = "apps.core.error_views.permission_denied"
+handler404 = "apps.core.error_views.page_not_found"
+handler500 = "apps.core.error_views.server_error"

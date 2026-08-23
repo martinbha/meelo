@@ -1,0 +1,7 @@
+<section class="error-page" aria-labelledby="error-heading" data-error-status="{{ status_code }}">
+  <p class="error-status">{{ error_code }}</p>
+  <h1 id="error-heading">{{ heading }}</h1>
+  <p>{{ message }}</p>
+  <p>{{ recovery_hint }}</p>
+  <p class="error-reference">Reference: <code>{{ request_id }}</code></p>
+</section>

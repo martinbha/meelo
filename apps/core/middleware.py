@@ -8,9 +8,9 @@ from collections.abc import Callable
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
 
 from .context import request_id_context
+from .error_views import render_error_page
 from .errors import ApplicationError, ForbiddenError, InternalServerError, ResourceNotFoundError
 from .key_scope import clear_scope
 
@@ -40,12 +40,7 @@ def _error_response(request: HttpRequest, error: ApplicationError) -> HttpRespon
     if request.headers.get("Accept", "").lower().find("application/json") >= 0:
         response = JsonResponse(payload, status=error.status_code)
     else:
-        response = render(
-            request,
-            "errors/error.html",
-            {"error": error, "request_id": request_id},
-            status=error.status_code,
-        )
+        response = render_error_page(request, status=error.status_code, error=error)
     response["X-Error-Code"] = error.code
     return response
 
