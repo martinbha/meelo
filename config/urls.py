@@ -78,6 +78,7 @@ def _serve_collected_static(request: HttpRequest, path: str) -> HttpResponseBase
 
     return serve_static(request, path, document_root=str(settings.STATIC_ROOT))
 
+
 urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("", dashboard, name="dashboard"),

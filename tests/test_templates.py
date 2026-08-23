@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.conf import settings
@@ -40,7 +40,8 @@ def test_collected_static_files_are_served_when_debug_is_off(
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/css")
-    assert b"".join(response.streaming_content) == b"body { color: black; }"
+    streaming_response = cast(Any, response)
+    assert b"".join(streaming_response.streaming_content) == b"body { color: black; }"
 
 
 def test_base_shell_exposes_progress_indicator(client: Client) -> None:
