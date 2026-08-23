@@ -5,8 +5,8 @@ screenshot row. It is never financial history: reports and the ledger read
 :class:`~apps.transactions.models.CanonicalTransaction`, and an observation
 only reaches that stage when a reviewer accepts it.
 
-That separation is what lets a document be reprocessed safely — a new OCR run
-creates new observations and leaves every confirmed transaction untouched.
+That separation is what lets a document be reprocessed safely — an OCR run
+replaces only open observations and leaves every reviewed transaction untouched.
 """
 
 from __future__ import annotations

@@ -253,6 +253,20 @@ def existing_import(
     )
 
 
+def _replace_prior_open_observations(*, document: SourceDocument, ocr_run: OcrRun | None) -> int:
+    """Remove only open rows produced by an earlier pass of this document."""
+
+    candidates = ImportedObservation.objects.filter(
+        source_document=document,
+        review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
+    )
+    if ocr_run is not None:
+        candidates = candidates.exclude(ocr_run=ocr_run)
+    count = candidates.count()
+    candidates.delete()
+    return count
+
+
 @db_transaction.atomic
 def import_parser_selection(
     *,
@@ -270,6 +284,15 @@ def import_parser_selection(
     imports, the OCR runs, and every canonical transaction untouched.
     """
 
+    locked_document = (
+        SourceDocument.objects.select_for_update()
+        .filter(pk=document.pk, user_id=document.user_id)
+        .first()
+    )
+    if locked_document is None:
+        raise ObservationImportError("The source document could not be found for its owner.")
+    document = locked_document
+
     parser_name = selection.metadata.name
     parser_version = selection.metadata.version
     if ocr_run is not None and ocr_run.user_id != document.user_id:
@@ -281,6 +304,8 @@ def import_parser_selection(
         )
         if already:
             return ImportResult(already, False, parser_name, parser_version)
+
+    replaced_count = _replace_prior_open_observations(document=document, ocr_run=ocr_run)
 
     records: list[ImportedObservation] = []
     # Parser order is the screen's reading order, so the row index it yields is
@@ -311,6 +336,7 @@ def import_parser_selection(
             "parser": parser_name,
             "parser_version": parser_version,
             "observation_count": len(created),
+            "replaced_observation_count": replaced_count,
             "ocr_run_id": str(ocr_run.pk) if ocr_run is not None else "",
         },
     )

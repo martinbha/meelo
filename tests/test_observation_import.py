@@ -228,7 +228,7 @@ def test_import_keys_are_stable_for_the_same_origin(owner: Any, data_key: bytes)
         ocr_run_id=run.pk,
         parser_name="toss_bank",
         parser_version="1.0",
-        parser_output_version=1,
+        parser_output_version=row.parser_output_version,
         row_index=0,
     )
 
