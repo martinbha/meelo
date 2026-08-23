@@ -244,7 +244,7 @@ def orchestrate_document_ocr(
             )
     if not successful:
         retryable = any(failure.retryable for failure in failures)
-        code = failures[0].code if len(failures) == 1 else "OCR_ALL_ENGINES_FAILED"
+        code = failures[0].code if len(failures) == 1 or not retryable else "OCR_ALL_ENGINES_FAILED"
         raise OcrPipelineError(
             "No local OCR engine completed successfully.",
             code=code,

@@ -58,7 +58,22 @@ def test_missing_file_is_terminally_recorded_and_cleaned(worker_user: Any) -> No
     job.refresh_from_db()
     assert document.processing_status == SourceDocument.Status.FAILED
     assert document.error_code == "TEMP_FILE_MISSING"
-    assert job.status == ProcessingJob.Status.QUEUED
+    assert job.status == ProcessingJob.Status.FAILED
+    assert not path.exists()
+
+
+def test_image_decode_failure_is_terminally_recorded(worker_user: Any) -> None:
+    document, job, path = _queued_document(worker_user, filename="original.png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"not-an-image")
+
+    assert process_one_job() is True
+
+    document.refresh_from_db()
+    job.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.FAILED
+    assert document.error_code == "IMAGE_DECODE_FAILED"
+    assert job.status == ProcessingJob.Status.FAILED
     assert not path.exists()
 
 
@@ -78,8 +93,37 @@ def test_ocr_failure_leaves_no_partial_run_or_file(worker_user: Any, monkeypatch
 
     document.refresh_from_db()
     job.refresh_from_db()
-    assert document.processing_status == SourceDocument.Status.FAILED
+    assert document.processing_status == SourceDocument.Status.QUEUED
     assert document.error_code == "OCR_ENGINE_TIMEOUT"
     assert job.status == ProcessingJob.Status.QUEUED
+    assert document.processing_attempt_count == 1
+    assert document.next_processing_attempt_at == job.available_at
     assert not path.exists()
     assert not path.parent.exists()
+
+
+def test_exhausted_retry_leaves_document_failed_with_final_code(
+    worker_user: Any, monkeypatch: Any
+) -> None:
+    document, job, path = _queued_document(worker_user, filename="original.png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(image, format="PNG")
+    path.write_bytes(image.getvalue())
+    job.max_attempts = 1
+    job.save(update_fields=["max_attempts"])
+
+    def fail(**kwargs: Any) -> None:
+        raise OcrPipelineError("engine timed out", code="OCR_ENGINE_TIMEOUT", retryable=True)
+
+    monkeypatch.setattr("apps.processing.pipeline.execute_document_ocr", fail)
+    assert process_one_job() is True
+
+    document.refresh_from_db()
+    job.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.FAILED
+    assert document.error_code == "OCR_ENGINE_TIMEOUT"
+    assert document.next_processing_attempt_at is None
+    assert job.status == ProcessingJob.Status.FAILED
+    assert job.last_error_code == "OCR_ENGINE_TIMEOUT"
+    assert not path.exists()

@@ -77,20 +77,20 @@ def test_retryable_failure_requeues_with_backoff_until_attempt_limit(user: Any) 
     claimed = ProcessingJob.claim_next()
     assert claimed is not None
 
-    requeued = claimed.mark_failed(code="TEMPORARY", message="try again", retryable=True)
+    requeued = claimed.mark_failed(code="OCR_ENGINE_TIMEOUT", message="try again")
 
     assert requeued is True
     claimed.refresh_from_db()
     assert claimed.status == ProcessingJob.Status.QUEUED
     assert claimed.available_at > timezone.now()
-    assert claimed.last_error_code == "TEMPORARY"
+    assert claimed.last_error_code == "OCR_ENGINE_TIMEOUT"
 
     claimed.available_at = timezone.now() - timedelta(seconds=1)
     claimed.save(update_fields=["available_at"])
     claimed = ProcessingJob.claim_next()
     assert claimed is not None
     assert claimed.attempt_count == 2
-    assert claimed.mark_failed(code="TEMPORARY", message="final try", retryable=True) is False
+    assert claimed.mark_failed(code="OCR_ENGINE_TIMEOUT", message="final try") is False
     claimed.refresh_from_db()
     assert claimed.status == ProcessingJob.Status.FAILED
 

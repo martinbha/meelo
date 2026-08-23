@@ -67,12 +67,12 @@ def process_one_job() -> bool:
         except UnsupportedTaskError as exc:
             job.mark_failed(code="UNSUPPORTED_TASK", message=str(exc))
         except RetryableJobError as exc:
-            job.mark_failed(code=exc.code, message=str(exc), retryable=True)
+            job.mark_failed(code=exc.code, message=str(exc))
         except NonRetryableJobError as exc:
-            job.mark_failed(code=exc.code, message=str(exc), retryable=False)
+            job.mark_failed(code=exc.code, message=str(exc))
         except Exception as exc:  # pragma: no cover - exercised by integration handlers
             logger.exception("Processing job %s failed unexpectedly", job.id)
-            job.mark_failed(code="UNHANDLED_ERROR", message=str(exc), retryable=True)
+            job.mark_failed(code="UNHANDLED_ERROR", message=str(exc))
         else:
             job.mark_succeeded()
     finally:

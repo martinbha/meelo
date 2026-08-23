@@ -326,6 +326,14 @@ way in a log line, a status field, and this table.
 
 ### Processing failed
 
+Transient processing errors use bounded exponential backoff: the base delay
+starts at one second, doubles after each attempt, and is capped at five
+minutes with small positive jitter. Each job stops after its configured
+`max_attempts` (three by default). While a retry is waiting, the source
+document remains `queued` and exposes both `processing_attempt_count` and
+`next_processing_attempt_at`; an exhausted job leaves the document `failed`
+with its final error code.
+
 | Error | Meaning | What to do |
 | --- | --- | --- |
 | `OcrConfigurationError` | Language data missing from the image. | The `worker` image is wrong or stale. Rebuild it. |
@@ -333,8 +341,8 @@ way in a log line, a status field, and this table.
 | `ParserSelectionError` | No parser claims this screenshot. | The institution or screen is not supported yet. See [PARSERS.md](PARSERS.md). |
 | `AmbiguousAmountError` | Two readings of the amount are equally plausible. | Correct it in the review queue. The system refuses to guess an amount. |
 | `InvalidDateError` / `InvalidDateContextError` | The date could not be resolved. | Korean screenshots often omit the year. Set it in review. |
-| `RetryableJobError` | Transient. | Nothing. The worker retries with backoff. |
-| `NonRetryableJobError` | Terminal. | Look at `last_error_code` on the job. Retrying will not help. |
+| `RetryableJobError` with a classified retryable code | Transient. | Nothing. The worker retries with backoff. |
+| `NonRetryableJobError` or an unclassified code | Terminal. | Look at `last_error_code` on the job. Retrying will not help. |
 | `UnsupportedTaskError` | A job names a handler that does not exist. | A worker running older code than the web container. Redeploy both. |
 
 ### Review and reconciliation

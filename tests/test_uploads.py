@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
 from PIL import Image
 
@@ -75,6 +77,28 @@ def test_upload_routes_are_authenticated_and_owner_scoped(user: Any, client: Any
     client.force_login(other)
 
     assert client.get(reverse("upload-detail", args=[document.pk])).status_code == 404
+
+
+@pytest.mark.django_db
+def test_upload_detail_shows_processing_attempt_and_next_retry(user: Any, client: Any) -> None:
+    client.force_login(user)
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=os.urandom(32).hex(),
+        original_filename_encrypted="retry.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+        processing_attempt_count=2,
+        next_processing_attempt_at=timezone.now() + timedelta(seconds=30),
+    )
+
+    response = client.get(reverse("upload-detail", args=[document.pk]))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "Processing attempts: 2" in content
+    assert "Next attempt:" in content
 
 
 @pytest.mark.django_db
