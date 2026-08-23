@@ -37,3 +37,37 @@ def test_cron_schedule_covers_worker_recovery_cleanup_retention_and_reconciliati
     scheduled_lines = [line for line in schedule.splitlines() if line and not line.startswith("#")]
     assert scheduled_lines
     assert all(">>/var/log/finance-ocr/maintenance.log 2>&1" in line for line in scheduled_lines)
+
+
+def test_systemd_maintenance_service_is_oneshot_and_uses_the_locked_runner() -> None:
+    service = (PROJECT_ROOT / "deploy" / "systemd" / "finance-ocr-maintenance@.service").read_text()
+
+    assert "Type=oneshot" in service
+    assert "After=docker.service" in service
+    assert "ExecStart=/opt/finance-ocr/deploy/maintenance/run_command.sh %i" in service
+
+
+def test_systemd_timers_are_persistent_and_cover_the_scheduled_commands() -> None:
+    timers = {
+        "finance-ocr-process.timer": "process_document_jobs",
+        "finance-ocr-recover.timer": "recover_processing_jobs",
+        "finance-ocr-cleanup.timer": "cleanup_document_files",
+        "finance-ocr-retention.timer": "expire_document_retention",
+        "finance-ocr-reconciliation.timer": "generate_reconciliation_candidates",
+        "finance-ocr-exports.timer": "purge_expired_exports",
+        "finance-ocr-audit.timer": "prune_audit_events",
+    }
+
+    for filename, command in timers.items():
+        timer = (PROJECT_ROOT / "deploy" / "systemd" / filename).read_text()
+        assert "Persistent=true" in timer
+        assert f"finance-ocr-maintenance@{command}.service" in timer
+
+    key_timer = (
+        PROJECT_ROOT / "deploy" / "systemd" / "finance-ocr-key-verification.timer"
+    ).read_text()
+    key_service = (
+        PROJECT_ROOT / "deploy" / "systemd" / "finance-ocr-key-verification.service"
+    ).read_text()
+    assert "Persistent=true" in key_timer
+    assert "rotate_encryption_keys --verify-only" in key_service

@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll the Finance OCR document queue
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=finance-ocr-maintenance@process_document_jobs.service
+
+[Install]
+WantedBy=timers.target

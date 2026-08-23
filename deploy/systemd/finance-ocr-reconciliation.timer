@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate Finance OCR reconciliation candidates
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=finance-ocr-maintenance@generate_reconciliation_candidates.service
+
+[Install]
+WantedBy=timers.target
