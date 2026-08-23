@@ -137,10 +137,12 @@ def _remove_candidates(candidates: tuple[CleanupCandidate, ...]) -> tuple[int, i
                 record.deleted_at = timezone.now()
                 record.save(update_fields=["deleted_at"])
             removed += 1
-        except (ExportError, OSError, ValueError, TransactionExport.DoesNotExist) as exc:
+        except (ExportError, OSError, ValueError, TransactionExport.DoesNotExist):
             failed += 1
             logger.warning(
-                "Cleanup failed for %s %s: %s", candidate.kind, candidate.identifier, exc
+                "Cleanup failed for %s %s (CLEANUP_FAILED)",
+                candidate.kind,
+                candidate.identifier,
             )
             if candidate.kind == "document_directory":
                 SourceDocument.objects.filter(pk=candidate.identifier).update(
@@ -175,8 +177,8 @@ def cleanup_document_storage(document_id: UUID, temporary_path: str) -> bool:
             shutil.rmtree(directory)
         SourceDocument.objects.filter(pk=document_id).update(cleanup_error_code="")
         return True
-    except (OSError, ValueError) as exc:
-        logger.warning("Temporary cleanup failed for %s: %s", document_id, exc)
+    except (OSError, ValueError):
+        logger.warning("Temporary cleanup failed for %s (CLEANUP_FAILED)", document_id)
         SourceDocument.objects.filter(pk=document_id).update(cleanup_error_code="CLEANUP_FAILED")
         return False
 

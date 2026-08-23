@@ -179,6 +179,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "filters": {
         "request_context": {"()": "apps.core.logging.RequestContextFilter"},
+        "sensitive_log": {"()": "apps.core.logging.SensitiveLogFilter"},
     },
     "formatters": {
         "structured": {"()": "apps.core.logging.StructuredFormatter"},
@@ -186,7 +187,7 @@ LOGGING = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "filters": ["request_context"],
+            "filters": ["request_context", "sensitive_log"],
             "formatter": "structured",
         },
     },

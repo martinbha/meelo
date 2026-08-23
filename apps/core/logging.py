@@ -30,13 +30,23 @@ SENSITIVE_FIELD_NAMES = (
     "key",
     "otp_secret",
     "recovery_code",
+    "cookie",
+    "cookies",
+    "session_key",
+    "csrf_token",
+    "access_token",
+    "refresh_token",
+    "api_key",
+    "raw_output",
+    "approval_code",
 )
 _SENSITIVE_FIELD_PATTERN = (
     rf"(?:{'|'.join(SENSITIVE_FIELD_NAMES)}|[A-Za-z0-9_]*(?:password|secret|token))"
 )
 _SENSITIVE_ASSIGNMENT = re.compile(
     rf"(?i)(?P<prefix>\b{_SENSITIVE_FIELD_PATTERN}\b\s*[:=]\s*)"
-    r"(?P<value>\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+    r"(?P<value>\"[^\"]*\"|'[^']*'|[^,;\n]*?)"
+    r"(?=(?:\s+\b[A-Za-z_][A-Za-z0-9_]*\b\s*[:=])|[,;\n]|$)"
 )
 
 
@@ -55,7 +65,13 @@ def _redact_json(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [_redact_json(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
     return value
+
+
+def _redact_text(value: str) -> str:
+    return _SENSITIVE_ASSIGNMENT.sub(r"\g<prefix>[REDACTED]", value)
 
 
 def redact_sensitive(value: str) -> str:
@@ -64,7 +80,9 @@ def redact_sensitive(value: str) -> str:
     try:
         decoded = json.loads(value)
     except (TypeError, ValueError):
-        return _SENSITIVE_ASSIGNMENT.sub(r"\g<prefix>[REDACTED]", value)
+        return _redact_text(value)
+    if isinstance(decoded, str):
+        return _redact_text(decoded)
     return json.dumps(_redact_json(decoded), default=str, sort_keys=True)
 
 
@@ -79,6 +97,17 @@ class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_context.get()
         record.task_id = task_id_context.get()
+        return True
+
+
+class SensitiveLogFilter(logging.Filter):
+    """Sanitize records before any configured handler renders them."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact_sensitive(record.getMessage())
+        record.args = ()
+        if record.exc_info:
+            record.exc_text = redact_sensitive(logging.Formatter().formatException(record.exc_info))
         return True
 
 
