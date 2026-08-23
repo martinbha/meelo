@@ -1,0 +1,23 @@
+# Install as the deployment user's crontab, after setting MEELO_PROJECT_DIR in
+# the runner or changing its default project path. Every invocation appends
+# stdout and stderr to one operator-readable log; the runner preserves the
+# management command's exit code.
+
+# Keep a fallback worker poll running even when the continuously running worker
+# is being restarted. PostgreSQL row locks make this safe to overlap with it.
+* * * * * /opt/finance-ocr/deploy/maintenance/run_command.sh process_document_jobs --once >>/var/log/finance-ocr/maintenance.log 2>&1
+
+# Recover abandoned work before the next cleanup pass.
+*/15 * * * * /opt/finance-ocr/deploy/maintenance/run_command.sh recover_processing_jobs >>/var/log/finance-ocr/maintenance.log 2>&1
+0 * * * * /opt/finance-ocr/deploy/maintenance/run_command.sh cleanup_document_files >>/var/log/finance-ocr/maintenance.log 2>&1
+15 * * * * /opt/finance-ocr/deploy/maintenance/run_command.sh purge_expired_exports >>/var/log/finance-ocr/maintenance.log 2>&1
+0 2 * * * /opt/finance-ocr/deploy/maintenance/run_command.sh expire_document_retention >>/var/log/finance-ocr/maintenance.log 2>&1
+
+# This command is supplied by the batch reconciliation task. Install this
+# schedule after that command is deployed.
+0 3 * * * /opt/finance-ocr/deploy/maintenance/run_command.sh generate_reconciliation_candidates >>/var/log/finance-ocr/maintenance.log 2>&1
+0 4 * * 0 /opt/finance-ocr/deploy/maintenance/run_command.sh prune_audit_events >>/var/log/finance-ocr/maintenance.log 2>&1
+
+# Verify keys on a schedule. Actual rotation remains a deliberate maintenance
+# window because the web and worker processes must be stopped first.
+0 5 1 * * /opt/finance-ocr/deploy/maintenance/run_command.sh rotate_encryption_keys --verify-only >>/var/log/finance-ocr/maintenance.log 2>&1
