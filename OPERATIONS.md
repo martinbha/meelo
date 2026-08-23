@@ -182,6 +182,19 @@ uv run python manage.py create_backup /backups/meelo-$(date +%F).enc
 uv run python manage.py verify_backup /backups/meelo-$(date +%F).enc
 ```
 
+Run the backup/restore integration suite against a disposable PostgreSQL
+container before changing backup or migration behavior:
+
+```bash
+./scripts/run_postgres_backup_tests.sh
+```
+
+The runner creates a temporary PostgreSQL 17 container, applies the current
+migrations, runs `tests/test_backup_restore.py`, and removes the container when
+it exits. It uses port `55432` by default; set `POSTGRES_TEST_PORT` when that
+port is already in use. CI invokes this same runner, so a migration that breaks
+backup creation, decryption, restore, or separate-key recovery fails the build.
+
 The passphrase comes from the environment, never an argument — an argument lands
 in shell history and in the process list where every other user on the machine
 can read it.
