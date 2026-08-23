@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.processing.cleanup import (
@@ -68,6 +69,39 @@ def test_cleanup_command_removes_old_orphaned_directory(user: Any, capsys: Any) 
 
     assert not orphan.exists()
     assert "Removed 1 stale document directory" in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+def test_cleanup_does_not_remove_a_queued_document_directory(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="queued.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    directory = document_directory(document.pk)
+    directory.mkdir(parents=True)
+    (directory / "original.png").write_bytes(b"queued")
+    old_timestamp = (timezone.now() - timedelta(hours=48)).timestamp()
+    os.utime(directory, (old_timestamp, old_timestamp))
+
+    report = run_cleanup(cutoff=timezone.now() - timedelta(hours=24))
+
+    assert report.removed == 0
+    assert directory.exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_command_exits_nonzero_when_removal_fails(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "apps.processing.management.commands.cleanup_document_files.cleanup_stale_directories",
+        lambda *, cutoff: (0, 1),
+    )
+
+    with pytest.raises(CommandError, match=r"cleanup\(s\) failed"):
+        call_command("cleanup_document_files")
 
 
 @pytest.mark.django_db

@@ -85,9 +85,13 @@ class Command(BaseCommand):
             if not users.exists():
                 raise CommandError(f"No user with email {options['email']!r}.")
 
+        verification_failed = False
         for user in users.order_by("pk"):
             if options["verify_only"]:
-                self._verify(user, master_key=master_key, batch_size=options["batch_size"])
+                verification_failed = (
+                    not self._verify(user, master_key=master_key, batch_size=options["batch_size"])
+                    or verification_failed
+                )
                 continue
             if options["dry_run"]:
                 self._dry_run(user, master_key=master_key, batch_size=options["batch_size"])
@@ -98,15 +102,17 @@ class Command(BaseCommand):
                 batch_size=options["batch_size"],
                 retire=options["retire"],
             )
+        if verification_failed:
+            raise CommandError("Encryption-key verification failed.")
 
     def _active(self, user: Any) -> UserDataKey | None:
         return UserDataKey.objects.filter(user=user, is_active=True).first()
 
-    def _verify(self, user: Any, *, master_key: bytes, batch_size: int) -> None:
+    def _verify(self, user: Any, *, master_key: bytes, batch_size: int) -> bool:
         active = self._active(user)
         if active is None:
             self.stdout.write(f"{user.email}: no active key, nothing to verify.")
-            return
+            return True
         key = get_user_data_key(user=user, actor=user, master_key=master_key)
         report = verify_user(
             user=user, key=key, expected_version=active.version, batch_size=batch_size
@@ -119,6 +125,12 @@ class Command(BaseCommand):
             self.stderr.write(f"  unreadable {problem}")
         for problem in report.stale_versions:
             self.stderr.write(f"  not yet rotated {problem}")
+        # Plaintext values report version 0 and are intentionally handled by
+        # the next rotation; they are not unreadable verification failures.
+        encrypted_values_pending = any(
+            "version 0" not in problem for problem in report.stale_versions
+        )
+        return not report.unreadable and not encrypted_values_pending
 
     def _dry_run(self, user: Any, *, master_key: bytes, batch_size: int) -> None:
         """Report the size of the job without creating a key or writing a row.

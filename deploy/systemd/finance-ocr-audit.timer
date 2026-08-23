@@ -1,0 +1,10 @@
+[Unit]
+Description=Prune old Finance OCR audit events
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+Persistent=true
+Unit=finance-ocr-maintenance@prune_audit_events.service
+
+[Install]
+WantedBy=timers.target

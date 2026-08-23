@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify Finance OCR encryption keys
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=finance-ocr
+WorkingDirectory=/opt/finance-ocr
+Environment=MEELO_PROJECT_DIR=/opt/finance-ocr
+ExecStart=/opt/finance-ocr/deploy/maintenance/run_command.sh rotate_encryption_keys --verify-only

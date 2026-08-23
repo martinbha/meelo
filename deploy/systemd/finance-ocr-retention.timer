@@ -1,0 +1,10 @@
+[Unit]
+Description=Enforce Finance OCR document retention
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+Unit=finance-ocr-maintenance@expire_document_retention.service
+
+[Install]
+WantedBy=timers.target

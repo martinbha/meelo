@@ -1,0 +1,10 @@
+[Unit]
+Description=Remove expired Finance OCR exports
+
+[Timer]
+OnCalendar=*-*-* *:15:00
+Persistent=true
+Unit=finance-ocr-maintenance@purge_expired_exports.service
+
+[Install]
+WantedBy=timers.target

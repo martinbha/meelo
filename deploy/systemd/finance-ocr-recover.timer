@@ -1,0 +1,10 @@
+[Unit]
+Description=Recover abandoned Finance OCR jobs
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=finance-ocr-maintenance@recover_processing_jobs.service
+
+[Install]
+WantedBy=timers.target

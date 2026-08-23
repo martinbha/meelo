@@ -1,0 +1,10 @@
+[Unit]
+Description=Remove stale Finance OCR temporary directories
+
+[Timer]
+OnCalendar=*-*-* *:00:00
+Persistent=true
+Unit=finance-ocr-maintenance@cleanup_document_files.service
+
+[Install]
+WantedBy=timers.target

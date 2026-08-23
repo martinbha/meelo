@@ -186,6 +186,41 @@ The worker handles document processing on its own. These are the jobs that need
 a schedule. Run them from the host's cron or a systemd timer against
 `docker compose exec`.
 
+The repository includes both scheduler formats under `deploy/maintenance/` and
+`deploy/systemd/`; install one, not both. Every scheduled command goes through
+`deploy/maintenance/run_command.sh`, which takes a non-blocking per-command
+`flock`. An overlapping invocation logs that it was skipped. A command failure
+keeps its non-zero exit code, so cron logs and systemd's journal show failures
+without treating a harmless overlap skip as a failure.
+
+For cron, create the lock and log directories for the deployment user, adjust
+`/opt/finance-ocr` in the example if needed, and install the user crontab:
+
+```bash
+sudo install -d -o finance-ocr -g finance-ocr /run/lock/finance-ocr /var/log/finance-ocr
+crontab deploy/maintenance/finance-ocr.cron
+```
+
+For systemd, copy the service and timer files, then enable the timers you want:
+
+```bash
+sudo install -d -o finance-ocr -g finance-ocr /run/lock/finance-ocr
+sudo cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now finance-ocr-process.timer finance-ocr-recover.timer finance-ocr-cleanup.timer
+sudo systemctl enable --now finance-ocr-retention.timer finance-ocr-reconciliation.timer
+sudo systemctl enable --now finance-ocr-exports.timer finance-ocr-audit.timer finance-ocr-key-verification.timer
+```
+
+The scheduled names map to the specification's maintenance operations:
+`process_document_jobs --once` is the fallback for `process_queued_documents`
+and dispatches `process_document`; `cleanup_document_files` removes stale
+temporary directories; `expire_document_retention` deletes expired documents;
+and `rotate_encryption_keys --verify-only` checks key health. The actual key
+rotation remains manual because the web and worker must be stopped first. The
+reconciliation timer assumes the batch `generate_reconciliation_candidates`
+command from issue #235 has been deployed.
+
 | When | Command | Why |
 | --- | --- | --- |
 | Every 15 min | `recover_processing_jobs` | Returns jobs orphaned by a worker that died mid-run. |

@@ -1,0 +1,10 @@
+[Unit]
+Description=Verify Finance OCR encryption keys monthly
+
+[Timer]
+OnCalendar=*-*-01 05:00:00
+Persistent=true
+Unit=finance-ocr-key-verification.service
+
+[Install]
+WantedBy=timers.target

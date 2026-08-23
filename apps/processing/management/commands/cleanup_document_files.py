@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from apps.processing.cleanup import cleanup_stale_directories, stale_document_candidates
@@ -33,3 +33,4 @@ class Command(BaseCommand):
             self.stderr.write(
                 f"Failed to remove {failed} stale document director{'y' if failed == 1 else 'ies'}."
             )
+            raise CommandError(f"{failed} stale document cleanup(s) failed.")

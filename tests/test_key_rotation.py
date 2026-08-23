@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 
 from apps.categorization.models import Category
 from apps.categorization.normalization import merchant_blind_index
@@ -482,9 +482,18 @@ def test_the_command_verifies_without_changing_anything(
     assert UserDataKey.objects.filter(user=owner).count() == 1
 
 
-def test_the_command_refuses_an_unknown_user(master_key: bytes) -> None:
-    from django.core.management.base import CommandError
+def test_the_command_reports_verification_failures_as_nonzero(
+    owner: Any, account: Any, data_key: bytes
+) -> None:
+    transaction = add(owner, account, data_key)
+    corrupted = transaction.amount_encrypted[:-4] + "AAAA"
+    CanonicalTransaction.objects.filter(pk=transaction.pk).update(amount_encrypted=corrupted)
 
+    with pytest.raises(CommandError, match="verification failed"):
+        rotate_command(email=owner.email, verify_only=True)
+
+
+def test_the_command_refuses_an_unknown_user(master_key: bytes) -> None:
     with pytest.raises(CommandError):
         rotate_command(email="nobody@example.com")
 
