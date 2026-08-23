@@ -34,6 +34,29 @@ def test_the_database_is_not_reachable_from_the_host() -> None:
     assert "ports" not in compose["services"]["worker"]
 
 
+def test_production_compose_exposes_only_proxy_ports() -> None:
+    """The production file publishes the proxy and no application service."""
+
+    import yaml
+
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.yml").read_text())
+    published = {
+        name: service["ports"]
+        for name, service in compose["services"].items()
+        if "ports" in service
+    }
+
+    assert published == {"proxy": ["80:80", "443:443"]}
+
+
+def test_development_compose_binds_postgres_to_loopback() -> None:
+    import yaml
+
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.dev.yml").read_text())
+
+    assert compose["services"]["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"]
+
+
 def test_services_are_bounded_and_restartable() -> None:
     import yaml
 

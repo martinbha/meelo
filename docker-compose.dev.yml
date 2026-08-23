@@ -1,0 +1,6 @@
+services:
+  postgres:
+    # Development needs host access for local psql clients and migration tools.
+    # Keep the binding on loopback so it is never reachable from the network.
+    ports:
+      - "127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"

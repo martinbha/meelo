@@ -67,23 +67,37 @@ The Compose deployment contains four Redis-free services:
 - `postgres` stores application and queue state.
 - `proxy` terminates TLS and forwards requests to `web`.
 
-Start the web, database, and proxy services with:
+For production, use the base file by itself. It publishes only the proxy ports
+80 and 443; PostgreSQL remains reachable only on the internal Compose network:
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml up -d
 ```
 
-Enable the database-backed processing worker with:
+For local development, add the development override. It binds PostgreSQL to
+`127.0.0.1:5432` by default for local database clients without exposing it to
+the network. Set `POSTGRES_DEV_PORT` if the default host port is occupied:
 
 ```bash
-docker compose --profile processing up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+POSTGRES_DEV_PORT=55432 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
+
+Enable the database-backed processing worker with the same file selection used
+to start the environment. For example, production uses:
+
+```bash
+docker compose -f docker-compose.yml --profile processing up -d
+```
+
+Do not include `docker-compose.dev.yml` in production; its only purpose is to
+provide loopback access to PostgreSQL during local development.
 
 Inspect readiness before sending traffic or processing documents:
 
 ```bash
-docker compose ps
-docker compose --profile processing ps
+docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml --profile processing ps
 ```
 
 After building an application image, verify that it can render the sign-in page
