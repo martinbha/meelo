@@ -9,7 +9,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import FormView, View
 
-from apps.core.errors import ApplicationError
+from apps.core.errors import ApplicationError, definition_for
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
 
 from .forms import ScreenshotUploadForm
@@ -57,7 +57,11 @@ class UploadCreateView(LoginRequiredMixin, FormView):  # type: ignore[type-arg]
 class UploadDetailView(LoginRequiredMixin, View):
     def get(self, request: HttpRequest, pk: object) -> HttpResponse:
         document = get_owned_object_or_404(SourceDocument, request.user, pk=pk)
-        return render(request, "processing/upload_detail.html", {"document": document})
+        return render(
+            request,
+            "processing/upload_detail.html",
+            {"document": document, "error_definition": definition_for(document.error_code)},
+        )
 
 
 class UploadDeleteView(LoginRequiredMixin, View):
