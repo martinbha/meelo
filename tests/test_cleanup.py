@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.processing.cleanup import (
@@ -90,6 +91,17 @@ def test_cleanup_does_not_remove_a_queued_document_directory(user: Any) -> None:
 
     assert report.removed == 0
     assert directory.exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_command_exits_nonzero_when_removal_fails(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "apps.processing.management.commands.cleanup_document_files.cleanup_stale_directories",
+        lambda *, cutoff: (0, 1),
+    )
+
+    with pytest.raises(CommandError, match="cleanup\(s\) failed"):
+        call_command("cleanup_document_files")
 
 
 @pytest.mark.django_db
