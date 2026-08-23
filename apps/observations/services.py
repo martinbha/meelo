@@ -165,6 +165,14 @@ def _build(
     risk_score, _ = score_flags(flags, overall_confidence=overall, has_mapping=False)
     return ImportedObservation(
         **projections(flags),
+        import_key=ImportedObservation.build_import_key(
+            source_document_id=document.pk,
+            ocr_run_id=ocr_run.pk if ocr_run is not None else None,
+            parser_name=parsed.parser_name,
+            parser_version=parsed.parser_version,
+            parser_output_version=parsed.output_version,
+            row_index=row_index,
+        ),
         risk_score=risk_score,
         user_id=document.user_id,
         source_document=document,

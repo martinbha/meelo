@@ -11,6 +11,7 @@ creates new observations and leaves every confirmed transaction untouched.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from typing import Any
 
@@ -59,6 +60,10 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
         UNKNOWN = "unknown", "Unknown"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: Stable identity for one parser row. It deliberately includes the OCR
+    #: run so a later pass can preserve reviewed evidence while replacing only
+    #: the old open queue.
+    import_key = models.CharField(max_length=64, editable=False, blank=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -190,6 +195,7 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
     class Meta:
         ordering = ("source_document_id", "row_index", "created_at")
         constraints = [
+            models.UniqueConstraint(fields=("import_key",), name="observation_import_key_unique"),
             # One parser version may produce a given row of a given OCR run
             # exactly once, which is what makes re-import idempotent.
             models.UniqueConstraint(
@@ -237,6 +243,15 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
 
     def clean(self) -> None:
         super().clean()
+        if not self.import_key:
+            self.import_key = self.build_import_key(
+                source_document_id=self.source_document_id,
+                ocr_run_id=self.ocr_run_id,
+                parser_name=self.parser_name,
+                parser_version=self.parser_version,
+                parser_output_version=self.parser_output_version,
+                row_index=self.row_index,
+            )
         errors: dict[str, str] = {}
         if self.currency:
             self.currency = normalize_code(self.currency)
@@ -271,6 +286,43 @@ class ImportedObservation(EncryptedFieldsMixin, models.Model):
             errors["merged_into"] = "An observation cannot be merged into itself."
         if errors:
             raise ValidationError(errors)
+
+    @staticmethod
+    def build_import_key(
+        *,
+        source_document_id: Any,
+        ocr_run_id: Any,
+        parser_name: str,
+        parser_version: str,
+        parser_output_version: int,
+        row_index: int,
+    ) -> str:
+        """Hash the stable origin of one imported parser row."""
+
+        identity = "\x1f".join(
+            str(value or "")
+            for value in (
+                source_document_id,
+                ocr_run_id,
+                parser_name,
+                parser_version,
+                parser_output_version,
+                row_index,
+            )
+        )
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self.import_key:
+            self.import_key = self.build_import_key(
+                source_document_id=self.source_document_id,
+                ocr_run_id=self.ocr_run_id,
+                parser_name=self.parser_name,
+                parser_version=self.parser_version,
+                parser_output_version=self.parser_output_version,
+                row_index=self.row_index,
+            )
+        super().save(*args, **kwargs)
 
     @property
     def is_open(self) -> bool:

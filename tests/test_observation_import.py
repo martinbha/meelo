@@ -1,10 +1,13 @@
 import os
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from django.db import transaction as db_transaction
 
 from apps.core.crypto import decrypt_model_field
 from apps.core.errors import InvalidRequestError
@@ -189,6 +192,45 @@ def test_reimporting_the_same_run_is_idempotent(owner: Any, data_key: bytes) -> 
     assert second.created is False
     assert second.count == 2
     assert ImportedObservation.objects.filter(source_document=document).count() == 2
+
+
+def test_the_database_rejects_a_duplicate_import_key(owner: Any, data_key: bytes) -> None:
+    document = make_document(owner)
+    run = make_ocr_run(owner, document)
+    observation = import_parser_selection(
+        document=document,
+        ocr_run=run,
+        selection=selection(parsed()),
+        data_key=data_key,
+        key_version=1,
+    ).observations[0]
+
+    duplicate = ImportedObservation.objects.get(pk=observation.pk)
+    duplicate.pk = uuid.uuid4()
+    with pytest.raises(IntegrityError), db_transaction.atomic():
+        duplicate.save(force_insert=True)
+
+
+def test_import_keys_are_stable_for_the_same_origin(owner: Any, data_key: bytes) -> None:
+    document = make_document(owner)
+    run = make_ocr_run(owner, document)
+    row = import_parser_selection(
+        document=document,
+        ocr_run=run,
+        selection=selection(parsed()),
+        data_key=data_key,
+        key_version=1,
+    ).observations[0]
+
+    assert len(row.import_key) == 64
+    assert row.import_key == ImportedObservation.build_import_key(
+        source_document_id=document.pk,
+        ocr_run_id=run.pk,
+        parser_name="toss_bank",
+        parser_version="1.0",
+        parser_output_version=1,
+        row_index=0,
+    )
 
 
 def test_a_new_parser_version_imports_alongside_the_old_one(owner: Any, data_key: bytes) -> None:
