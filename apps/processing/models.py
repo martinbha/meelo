@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Self
 
 from django.conf import settings
@@ -10,6 +10,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.encrypted_fields import EncryptedFieldsMixin
+
+from .retry import is_retryable_error, retry_delay
 
 
 class SourceDocument(EncryptedFieldsMixin, models.Model):
@@ -237,9 +239,8 @@ class ProcessingJob(models.Model):
         *,
         code: str,
         message: str,
-        retryable: bool = False,
     ) -> bool:
-        """Record an error and optionally requeue while attempts remain.
+        """Record an error and requeue only classified transient failures.
 
         Returns ``True`` when the job was requeued and ``False`` when it is
         terminally failed.
@@ -249,22 +250,32 @@ class ProcessingJob(models.Model):
         self.last_error_code = code[:64]
         self.last_error_message = message
         self.locked_at = None
+        retryable = is_retryable_error(code)
         if retryable and self.attempt_count < self.max_attempts:
-            delay = min(300, 2 ** max(self.attempt_count - 1, 0))
             self.status = self.Status.QUEUED
-            self.available_at = now + timedelta(seconds=delay)
+            self.available_at = now + retry_delay(self.attempt_count)
             self.completed_at = None
-            self.save(
-                update_fields=[
-                    "status",
-                    "available_at",
-                    "locked_at",
-                    "completed_at",
-                    "last_error_code",
-                    "last_error_message",
-                    "updated_at",
-                ]
-            )
+            with transaction.atomic():
+                self.save(
+                    update_fields=[
+                        "status",
+                        "available_at",
+                        "locked_at",
+                        "completed_at",
+                        "last_error_code",
+                        "last_error_message",
+                        "updated_at",
+                    ]
+                )
+                SourceDocument.objects.filter(
+                    pk=self.document_id,
+                    user=self.user,
+                    processing_status=SourceDocument.Status.FAILED,
+                ).update(
+                    processing_status=SourceDocument.Status.QUEUED,
+                    processing_completed_at=None,
+                    next_processing_attempt_at=self.available_at,
+                )
             return True
 
         self.status = self.Status.FAILED
