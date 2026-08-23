@@ -49,6 +49,14 @@ def test_production_compose_exposes_only_proxy_ports() -> None:
     assert published == {"proxy": ["80:80", "443:443"]}
 
 
+def test_development_compose_binds_postgres_to_loopback() -> None:
+    import yaml
+
+    compose = yaml.safe_load((PROJECT_ROOT / "docker-compose.dev.yml").read_text())
+
+    assert compose["services"]["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"]
+
+
 def test_services_are_bounded_and_restartable() -> None:
     import yaml
 
