@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.encrypted_fields import EncryptedFieldsMixin
+from apps.core.errors import public_error_message
 
 from .retry import is_retryable_error, retry_delay
 
@@ -247,10 +248,11 @@ class ProcessingJob(models.Model):
         """
 
         now = timezone.now()
-        self.last_error_code = code[:64]
-        self.last_error_message = message
+        normalized_code = code.strip().upper()
+        self.last_error_code = normalized_code[:64]
+        self.last_error_message = public_error_message(normalized_code)
         self.locked_at = None
-        retryable = is_retryable_error(code)
+        retryable = is_retryable_error(normalized_code)
         if retryable and self.attempt_count < self.max_attempts:
             self.status = self.Status.QUEUED
             self.available_at = now + retry_delay(self.attempt_count)

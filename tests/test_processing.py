@@ -84,6 +84,7 @@ def test_retryable_failure_requeues_with_backoff_until_attempt_limit(user: Any) 
     assert claimed.status == ProcessingJob.Status.QUEUED
     assert claimed.available_at > timezone.now()
     assert claimed.last_error_code == "OCR_ENGINE_TIMEOUT"
+    assert claimed.last_error_message == "Text recognition took too long."
 
     claimed.available_at = timezone.now() - timedelta(seconds=1)
     claimed.save(update_fields=["available_at"])

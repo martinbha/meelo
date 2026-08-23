@@ -5,7 +5,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.core.errors import ConflictError, InvalidRequestError
+from apps.core.errors import ConflictError, InvalidRequestError, public_error_message
 
 from .models import ProcessingJob, SourceDocument
 
@@ -103,8 +103,11 @@ def transition_document(
         if status == SourceDocument.Status.DELETED:
             document.original_deleted_at = now
     elif status == SourceDocument.Status.FAILED:
-        document.error_code = error_code[:64]
-        document.error_message_encrypted = error_message
+        normalized_code = error_code.strip().upper()
+        document.error_code = normalized_code[:64]
+        document.error_message_encrypted = (
+            public_error_message(normalized_code) if normalized_code else ""
+        )
         document.processing_completed_at = now
         document.next_processing_attempt_at = None
     document.save(
