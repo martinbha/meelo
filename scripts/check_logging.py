@@ -130,6 +130,8 @@ def _is_logging_call(node: ast.Call) -> bool:
         return receiver.id.casefold() in LOG_OBJECT_NAMES or receiver.id.casefold().endswith(
             "logger"
         )
+    if isinstance(receiver, ast.Call):
+        return isinstance(receiver.func, ast.Attribute) and receiver.func.attr == "getLogger"
     return isinstance(receiver, ast.Attribute) and receiver.attr.casefold().endswith("logger")
 
 
