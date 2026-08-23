@@ -138,7 +138,7 @@ class MatchLinkView(LoginRequiredMixin, View):
                 data_key=_data_key(request),
             )
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return render(request, "reconciliation/match_link.html", {"form": form}, status=400)
         messages.success(request, "The rows were linked. Confirm to apply the relationship.")
         return redirect("match-detail", pk=match.pk)
@@ -172,6 +172,6 @@ class MatchActionView(LoginRequiredMixin, View):
                 confirm_match(match.pk, user=request.user)
                 messages.success(request, "The match was confirmed.")
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return redirect("match-detail", pk=match.pk)
         return redirect("match-queue")

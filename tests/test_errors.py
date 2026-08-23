@@ -7,7 +7,12 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.test import RequestFactory, override_settings
 
 from apps.core.context import request_id_context
-from apps.core.errors import ApplicationError, ResourceNotFoundError, public_error_message
+from apps.core.errors import (
+    ERROR_CATALOGUE,
+    ApplicationError,
+    ResourceNotFoundError,
+    public_error_message,
+)
 from apps.core.logging import StructuredFormatter
 from apps.core.middleware import ErrorHandlingMiddleware, RequestContextMiddleware
 
@@ -66,6 +71,17 @@ def test_catalogue_never_renders_exception_text_or_unknown_codes() -> None:
     assert error.public_message == "The request could not be completed."
     assert "SELECT" not in public_error_message("not-in-catalogue")
     assert "accounts" not in public_error_message("not-in-catalogue")
+
+
+def test_every_catalogued_code_has_safe_message_and_recovery_hint() -> None:
+    forbidden_fragments = ("exception", "query", "path", "traceback", "select ", " where ")
+
+    assert ERROR_CATALOGUE
+    for definition in ERROR_CATALOGUE.values():
+        assert definition.message.strip()
+        assert definition.recovery_hint.strip()
+        rendered = f"{definition.message} {definition.recovery_hint}".lower()
+        assert all(fragment not in rendered for fragment in forbidden_fragments)
 
 
 @override_settings(DEBUG=False)

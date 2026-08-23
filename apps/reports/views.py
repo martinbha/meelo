@@ -254,7 +254,7 @@ class ExportView(LoginRequiredMixin, View):
                 passphrase=form.cleaned_data.get("passphrase") or "",
             )
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return render(request, self.template_name, self._context(request, form), status=400)
         messages.success(
             request,
@@ -275,7 +275,7 @@ class ExportDownloadView(LoginRequiredMixin, View):
         try:
             record, payload = read_export(pk, user=request.user)
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
             return redirect("report-exports")
         content_type = {
             TransactionExport.Format.CSV: "text/csv",
@@ -299,5 +299,5 @@ class ExportDeleteView(LoginRequiredMixin, View):
             delete_export(pk, user=request.user)
             messages.success(request, "The export file was deleted.")
         except ApplicationError as error:
-            messages.error(request, error.message)
+            messages.error(request, error.public_message)
         return redirect("report-exports")

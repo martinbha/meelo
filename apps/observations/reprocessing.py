@@ -45,6 +45,8 @@ IN_FLIGHT_STATUSES = frozenset(
 class ReprocessError(InvalidRequestError):
     """The document cannot be reprocessed right now."""
 
+    code = "REPROCESS_NOT_ALLOWED"
+
 
 @dataclass(frozen=True, slots=True)
 class ReprocessRequest:

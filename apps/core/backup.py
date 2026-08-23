@@ -72,6 +72,8 @@ BACKED_UP_APPS: tuple[str, ...] = (
 class BackupError(ExportError):
     """A backup cannot be produced or read."""
 
+    code = "BACKUP_FAILED"
+
 
 @dataclass(frozen=True, slots=True)
 class BackupManifest:

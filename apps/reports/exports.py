@@ -79,6 +79,8 @@ MINIMUM_PASSPHRASE_LENGTH = 12
 class ExportError(InvalidRequestError):
     """An export cannot be produced or read."""
 
+    code = "EXPORT_FAILED"
+
 
 def export_root() -> Path:
     """The private directory exports live in, created 0700 if missing."""
