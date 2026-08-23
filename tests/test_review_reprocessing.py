@@ -89,6 +89,42 @@ def test_reprocessing_preserves_prior_runs_and_observations(owner: Any) -> None:
     assert ImportedObservation.objects.filter(source_document=document).count() == 1
 
 
+def test_a_new_run_replaces_the_prior_open_queue(owner: Any) -> None:
+    document = ready_document(owner)
+    first_run = make_ocr_run(owner, document)
+    first = import_for(owner, document, first_run)[0]
+    second_run = make_ocr_run(owner, document, engine="fallback")
+
+    second = import_for(owner, document, second_run)
+
+    assert second[0].ocr_run_id == second_run.pk
+    assert second[0].pk != first.pk
+    assert ImportedObservation.objects.filter(source_document=document).count() == 1
+    assert not ImportedObservation.objects.filter(pk=first.pk).exists()
+
+
+def test_a_new_run_preserves_reviewed_observations(owner: Any) -> None:
+    document = ready_document(owner)
+    first_run = make_ocr_run(owner, document)
+    reviewed = import_for(owner, document, first_run)[0]
+    canonical = accept_observation(
+        reviewed.pk,
+        user=owner,
+        data_key=KEY,
+        financial_account=make_account(owner),
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+    second_run = make_ocr_run(owner, document, engine="fallback")
+
+    replacement = import_for(owner, document, second_run)[0]
+
+    reviewed.refresh_from_db()
+    assert replacement.pk != reviewed.pk
+    assert reviewed.review_status == ImportedObservation.ReviewStatus.ACCEPTED
+    assert reviewed.canonical_transaction_id == canonical.pk
+    assert ImportedObservation.objects.filter(source_document=document).count() == 2
+
+
 def test_reprocessing_enqueues_the_work(owner: Any) -> None:
     document = ready_document(owner)
 

@@ -40,6 +40,7 @@ def _observation(document: SourceDocument, **values: Any) -> ImportedObservation
         "ocr_confidence": 0.95,
         "parser_confidence": 0.95,
         "overall_confidence": 0.95,
+        "row_index": ImportedObservation.objects.filter(source_document=document).count(),
     }
     defaults.update(values)
     return ImportedObservation.objects.create(**defaults)

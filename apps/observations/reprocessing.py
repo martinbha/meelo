@@ -1,9 +1,8 @@
 """Re-running OCR on a document a reviewer judged badly read.
 
-Reprocessing is additive. Prior OCR runs and their observations are kept, a new
-run produces new candidates alongside them, and confirmed transactions are never
-touched — accepting a row and then reprocessing its document must not undo the
-acceptance.
+Reviewed observations and their confirmed transactions are kept, while the
+open queue from an earlier pass is replaced by the next import. That makes a
+reprocess stable without undoing a reviewer's decision.
 """
 
 from __future__ import annotations
