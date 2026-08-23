@@ -100,7 +100,7 @@ def test_cleanup_command_exits_nonzero_when_removal_fails(monkeypatch: Any) -> N
         lambda *, cutoff: (0, 1),
     )
 
-    with pytest.raises(CommandError, match="cleanup\(s\) failed"):
+    with pytest.raises(CommandError, match=r"cleanup\(s\) failed"):
         call_command("cleanup_document_files")
 
 
