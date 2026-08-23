@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LOG_METHODS = frozenset({"debug", "info", "warning", "error", "exception", "critical", "log"})
+LOG_OBJECT_NAMES = frozenset({"log", "logger", "logging"})
 SENSITIVE_NAMES = frozenset(
     {
         "merchant",
@@ -121,13 +122,24 @@ def _message_is_sensitive(node: ast.AST) -> bool:
     )
 
 
+def _is_logging_call(node: ast.Call) -> bool:
+    if not isinstance(node.func, ast.Attribute) or node.func.attr not in LOG_METHODS:
+        return False
+    receiver = node.func.value
+    if isinstance(receiver, ast.Name):
+        return receiver.id.casefold() in LOG_OBJECT_NAMES or receiver.id.casefold().endswith(
+            "logger"
+        )
+    return isinstance(receiver, ast.Attribute) and receiver.attr.casefold().endswith("logger")
+
+
 class _LoggingVisitor(ast.NodeVisitor):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.violations: list[LoggingViolation] = []
 
     def visit_Call(self, node: ast.Call) -> None:
-        if isinstance(node.func, ast.Attribute) and node.func.attr in LOG_METHODS:
+        if _is_logging_call(node):
             self._inspect_logging_call(node)
         self.generic_visit(node)
 
@@ -136,7 +148,7 @@ class _LoggingVisitor(ast.NodeVisitor):
             self._add(node, "log message names a sensitive field")
             return
 
-        values = list(node.args[1:])
+        values = list(node.args)
         values.extend(keyword.value for keyword in node.keywords if keyword.arg != "exc_info")
         for value in values:
             names = tuple(dict.fromkeys(_sensitive_nodes(value)))

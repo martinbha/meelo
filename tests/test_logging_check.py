@@ -25,6 +25,16 @@ def test_logging_check_rejects_raw_exception_arguments(tmp_path: Path) -> None:
     assert "exc" in violations[0].reason
 
 
+def test_logging_check_rejects_sensitive_f_strings(tmp_path: Path) -> None:
+    source = tmp_path / "unsafe.py"
+    source.write_text('logger.info(f"merchant={observation.merchant}")\n', encoding="utf-8")
+
+    violations = check_paths((source,))
+
+    assert len(violations) == 1
+    assert "merchant" in violations[0].reason
+
+
 def test_repository_logging_sources_pass_the_check() -> None:
     root = Path(__file__).resolve().parents[1]
 
