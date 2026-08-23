@@ -19,6 +19,7 @@ def test_production_settings_enable_transport_and_browser_security(
 ) -> None:
     settings = production_settings
 
+    assert settings.DEBUG is False
     assert settings.SECURE_SSL_REDIRECT is True
     assert settings.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
     assert settings.SECURE_HSTS_SECONDS == 31536000
