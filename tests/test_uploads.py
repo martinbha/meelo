@@ -102,9 +102,7 @@ def test_upload_detail_shows_processing_attempt_and_next_retry(user: Any, client
 
 
 @pytest.mark.django_db
-def test_upload_detail_renders_catalogued_processing_failure(
-    user: Any, client: Any
-) -> None:
+def test_upload_detail_renders_catalogued_processing_failure(user: Any, client: Any) -> None:
     client.force_login(user)
     document = SourceDocument.objects.create(
         user=user,
