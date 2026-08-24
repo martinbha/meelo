@@ -488,18 +488,30 @@ def unlink_match(
             user_id=user.pk,
         )
     )
-    transaction_ids = {
-        row.canonical_transaction_id
-        for row in observations
-        if row.canonical_transaction_id is not None
-    }
-    if len(transaction_ids) > 1:
-        raise ConflictError("The matched rows point at different transactions.")
-    if transaction_ids:
+    transaction_id = None
+    if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
+        transaction_ids = {
+            row.canonical_transaction_id
+            for row in observations
+            if row.canonical_transaction_id is not None
+        }
+        if len(transaction_ids) != 1:
+            raise ConflictError("The transfer rows do not share one transaction.")
+        transaction_id = transaction_ids.pop()
+    elif match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
+        refund = next(
+            (row for row in observations if row.direction == ImportedObservation.Direction.CREDIT),
+            None,
+        )
+        if refund is None or refund.canonical_transaction_id is None:
+            raise ConflictError("The refund match has no refund transaction.")
+        transaction_id = refund.canonical_transaction_id
+
+    if transaction_id is not None:
         from apps.transactions.deletion import delete_transaction
 
         delete_transaction(
-            transaction_ids.pop(),
+            transaction_id,
             user=user,
             reason="reconciliation match unlinked",
             confirmed=True,

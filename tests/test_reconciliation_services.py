@@ -416,6 +416,30 @@ def test_unlinking_a_duplicate_restores_both_rows_and_keeps_match_history(owner:
     ).exists()
 
 
+def test_unlinking_a_duplicate_does_not_void_the_winners_later_transaction(owner: Any) -> None:
+    _, rows = seed(owner, parsed(), parsed())
+    match = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        score=95,
+    )
+    confirm_duplicate_match(match.pk, user=owner, winner_id=match.left_observation_id)
+    transaction = accept_observation(
+        match.left_observation_id,
+        user=owner,
+        data_key=KEY,
+        financial_account=make_account(owner),
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+
+    unlink_match(match.pk, user=owner)
+
+    transaction.refresh_from_db()
+    assert transaction.status != CanonicalTransaction.Status.VOIDED
+
+
 def test_merging_cannot_discard_a_confirmed_transaction(owner: Any) -> None:
     _, rows = seed(owner, parsed(), parsed())
     match = record_match(
