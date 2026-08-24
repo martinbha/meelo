@@ -39,6 +39,7 @@ class AuditEvent(models.Model):
         RECONCILIATION_MATCH_CREATED = "reconciliation_match_created", "Match proposed"
         RECONCILIATION_MATCH_CONFIRMED = "reconciliation_match_confirmed", "Match confirmed"
         RECONCILIATION_MATCH_REJECTED = "reconciliation_match_rejected", "Match rejected"
+        RECONCILIATION_MATCH_UNLINKED = "reconciliation_match_unlinked", "Match unlinked"
         DUPLICATE_MERGED = "duplicate_merged", "Duplicate merged"
         INTERNAL_TRANSFER_CONFIRMED = "internal_transfer_confirmed", "Internal transfer confirmed"
         REFUND_MATCHED = "refund_matched", "Refund matched to a purchase"
