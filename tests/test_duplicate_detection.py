@@ -2,6 +2,8 @@ import os
 from datetime import date
 from typing import Any
 
+import pytest
+
 from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import (
     AUTOMATIC_MERGE_ENABLED,
@@ -256,6 +258,72 @@ def test_candidates_are_ordered_by_score() -> None:
     scores = [item.score.score for item in candidates]
 
     assert scores == sorted(scores, reverse=True)
+
+
+def test_candidate_search_skips_non_deterministic_pairs_outside_the_window() -> None:
+    left = facts(occurred_at=date(2026, 1, 1), approval_code="")
+    right = facts(observation_id="row-2", occurred_at=date(2026, 3, 1), approval_code="")
+
+    assert find_duplicate_candidates([left, right], search_key=SEARCH_KEY) == ()
+
+
+def test_candidate_cap_keeps_the_best_pairs_and_emits_a_safe_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [facts(observation_id=f"row-{index}", approval_code="") for index in range(4)]
+    emitted: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "apps.reconciliation.duplicates.metrics.record",
+        lambda name, **labels: emitted.append((name, labels)),
+    )
+
+    candidates = find_duplicate_candidates(
+        rows,
+        search_key=SEARCH_KEY,
+        max_candidates_per_observation=1,
+    )
+
+    assert len(candidates) == 2
+    assert all(
+        sum(
+            row.observation_id in (item.left.observation_id, item.right.observation_id)
+            for item in candidates
+        )
+        <= 1
+        for row in rows
+    )
+    assert emitted == [
+        (
+            "reconciliation.proposed",
+            {"status": "capped", "match_type": "duplicate_observation"},
+        )
+    ]
+
+
+def test_exact_blind_index_pair_wins_the_candidate_cap() -> None:
+    base = facts(observation_id="base", approval_code="exact-code")
+    exact = facts(
+        observation_id="exact",
+        approval_code="exact-code",
+        occurred_at=date(2025, 1, 1),
+        amount_minor=1,
+        merchant="different",
+        instrument_id="different",
+    )
+    high_score = facts(observation_id="weighted", approval_code="")
+
+    candidates = find_duplicate_candidates(
+        [base, high_score, exact],
+        search_key=SEARCH_KEY,
+        max_candidates_per_observation=1,
+    )
+
+    selected_ids = {
+        candidates[0].left.observation_id,
+        candidates[0].right.observation_id,
+    }
+    assert selected_ids == {"base", "exact"}
+    assert candidates[0].from_deterministic_key is True
 
 
 def test_automatic_merging_is_disabled_for_the_initial_release() -> None:
