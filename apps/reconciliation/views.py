@@ -36,6 +36,7 @@ from .services import (
     link_observations,
     open_matches,
     reject_match,
+    unlink_match,
 )
 from .transfers import confirm_internal_transfer
 
@@ -149,10 +150,13 @@ class MatchActionView(LoginRequiredMixin, View):
 
     def post(self, request: HttpRequest, pk: Any, action: str) -> HttpResponse:
         match = get_owned_object_or_404(ReconciliationMatch, request.user, pk=pk)
-        if action not in {"confirm", "reject"}:
+        if action not in {"confirm", "reject", "unlink"}:
             raise Http404
         try:
-            if action == "reject":
+            if action == "unlink":
+                unlink_match(match.pk, user=request.user, data_key=_data_key(request))
+                messages.success(request, "The match was unlinked and both rows can be reviewed.")
+            elif action == "reject":
                 reject_match(match.pk, user=request.user)
                 messages.success(request, "The candidate was dismissed.")
             elif match.match_type == ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION:
