@@ -41,6 +41,7 @@ from apps.reconciliation.services import (
     confirm_match,
     record_match,
     reject_match,
+    unlink_match,
 )
 from apps.reconciliation.transfers import confirm_internal_transfer, propose_internal_transfers
 from apps.transactions.classification import is_income, is_neutral, is_spending
@@ -479,6 +480,31 @@ def test_confirming_posts_the_ledger_in_the_same_transaction(owner: Any) -> None
     assert {entry_amount(entry, data_key=KEY).amount_minor for entry in entries} == {500_000}
     # Encrypted on disk: an entry amount is a second copy of the money.
     assert all("500000" not in entry.amount_encrypted for entry in entries)
+
+
+def test_unlinking_a_transfer_reverses_the_ledger_and_reopens_both_rows(owner: Any) -> None:
+    outgoing, incoming, checking, savings = seed_transfer(owner)
+    match = propose(owner, outgoing, incoming)
+    source = make_ledger_accounts(owner, checking, prefix="unlink").account
+    destination = make_ledger_accounts(owner, savings, prefix="unlink2").account
+    transfer = confirm_internal_transfer(
+        match.pk,
+        user=owner,
+        data_key=KEY,
+        ledger_accounts=PostingRuleAccounts(account=source, transfer_account=destination),
+    )
+
+    unlink_match(match.pk, user=owner, data_key=KEY)
+
+    transfer.refresh_from_db()
+    match.refresh_from_db()
+    assert transfer.status == CanonicalTransaction.Status.VOIDED
+    assert match.status == ReconciliationMatch.Status.REJECTED
+    assert LedgerEntry.objects.filter(transaction=transfer).count() == 4
+    for row in (outgoing, incoming):
+        row.refresh_from_db()
+        assert row.canonical_transaction_id is None
+        assert row.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
 
 
 def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None:

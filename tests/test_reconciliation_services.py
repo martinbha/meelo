@@ -43,6 +43,7 @@ from apps.reconciliation.services import (
     record_near_duplicates,
     record_proposals,
     reject_match,
+    unlink_match,
 )
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import make_account, make_document, make_ocr_run, make_user
@@ -391,6 +392,28 @@ def test_confirming_a_duplicate_twice_is_idempotent(owner: Any) -> None:
         ).count()
         == 1
     )
+
+
+def test_unlinking_a_duplicate_restores_both_rows_and_keeps_match_history(owner: Any) -> None:
+    _, rows = seed(owner, parsed(), parsed())
+    match = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        score=95,
+    )
+    confirm_duplicate_match(match.pk, user=owner, winner_id=match.left_observation_id)
+
+    unlinked = unlink_match(match.pk, user=owner)
+
+    restored = ImportedObservation.objects.get(pk=match.right_observation_id)
+    assert unlinked.status == ReconciliationMatch.Status.REJECTED
+    assert restored.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    assert restored.merged_into_id is None
+    assert AuditEvent.objects.filter(
+        user=owner, event_type="reconciliation_match_unlinked", object_id=match.pk
+    ).exists()
 
 
 def test_merging_cannot_discard_a_confirmed_transaction(owner: Any) -> None:
