@@ -1,7 +1,8 @@
 import os
+import signal
 import socket
-import time
 import uuid
+from threading import Event
 
 from django.core.management.base import BaseCommand
 
@@ -29,19 +30,33 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:  # type: ignore[no-untyped-def]
         poll_interval = max(options["poll_interval"], 0.0)
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
-        while True:
-            # A fresh identifier per attempt, stamped on every log line and
-            # metric the job produces. Without it, a failure here and the upload
-            # that caused it are two unrelated entries in two different logs.
-            token = task_id_context.set(uuid.uuid4().hex)
-            try:
-                WorkerHeartbeat.touch(worker_id)
-                processed = process_one_job()
-                if processed:
-                    WorkerHeartbeat.touch(worker_id, job_seen=True)
-            finally:
-                task_id_context.reset(token)
-            if options["once"] or not processed and poll_interval == 0:
-                return
-            if not processed:
-                time.sleep(poll_interval)
+        shutdown = Event()
+
+        def request_shutdown(signum: int, frame: object) -> None:
+            del signum, frame
+            shutdown.set()
+
+        previous = {
+            signum: signal.signal(signum, request_shutdown)
+            for signum in (signal.SIGTERM, signal.SIGINT)
+        }
+        try:
+            while not shutdown.is_set():
+                # A signal received during processing records shutdown intent;
+                # the synchronous handler finishes its transaction and cleanup
+                # before this loop exits, so no document is abandoned halfway.
+                token = task_id_context.set(uuid.uuid4().hex)
+                try:
+                    WorkerHeartbeat.touch(worker_id)
+                    processed = process_one_job()
+                    if processed:
+                        WorkerHeartbeat.touch(worker_id, job_seen=True)
+                finally:
+                    task_id_context.reset(token)
+                if options["once"] or not processed and poll_interval == 0:
+                    return
+                if not processed:
+                    shutdown.wait(poll_interval)
+        finally:
+            for signum, handler in previous.items():
+                signal.signal(signum, handler)
