@@ -2,6 +2,8 @@ import os
 from datetime import date
 from typing import Any
 
+import pytest
+
 from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import (
     AUTOMATIC_MERGE_ENABLED,
@@ -256,6 +258,46 @@ def test_candidates_are_ordered_by_score() -> None:
     scores = [item.score.score for item in candidates]
 
     assert scores == sorted(scores, reverse=True)
+
+
+def test_candidate_search_skips_non_deterministic_pairs_outside_the_window() -> None:
+    left = facts(occurred_at=date(2026, 1, 1), approval_code="")
+    right = facts(observation_id="row-2", occurred_at=date(2026, 3, 1), approval_code="")
+
+    assert find_duplicate_candidates([left, right], search_key=SEARCH_KEY) == ()
+
+
+def test_candidate_cap_keeps_the_best_pairs_and_emits_a_safe_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [facts(observation_id=f"row-{index}", approval_code="") for index in range(4)]
+    emitted: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "apps.reconciliation.duplicates.metrics.record",
+        lambda name, **labels: emitted.append((name, labels)),
+    )
+
+    candidates = find_duplicate_candidates(
+        rows,
+        search_key=SEARCH_KEY,
+        max_candidates_per_observation=1,
+    )
+
+    assert len(candidates) == 2
+    assert all(
+        sum(
+            row.observation_id in (item.left.observation_id, item.right.observation_id)
+            for item in candidates
+        )
+        <= 1
+        for row in rows
+    )
+    assert emitted == [
+        (
+            "reconciliation.proposed",
+            {"status": "capped", "match_type": "duplicate_observation"},
+        )
+    ]
 
 
 def test_automatic_merging_is_disabled_for_the_initial_release() -> None:
