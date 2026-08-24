@@ -14,6 +14,7 @@ observations point at it, and the type is ``internal_transfer``, which
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -72,6 +73,8 @@ def propose_internal_transfers(
     data_key: bytes,
     key_version: int = 1,
     tolerance: TransferTolerance | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> tuple[ReconciliationMatch, ...]:
     """Scan a user's undecided rows for the two sides of one move.
 
@@ -82,15 +85,18 @@ def propose_internal_transfers(
     does not resurrect it.
     """
 
-    rows = list(
-        ImportedObservation.objects.filter(
-            user_id=user.pk,
-            review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
-            canonical_transaction__isnull=True,
-            financial_account_guess__isnull=False,
-            occurred_at__isnull=False,
-        ).exclude(direction=ImportedObservation.Direction.UNKNOWN)
-    )
+    queryset = ImportedObservation.objects.filter(
+        user_id=user.pk,
+        review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
+        canonical_transaction__isnull=True,
+        financial_account_guess__isnull=False,
+        occurred_at__isnull=False,
+    ).exclude(direction=ImportedObservation.Direction.UNKNOWN)
+    if start_date is not None:
+        queryset = queryset.filter(occurred_at__gte=start_date)
+    if end_date is not None:
+        queryset = queryset.filter(occurred_at__lte=end_date)
+    rows = list(queryset)
     facts = {
         row.pk: facts_from(
             row,

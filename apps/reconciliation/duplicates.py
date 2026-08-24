@@ -21,7 +21,7 @@ from typing import Any
 from rapidfuzz.fuzz import ratio
 
 from apps.core import metrics
-from apps.core.blind_index import blind_index
+from apps.core.blind_index import SearchKey, blind_index
 from apps.observations.models import ImportedObservation
 
 #: Feature weights from specification 16.3.
@@ -107,7 +107,7 @@ class DuplicateScore:
         return {"score": self.score, "matched": list(self.features)}
 
 
-def deterministic_key(facts: ObservationFacts, *, search_key: bytes) -> str:
+def deterministic_key(facts: ObservationFacts, *, search_key: SearchKey | bytes) -> str:
     """A stable key for the rows that can be matched without judgement.
 
     An approval code identifies one authorisation exactly, so it takes
@@ -142,7 +142,7 @@ def deterministic_key(facts: ObservationFacts, *, search_key: bytes) -> str:
 
 
 def group_by_key(
-    facts: Iterable[ObservationFacts], *, search_key: bytes
+    facts: Iterable[ObservationFacts], *, search_key: SearchKey | bytes
 ) -> dict[str, list[ObservationFacts]]:
     """Group observations that share a deterministic key."""
 
@@ -238,7 +238,7 @@ class DuplicateCandidate:
 def find_duplicate_candidates(
     facts: Sequence[ObservationFacts],
     *,
-    search_key: bytes,
+    search_key: SearchKey | bytes,
     minimum_score: int = REVIEW_CANDIDATE_SCORE,
     search_window: timedelta = CANDIDATE_SEARCH_WINDOW,
     max_candidates_per_observation: int = MAX_CANDIDATES_PER_OBSERVATION,
