@@ -16,6 +16,7 @@ for the user to classify, because an unmatched credit really might be income.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -71,6 +72,8 @@ def propose_refund_matches(
     user: Any,
     data_key: bytes,
     key_version: int = 1,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> tuple[ReconciliationMatch, ...]:
     """Pair credit rows still awaiting review against the purchases they reverse.
 
@@ -79,11 +82,14 @@ def propose_refund_matches(
     sides to be open would miss almost every real case.
     """
 
-    candidates = list(
-        ImportedObservation.objects.filter(user_id=user.pk, occurred_at__isnull=False).exclude(
-            review_status__in=ImportedObservation.RESOLVED_STATUSES
-        )
+    rows = ImportedObservation.objects.filter(user_id=user.pk, occurred_at__isnull=False).exclude(
+        review_status__in=ImportedObservation.RESOLVED_STATUSES
     )
+    if start_date is not None:
+        rows = rows.filter(occurred_at__gte=start_date)
+    if end_date is not None:
+        rows = rows.filter(occurred_at__lte=end_date)
+    candidates = list(rows)
     facts = {}
     for row in candidates:
         values = decrypt_observation(row, user=user, data_key=data_key)
