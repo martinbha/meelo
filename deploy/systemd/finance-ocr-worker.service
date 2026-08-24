@@ -1,0 +1,17 @@
+[Unit]
+Description=Finance OCR document worker
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=finance-ocr
+WorkingDirectory=/opt/finance-ocr
+ExecStart=/usr/bin/docker compose --profile processing up worker
+ExecStop=/usr/bin/docker compose stop --timeout 120 worker
+TimeoutStopSec=130
+KillSignal=SIGTERM
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

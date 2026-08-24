@@ -72,6 +72,7 @@ services:
       - field_encryption_master_key
     read_only: true
     restart: unless-stopped
+    stop_grace_period: 2m
     deploy:
       resources:
         limits:

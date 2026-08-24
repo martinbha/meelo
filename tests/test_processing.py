@@ -1,5 +1,6 @@
 import base64
 import os
+import signal
 from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
@@ -178,6 +179,25 @@ def test_worker_operation_uses_job_correlation_id(user: Any, monkeypatch: Any) -
 def test_process_document_jobs_once_exits_when_queue_is_empty(capsys: Any) -> None:
     call_command("process_document_jobs", once=True)
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.django_db
+def test_worker_finishes_the_current_job_after_sigterm(user: Any, monkeypatch: Any) -> None:
+    from apps.processing.management.commands import process_document_jobs
+
+    handled: list[str] = []
+
+    def process() -> bool:
+        handled.append("started")
+        os.kill(os.getpid(), signal.SIGTERM)
+        handled.append("finished")
+        return True
+
+    monkeypatch.setattr(process_document_jobs, "process_one_job", process)
+
+    call_command("process_document_jobs", poll_interval=0)
+
+    assert handled == ["started", "finished"]
 
 
 @pytest.mark.django_db
