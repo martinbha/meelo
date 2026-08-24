@@ -1,3 +1,4 @@
+from datetime import date
 from io import StringIO
 from typing import Any
 
@@ -42,3 +43,19 @@ def test_batch_command_is_date_bounded_idempotent_and_reports_counts(
     assert "examined=2 created=1 existing=0 skipped=1" in first.getvalue()
     assert "examined=2 created=0 existing=1 skipped=1" in second.getvalue()
     assert "4200" not in first.getvalue() + second.getvalue()
+
+
+def test_scheduled_invocation_needs_no_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    owner: Any = make_user(email="scheduled-owner@example.com")
+    seed(owner, parsed(), parsed())
+    command = "apps.reconciliation.management.commands.generate_reconciliation_candidates"
+    monkeypatch.setattr(f"{command}.load_master_key", lambda: b"m" * 32)
+    monkeypatch.setattr(f"{command}.get_user_data_key", lambda **kwargs: KEY)
+    monkeypatch.setattr(f"{command}.get_user_search_key", lambda **kwargs: SEARCH_KEY)
+    monkeypatch.setattr(f"{command}.timezone.localdate", lambda: date(2026, 8, 31))
+
+    output = StringIO()
+    call_command("generate_reconciliation_candidates", stdout=output)
+
+    assert ReconciliationMatch.objects.filter(user=owner).count() == 1
+    assert "created=1" in output.getvalue()

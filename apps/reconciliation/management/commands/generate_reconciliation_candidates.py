@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 from apps.core.key_management import (
     get_user_data_key,
@@ -21,24 +22,38 @@ from apps.users.models import User
 
 
 class Command(BaseCommand):
-    help = "Generate bounded reconciliation candidates for one user and date range."
+    help = "Generate bounded reconciliation candidates for users and a date range."
 
     def add_arguments(self, parser: Any) -> None:
-        parser.add_argument("--email", required=True)
-        parser.add_argument("--start", required=True, type=date.fromisoformat)
-        parser.add_argument("--end", required=True, type=date.fromisoformat)
+        parser.add_argument("--email")
+        parser.add_argument("--start", type=date.fromisoformat)
+        parser.add_argument("--end", type=date.fromisoformat)
 
     def handle(self, *args: Any, **options: Any) -> None:
-        start: date = options["start"]
-        end: date = options["end"]
+        end: date = options["end"] or timezone.localdate()
+        start: date = options["start"] or end - timedelta(days=30)
         if end < start:
             raise CommandError("The end date cannot precede the start date.")
-        try:
-            user = User.objects.get(email__iexact=str(options["email"]).strip())
-        except User.DoesNotExist as exc:
-            raise CommandError("No user exists for that email address.") from exc
-
         master_key = load_master_key()
+        users = User.objects.filter(is_active=True).order_by("pk")
+        if options["email"]:
+            users = users.filter(email__iexact=str(options["email"]).strip())
+            if not users.exists():
+                raise CommandError("No active user exists for that email address.")
+
+        totals = [0, 0, 0, 0]
+        for user in users:
+            result = self._generate(user, start=start, end=end, master_key=master_key)
+            totals = [current + value for current, value in zip(totals, result, strict=True)]
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"examined={totals[0]} created={totals[1]} existing={totals[2]} skipped={totals[3]}"
+            )
+        )
+
+    def _generate(
+        self, user: User, *, start: date, end: date, master_key: bytes
+    ) -> tuple[int, int, int, int]:
         data_key = get_user_data_key(user=user, actor=user, master_key=master_key)
         search_key = get_user_search_key(user=user, actor=user, master_key=master_key)
         rows = list(
@@ -96,8 +111,4 @@ class Command(BaseCommand):
         created = len(generated_ids - before)
         existing = len(generated_ids & before)
         skipped = max(len(rows) - len(generated_ids), 0)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"examined={len(rows)} created={created} existing={existing} skipped={skipped}"
-            )
-        )
+        return len(rows), created, existing, skipped
