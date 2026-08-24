@@ -468,6 +468,89 @@ def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     return match
 
 
+@db_transaction.atomic
+def unlink_match(
+    match_id: Any,
+    *,
+    user: Any,
+    data_key: bytes | None = None,
+    key_version: int = 1,
+) -> ReconciliationMatch:
+    """Reverse a confirmed relationship while retaining its rejected history."""
+
+    match = lock_match(match_id, user)
+    if match.status != ReconciliationMatch.Status.CONFIRMED:
+        raise ConflictError("Only a confirmed match can be unlinked.")
+
+    observations = list(
+        ImportedObservation.objects.select_for_update().filter(
+            pk__in=(match.left_observation_id, match.right_observation_id),
+            user_id=user.pk,
+        )
+    )
+    transaction_id = None
+    if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
+        transaction_ids = {
+            row.canonical_transaction_id
+            for row in observations
+            if row.canonical_transaction_id is not None
+        }
+        if len(transaction_ids) != 1:
+            raise ConflictError("The transfer rows do not share one transaction.")
+        transaction_id = transaction_ids.pop()
+    elif match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
+        refund = next(
+            (row for row in observations if row.direction == ImportedObservation.Direction.CREDIT),
+            None,
+        )
+        if refund is None or refund.canonical_transaction_id is None:
+            raise ConflictError("The refund match has no refund transaction.")
+        transaction_id = refund.canonical_transaction_id
+
+    if transaction_id is not None:
+        from apps.transactions.deletion import delete_transaction
+
+        delete_transaction(
+            transaction_id,
+            user=user,
+            reason="reconciliation match unlinked",
+            confirmed=True,
+            data_key=data_key,
+            key_version=key_version,
+        )
+
+    for observation in observations:
+        if observation.merged_into_id in {
+            match.left_observation_id,
+            match.right_observation_id,
+        }:
+            observation.merged_into = None
+            observation.review_status = ImportedObservation.ReviewStatus.UNREVIEWED
+            observation.reviewed_by = None
+            observation.reviewed_at = None
+            observation.save(
+                update_fields=[
+                    "merged_into",
+                    "review_status",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "updated_at",
+                ]
+            )
+
+    match.status = ReconciliationMatch.Status.REJECTED
+    match.reviewed_by = user
+    match.reviewed_at = timezone.now()
+    match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+    record_audit_event(
+        user=user,
+        event_type="reconciliation_match_unlinked",
+        obj=match,
+        metadata={"match_type": match.match_type, "match_id": str(match.pk)},
+    )
+    return match
+
+
 def lock_match(match_id: Any, user: Any) -> ReconciliationMatch:
     """Take a row lock on one candidate, refusing another user's."""
 

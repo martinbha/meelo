@@ -79,11 +79,20 @@
     {% endif %}
   </form>
 
-  <form method="post"
-        action="{% url 'match-reject' pk=match.pk %}"
-        hx-boost="false">
-    {% csrf_token %}
-    <button type="submit" class="secondary">Not a match</button>
-  </form>
+  {% if match.status == "confirmed" %}
+    <form method="post"
+          action="{% url 'match-action' pk=match.pk action='unlink' %}"
+          hx-boost="false">
+      {% csrf_token %}
+      <button type="submit" class="secondary">Unlink match</button>
+    </form>
+  {% elif match.status == "proposed" %}
+    <form method="post"
+          action="{% url 'match-reject' pk=match.pk %}"
+          hx-boost="false">
+      {% csrf_token %}
+      <button type="submit" class="secondary">Not a match</button>
+    </form>
+  {% endif %}
 </section>
 {% endblock %}
