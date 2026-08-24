@@ -20,6 +20,7 @@ from typing import Any
 
 from rapidfuzz.fuzz import ratio
 
+from apps.core import metrics
 from apps.core.blind_index import blind_index
 from apps.observations.models import ImportedObservation
 
@@ -41,6 +42,11 @@ REVIEW_CANDIDATE_SCORE = 65
 NEARBY_DATE_WINDOW = timedelta(days=1)
 #: Merchant strings at or above this similarity count as the same merchant.
 MERCHANT_SIMILARITY_THRESHOLD = 85.0
+
+#: Candidate generation bounds. Exact blind-index pairs bypass the date window,
+#: but still compete by score for the finite reviewer-facing candidate set.
+CANDIDATE_SEARCH_WINDOW = timedelta(days=31)
+MAX_CANDIDATES_PER_OBSERVATION = 25
 
 #: Automatic merging stays off for the initial release, per specification 16.3.
 AUTOMATIC_MERGE_ENABLED = False
@@ -234,6 +240,8 @@ def find_duplicate_candidates(
     *,
     search_key: bytes,
     minimum_score: int = REVIEW_CANDIDATE_SCORE,
+    search_window: timedelta = CANDIDATE_SEARCH_WINDOW,
+    max_candidates_per_observation: int = MAX_CANDIDATES_PER_OBSERVATION,
 ) -> tuple[DuplicateCandidate, ...]:
     """Pair up observations that may be the same transaction.
 
@@ -241,6 +249,11 @@ def find_duplicate_candidates(
     scores: an identical approval code is evidence no weighting should be able
     to talk us out of.
     """
+
+    if search_window < timedelta(0):
+        raise ValueError("The candidate search window cannot be negative.")
+    if max_candidates_per_observation < 1:
+        raise ValueError("The per-observation candidate cap must be positive.")
 
     keyed_pairs: set[tuple[Any, Any]] = set()
     for group in group_by_key(facts, search_key=search_key).values():
@@ -253,6 +266,13 @@ def find_duplicate_candidates(
         for right in facts[index + 1 :]:
             score = score_pair(left, right)
             deterministic = (left.observation_id, right.observation_id) in keyed_pairs
+            if (
+                not deterministic
+                and left.occurred_at is not None
+                and right.occurred_at is not None
+                and abs(left.occurred_at - right.occurred_at) > search_window
+            ):
+                continue
             if not deterministic and score.score < minimum_score:
                 continue
             candidates.append(
@@ -265,4 +285,25 @@ def find_duplicate_candidates(
                 )
             )
     candidates.sort(key=lambda item: (-item.score.score, str(item.left.observation_id)))
-    return tuple(candidates)
+    selected: list[DuplicateCandidate] = []
+    counts: dict[Any, int] = {}
+    capped = False
+    for candidate in candidates:
+        left_id = candidate.left.observation_id
+        right_id = candidate.right.observation_id
+        if (
+            counts.get(left_id, 0) >= max_candidates_per_observation
+            or counts.get(right_id, 0) >= max_candidates_per_observation
+        ):
+            capped = True
+            continue
+        selected.append(candidate)
+        counts[left_id] = counts.get(left_id, 0) + 1
+        counts[right_id] = counts.get(right_id, 0) + 1
+    if capped:
+        metrics.record(
+            metrics.MATCH_PROPOSED,
+            status="capped",
+            match_type="duplicate_observation",
+        )
+    return tuple(selected)
