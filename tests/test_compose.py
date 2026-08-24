@@ -72,6 +72,15 @@ def test_services_are_bounded_and_restartable() -> None:
     tmp_volume = compose["volumes"]["finance_ocr_tmp"]
     assert tmp_volume["driver_opts"]["type"] == "tmpfs"
     assert "size=512m" in tmp_volume["driver_opts"]["o"]
+    assert compose["services"]["worker"]["stop_grace_period"] == "2m"
+
+
+def test_systemd_gives_the_worker_time_to_handle_sigterm() -> None:
+    service = (PROJECT_ROOT / "deploy/systemd/finance-ocr-worker.service").read_text()
+
+    assert "KillSignal=SIGTERM" in service
+    assert "docker compose stop --timeout 120 worker" in service
+    assert "TimeoutStopSec=130" in service
 
 
 def test_the_web_process_does_not_connect_as_the_superuser() -> None:
