@@ -284,7 +284,13 @@ def find_duplicate_candidates(
                     features=score.features,
                 )
             )
-    candidates.sort(key=lambda item: (-item.score.score, str(item.left.observation_id)))
+    candidates.sort(
+        key=lambda item: (
+            not item.from_deterministic_key,
+            -item.score.score,
+            str(item.left.observation_id),
+        )
+    )
     selected: list[DuplicateCandidate] = []
     counts: dict[Any, int] = {}
     capped = False

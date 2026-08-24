@@ -300,5 +300,31 @@ def test_candidate_cap_keeps_the_best_pairs_and_emits_a_safe_metric(
     ]
 
 
+def test_exact_blind_index_pair_wins_the_candidate_cap() -> None:
+    base = facts(observation_id="base", approval_code="exact-code")
+    exact = facts(
+        observation_id="exact",
+        approval_code="exact-code",
+        occurred_at=date(2025, 1, 1),
+        amount_minor=1,
+        merchant="different",
+        instrument_id="different",
+    )
+    high_score = facts(observation_id="weighted", approval_code="")
+
+    candidates = find_duplicate_candidates(
+        [base, high_score, exact],
+        search_key=SEARCH_KEY,
+        max_candidates_per_observation=1,
+    )
+
+    selected_ids = {
+        candidates[0].left.observation_id,
+        candidates[0].right.observation_id,
+    }
+    assert selected_ids == {"base", "exact"}
+    assert candidates[0].from_deterministic_key is True
+
+
 def test_automatic_merging_is_disabled_for_the_initial_release() -> None:
     assert AUTOMATIC_MERGE_ENABLED is False
