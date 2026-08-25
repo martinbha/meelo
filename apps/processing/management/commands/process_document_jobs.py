@@ -5,9 +5,11 @@ import uuid
 from threading import Event
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from apps.core.context import task_id_context
 from apps.core.models import WorkerHeartbeat
+from apps.processing.cleanup import cleanup_stale_directories
 from apps.processing.services import process_one_job
 
 
@@ -31,6 +33,13 @@ class Command(BaseCommand):
         poll_interval = max(options["poll_interval"], 0.0)
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
         shutdown = Event()
+
+        removed, failed = cleanup_stale_directories(cutoff=timezone.now())
+        if removed or failed:
+            self.stdout.write(
+                f"Startup cleanup removed {removed} orphaned director"
+                f"{'y' if removed == 1 else 'ies'}; {failed} failed."
+            )
 
         def request_shutdown(signum: int, frame: object) -> None:
             del signum, frame
