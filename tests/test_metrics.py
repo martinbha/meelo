@@ -336,13 +336,19 @@ def test_every_metric_has_a_caller() -> None:
     }
 
     unused = constants - emitted
-    # The rest are wired as the features that produce them land; these are the
-    # ones with a caller today.
     assert {
         "UPLOAD_RECEIVED",
         "UPLOAD_REJECTED",
         "OCR_DURATION",
         "OCR_FAILED",
+        "PARSER_SELECTED",
+        "PARSER_ROWS",
+        "PARSER_FAILED",
+        "OBSERVATION_CORRECTED",
+        "OBSERVATION_DISAGREEMENT",
+        "MATCH_PROPOSED",
+        "MATCH_CONFIRMED",
+        "MATCH_REJECTED",
         "QUEUE_DEPTH",
         "CLEANUP_FAILED",
         "DATABASE_LATENCY",
