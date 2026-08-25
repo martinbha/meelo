@@ -134,8 +134,17 @@ def import_document_observations(
     second copy of the same rows.
     """
 
-    selection = parse_ocr_runs(document, runs, data_key=data_key)
+    try:
+        selection = parse_ocr_runs(document, runs, data_key=data_key)
+    except Exception:
+        metrics.record(metrics.PARSER_FAILED, parser="unknown", reason="exception")
+        raise
     if not selection.observations:
+        metrics.record(
+            metrics.PARSER_FAILED,
+            parser=selection.metadata.name,
+            reason="no_observations",
+        )
         return False
     newest = max(runs, key=lambda run: (run.created_at, str(run.pk))) if runs else None
     import_parser_selection(
@@ -149,6 +158,17 @@ def import_document_observations(
         # this job is entitled to either of them.
         blind_index_key=require_search_key(user=user, document=document),
         actor=user,
+    )
+    metrics.record(
+        metrics.PARSER_SELECTED,
+        parser=selection.metadata.name,
+        source_type=document.effective_source_type,
+    )
+    metrics.record(
+        metrics.PARSER_ROWS,
+        value=len(selection.observations),
+        parser=selection.metadata.name,
+        status="succeeded",
     )
     return True
 
@@ -221,10 +241,16 @@ def orchestrate_document_ocr(
                 )
             except ClassifiedOcrError as exc:
                 failures.append(exc)
+                metadata = _safe_engine_metadata(plan.engine)
+                metrics.record(
+                    metrics.OCR_FAILED,
+                    engine=metadata.engine,
+                    error_code=exc.code,
+                )
                 record_failed_run(
                     document=document,
                     user=user,
-                    metadata=_safe_engine_metadata(plan.engine),
+                    metadata=metadata,
                     configuration=plan.configuration,
                     error_code=exc.code,
                     duration_ms=0,
@@ -232,6 +258,12 @@ def orchestrate_document_ocr(
                     key_version=key_version,
                 )
                 continue
+            metrics.record(
+                metrics.OCR_DURATION,
+                value=result.duration_ms,
+                engine=result.metadata.engine,
+                status="succeeded",
+            )
             successful.append(
                 record_successful_run(
                     document=document,
@@ -277,20 +309,11 @@ def execute_document_ocr(
     # fallback would authenticate the owner as their own actor — the rule the
     # worker path exists to replace with one that checks the document.
     data_key = require_data_key(user=user)
-    # Timed here rather than per engine: this is the span a slow document is
-    # actually slow for, and the outcome label separates a fast failure from a
-    # fast success.
-    with metrics.timed(metrics.OCR_DURATION, document_id=str(document.pk)):
-        try:
-            runs = orchestrate_document_ocr(
-                document=document,
-                source_path=source_path,
-                user=user,
-                data_key=data_key,
-                key_version=user.encryption_key_version,
-                plans=default_engine_plans(),
-            )
-        except Exception:
-            metrics.record(metrics.OCR_FAILED, document_id=str(document.pk))
-            raise
-    return runs
+    return orchestrate_document_ocr(
+        document=document,
+        source_path=source_path,
+        user=user,
+        data_key=data_key,
+        key_version=user.encryption_key_version,
+        plans=default_engine_plans(),
+    )
