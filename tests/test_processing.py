@@ -123,6 +123,38 @@ def test_document_claim_stays_exclusive_until_recovery(user: Any) -> None:
     assert recovered.pk == job.pk
 
 
+@pytest.mark.django_db
+def test_conflicting_document_job_is_rejected_without_starving_queue(user: Any) -> None:
+    active = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="already-active.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.OCR_RUNNING,
+    )
+    conflicting = ProcessingJob.objects.create(
+        user=user,
+        document_id=active.pk,
+        task_name="process_document",
+        available_at=timezone.now() - timedelta(seconds=2),
+    )
+    next_job = ProcessingJob.objects.create(
+        user=user,
+        document_id=uuid4(),
+        task_name="extract",
+        available_at=timezone.now() - timedelta(seconds=1),
+    )
+
+    claimed = ProcessingJob.claim_next()
+
+    assert claimed is not None
+    assert claimed.pk == next_job.pk
+    conflicting.refresh_from_db()
+    assert conflicting.status == ProcessingJob.Status.FAILED
+    assert conflicting.last_error_code == "DOCUMENT_ALREADY_IN_PROGRESS"
+
+
 @pytest.mark.django_db(transaction=True)
 def test_two_workers_cannot_claim_the_same_document(user: Any) -> None:
     if connection.vendor != "postgresql":

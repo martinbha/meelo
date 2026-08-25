@@ -206,59 +206,74 @@ class ProcessingJob(models.Model):
 
         now = timezone.now()
         with metrics.timed(metrics.DATABASE_QUEUE_CLAIM), transaction.atomic():
-            job = (
+            queue = (
                 cls.objects.select_for_update(skip_locked=True)
                 .filter(status=cls.Status.QUEUED, available_at__lte=now)
                 .order_by("available_at", "created_at")
-                .first()
             )
-            if job is None:
-                return None
+            while (job := queue.first()) is not None:
+                if job.task_name == "process_document":
+                    document = (
+                        SourceDocument.objects.select_for_update()
+                        .filter(pk=job.document_id)
+                        .first()
+                    )
+                    if document is not None:
+                        if document.processing_status not in {
+                            SourceDocument.Status.QUEUED,
+                            SourceDocument.Status.FAILED,
+                        }:
+                            job.status = cls.Status.FAILED
+                            job.completed_at = now
+                            job.last_error_code = "DOCUMENT_ALREADY_IN_PROGRESS"
+                            job.last_error_message = (
+                                "The document already has an active processing claim."
+                            )
+                            job.save(
+                                update_fields=[
+                                    "status",
+                                    "completed_at",
+                                    "last_error_code",
+                                    "last_error_message",
+                                    "updated_at",
+                                ]
+                            )
+                            continue
+                        from .state import transition_document
 
-            if job.task_name == "process_document":
-                document = (
-                    SourceDocument.objects.select_for_update().filter(pk=job.document_id).first()
-                )
-                if document is not None:
-                    if document.processing_status not in {
-                        SourceDocument.Status.QUEUED,
-                        SourceDocument.Status.FAILED,
-                    }:
-                        return None
-                    from .state import transition_document
-
-                    if document.processing_status == SourceDocument.Status.FAILED:
+                        if document.processing_status == SourceDocument.Status.FAILED:
+                            transition_document(
+                                document.pk,
+                                user=job.user,
+                                status=SourceDocument.Status.QUEUED,
+                            )
                         transition_document(
                             document.pk,
                             user=job.user,
-                            status=SourceDocument.Status.QUEUED,
+                            status=SourceDocument.Status.VALIDATING,
                         )
-                    transition_document(
-                        document.pk,
-                        user=job.user,
-                        status=SourceDocument.Status.VALIDATING,
-                    )
 
-            job.status = cls.Status.RUNNING
-            job.attempt_count += 1
-            job.locked_at = now
-            job.started_at = now
-            job.completed_at = None
-            job.last_error_code = ""
-            job.last_error_message = ""
-            job.save(
-                update_fields=[
-                    "status",
-                    "attempt_count",
-                    "locked_at",
-                    "started_at",
-                    "completed_at",
-                    "last_error_code",
-                    "last_error_message",
-                    "updated_at",
-                ]
-            )
-            return job
+                job.status = cls.Status.RUNNING
+                job.attempt_count += 1
+                job.locked_at = now
+                job.started_at = now
+                job.completed_at = None
+                job.last_error_code = ""
+                job.last_error_message = ""
+                job.save(
+                    update_fields=[
+                        "status",
+                        "attempt_count",
+                        "locked_at",
+                        "started_at",
+                        "completed_at",
+                        "last_error_code",
+                        "last_error_message",
+                        "updated_at",
+                    ]
+                )
+                return job
+            return None
 
     def mark_succeeded(self) -> None:
         now = timezone.now()
