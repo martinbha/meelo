@@ -94,25 +94,61 @@ database `CHECK` cannot reach another table.
 `tests/test_security.py` and the isolation tests in each feature's suite assert
 this for every read path.
 
-## Row-level security: evaluated, not enabled
+## Row-level security decision: defer
 
-PostgreSQL RLS would move the ownership check into the database, so a missing
-`WHERE user_id` could not leak a row. It is **not** enabled, for three reasons:
+PostgreSQL RLS would make a missing application `WHERE user_id` fail closed.
+The prototype policy for a directly owned table is:
 
-1. **It needs a per-request session variable.** `SET LOCAL app.user_id` on every
-   connection, correct under connection pooling, or the policy either blocks
-   everything or allows everything. That is a new invariant which, if it broke,
-   would fail *open*.
-2. **This is a single-user deployment.** The blast radius RLS reduces —
-   one user reading another's rows — is a radius of one.
-3. **The checks it would duplicate are already tested.** Ownership is asserted
-   on every read path, so RLS would be a second implementation of a rule that
-   already has one.
+```sql
+USING (
+    user_id = NULLIF(current_setting('meelo.user_id', true), '')::bigint
+)
+WITH CHECK (
+    user_id = NULLIF(current_setting('meelo.user_id', true), '')::bigint
+)
+```
 
-Enable it when the deployment stops being single-user. The migration would add
-`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` plus a policy per table on
-`user_id = current_setting('app.user_id')::uuid`, and the session variable would
-have to be set in middleware and asserted in a test that fails when it is absent.
+The `true` argument makes an unset variable return `NULL`; SQL comparison with
+`NULL` is not true, so a query without a user scope sees no owned rows. The user
+key is a database integer, not a UUID. An authenticated operation would have to
+open a transaction and run `SET LOCAL meelo.user_id = '<id>'` before any owned
+query. `SET LOCAL` is necessary: a session-level value can leak between requests
+when Django reuses a connection.
+
+RLS is deliberately **not enabled** in this single-user release. A runtime
+feature flag is not a safe schema switch: migrations would produce different
+database state from the same migration history, and the application role cannot
+alter policies. Enabling it therefore needs an explicit, reversible migration
+when the deployment becomes multi-user.
+
+### Prototype impact
+
+The schema contains 20 tables with a direct `user_id`. Applying one policy shape
+to those tables is straightforward, but it is not the complete ownership model:
+
+- `ledger_ledgerentry` derives ownership through its transaction and needs an
+  `EXISTS` policy or a denormalized owner column. The former adds a join to every
+  ledger read; the latter creates another ownership invariant.
+- Authentication, session, migration, and operational tables are intentionally
+  not user-scoped. A blanket policy generator would block login or worker health
+  before an identity exists.
+- Web requests would need one transaction spanning authentication through the
+  response query. Reports would keep that transaction open while decrypting and
+  aggregating rows.
+- Workers would need one user-scoped transaction per claimed job. Queue claiming
+  itself must remain unscoped so a worker can discover the next owner, then enter
+  that owner's scope before loading pipeline data.
+- Maintenance commands that operate across users would require a separately
+  audited bypass role or explicit iteration through user-scoped transactions.
+  The migration role already owns the tables and can manage policies, while the
+  application role cannot alter schema.
+
+This operational surface is disproportionate while a supported deployment has
+one user, and application ownership filters plus isolation tests already cover
+the same read paths. Revisit the decision before multi-user support. At that
+point, add explicit policy migrations, PostgreSQL integration tests proving an
+unset scope returns no rows, worker and maintenance tests under forced RLS, and
+report query-plan measurements on representative data.
 
 ## Testing
 
