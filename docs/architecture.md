@@ -84,6 +84,18 @@ document, attempts are bounded, and cleanup runs on success and failure. A
 partial OCR or parser result cannot become a canonical transaction because the
 review transition is the only bridge between the layers.
 
+### Log correlation
+
+Web and worker processes emit the same structured correlation fields. The web
+process validates or creates `request_id`, stores it on the queued processing
+job, and the worker restores it for every pipeline log line. Worker logs also
+carry `task_id` and `job_id` (both the `ProcessingJob` UUID) plus `document_id`
+(the `SourceDocument` UUID). Fields use `-` outside their corresponding scope;
+jobs created without a web request use `job-<job UUID>` as the request fallback.
+
+Correlation values contain identifiers and hashes only. They must never contain
+filenames, OCR text, financial values, user identifiers, or other plaintext.
+
 ## Security and ownership mapping
 
 Value-bearing columns use AES-256-GCM through `EncryptedFieldsMixin`; exact
