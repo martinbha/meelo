@@ -1,6 +1,7 @@
 import base64
 import os
 import signal
+import threading
 from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
+from django.db import IntegrityError, close_old_connections, connection
 from django.utils import timezone
 from PIL import Image
 
@@ -65,6 +67,133 @@ def test_claim_next_atomically_marks_oldest_available_job_running(user: Any) -> 
     assert claimed.locked_at is not None
     assert ProcessingJob.claim_next().pk == second.pk  # type: ignore[union-attr]
     assert ProcessingJob.claim_next() is None
+
+
+@pytest.mark.django_db
+def test_database_rejects_two_active_jobs_for_one_document(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="single-flight.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+
+    with pytest.raises(IntegrityError):
+        ProcessingJob.objects.create(
+            user=user,
+            document_id=document.pk,
+            task_name="process_document",
+        )
+
+
+@pytest.mark.django_db
+def test_document_claim_stays_exclusive_until_recovery(user: Any) -> None:
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="stale-claim.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+
+    assert ProcessingJob.claim_next() is not None
+    document.refresh_from_db()
+    assert document.processing_status == SourceDocument.Status.VALIDATING
+    assert ProcessingJob.claim_next() is None
+
+    job.locked_at = timezone.now() - timedelta(minutes=20)
+    job.save(update_fields=["locked_at"])
+    ProcessingJob.recover_stale(cutoff=timezone.now() - timedelta(minutes=15))
+
+    recovered = ProcessingJob.claim_next()
+    assert recovered is not None
+    assert recovered.pk == job.pk
+
+
+@pytest.mark.django_db
+def test_conflicting_document_job_is_rejected_without_starving_queue(user: Any) -> None:
+    active = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="already-active.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.OCR_RUNNING,
+    )
+    conflicting = ProcessingJob.objects.create(
+        user=user,
+        document_id=active.pk,
+        task_name="process_document",
+        available_at=timezone.now() - timedelta(seconds=2),
+    )
+    next_job = ProcessingJob.objects.create(
+        user=user,
+        document_id=uuid4(),
+        task_name="extract",
+        available_at=timezone.now() - timedelta(seconds=1),
+    )
+
+    claimed = ProcessingJob.claim_next()
+
+    assert claimed is not None
+    assert claimed.pk == next_job.pk
+    conflicting.refresh_from_db()
+    assert conflicting.status == ProcessingJob.Status.FAILED
+    assert conflicting.last_error_code == "DOCUMENT_ALREADY_IN_PROGRESS"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_workers_cannot_claim_the_same_document(user: Any) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL exercises concurrent SKIP LOCKED claims")
+    document = SourceDocument.objects.create(
+        user=user,
+        file_sha256=uuid4().hex + uuid4().hex,
+        original_filename_encrypted="concurrent.png",
+        mime_type="image/png",
+        file_size=4,
+        processing_status=SourceDocument.Status.QUEUED,
+    )
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document.pk,
+        task_name="process_document",
+    )
+    barrier = threading.Barrier(2)
+    claimed: list[object] = []
+
+    def worker() -> None:
+        close_old_connections()
+        barrier.wait()
+        result = ProcessingJob.claim_next()
+        claimed.append(result.pk if result else None)
+        close_old_connections()
+
+    workers = [threading.Thread(target=worker) for _ in range(2)]
+    for worker_thread in workers:
+        worker_thread.start()
+    for worker_thread in workers:
+        worker_thread.join()
+
+    assert sorted(str(value) for value in claimed) == sorted([str(job.pk), "None"])
+    job.refresh_from_db()
+    document.refresh_from_db()
+    assert job.attempt_count == 1
+    assert document.processing_attempt_count == 1
+    assert document.processing_status == SourceDocument.Status.VALIDATING
 
 
 @pytest.mark.django_db
