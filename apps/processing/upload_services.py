@@ -77,7 +77,7 @@ def create_uploaded_document(
                 obj=document,
                 metadata={"mime_type": content_type, "file_size": size},
             )
-            metrics.record(metrics.UPLOAD_RECEIVED, document_id=str(document.id))
+            metrics.record(metrics.UPLOAD_RECEIVED, status="accepted")
     except IntegrityError as exc:
         path.unlink(missing_ok=True)
         path.parent.rmdir()

@@ -23,6 +23,7 @@ from django.utils import timezone
 from apps.categorization.engine import CategorySource
 from apps.categorization.models import Category
 from apps.categorization.normalization import display_merchant
+from apps.core import metrics
 from apps.core.audit import record_audit_event
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
 from apps.core.value_objects import Currency, InvalidCurrencyError, Money
@@ -244,6 +245,9 @@ def correct_observation(
             "source_document_id": str(observation.source_document_id),
         },
     )
+    metrics.record(metrics.OBSERVATION_CORRECTED, status="corrected")
+    if "amount" in changed:
+        metrics.record(metrics.OBSERVATION_DISAGREEMENT, status="corrected")
     return observation
 
 
