@@ -59,6 +59,21 @@ def test_upload_creates_document_and_queued_job(user: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_upload_request_id_is_propagated_to_the_queued_job(user: Any, client: Any) -> None:
+    client.force_login(user)
+
+    response = client.post(
+        reverse("upload-new"),
+        {"screenshot": screenshot(), "retention_policy": SourceDocument.RetentionPolicy.IMMEDIATE},
+        HTTP_X_REQUEST_ID="upload-request-123",
+    )
+
+    assert response.status_code == 302
+    job = ProcessingJob.objects.get()
+    assert job.payload["request_id"] == "upload-request-123"
+
+
+@pytest.mark.django_db
 def test_upload_form_rejects_unsupported_type() -> None:
     form = ScreenshotUploadForm(
         files=MultiValueDict({"screenshot": [screenshot(content_type="text/plain")]})

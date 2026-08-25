@@ -14,7 +14,12 @@ from django.db import IntegrityError, close_old_connections, connection
 from django.utils import timezone
 from PIL import Image
 
-from apps.core.context import request_id_context
+from apps.core.context import (
+    document_id_context,
+    job_id_context,
+    request_id_context,
+    task_id_context,
+)
 from apps.core.key_management import provision_user_data_key
 from apps.processing.models import ProcessingJob, SourceDocument
 from apps.processing.services import JOB_HANDLERS, process_one_job
@@ -302,6 +307,41 @@ def test_worker_operation_uses_job_correlation_id(user: Any, monkeypatch: Any) -
 
     assert observed_ids == [f"job-{job.id}"]
     assert request_id_context.get() == "-"
+
+
+@pytest.mark.django_db
+def test_worker_restores_queued_request_and_pipeline_identifiers(
+    user: Any, monkeypatch: Any
+) -> None:
+    observed: list[tuple[str, str, str, str]] = []
+
+    def handler(job: ProcessingJob) -> None:
+        observed.append(
+            (
+                request_id_context.get(),
+                task_id_context.get(),
+                job_id_context.get(),
+                document_id_context.get(),
+            )
+        )
+
+    monkeypatch.setitem(JOB_HANDLERS, "correlated", handler)
+    document_id = uuid4()
+    job = ProcessingJob.objects.create(
+        user=user,
+        document_id=document_id,
+        task_name="correlated",
+        payload={"request_id": "upload-request-123"},
+    )
+
+    assert process_one_job() is True
+
+    job_id = str(job.id)
+    assert observed == [("upload-request-123", job_id, job_id, str(document_id))]
+    assert request_id_context.get() == "-"
+    assert task_id_context.get() == "-"
+    assert job_id_context.get() == "-"
+    assert document_id_context.get() == "-"
 
 
 @pytest.mark.django_db
