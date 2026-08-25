@@ -162,6 +162,10 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "3650"))
+# Workers poll once per second by default. Three missed minutes mark the newest
+# database heartbeat stale; documents active for 15 minutes are reported stuck.
+WORKER_HEARTBEAT_STALE_SECONDS = int(os.getenv("WORKER_HEARTBEAT_STALE_SECONDS", "180"))
+PROCESSING_STUCK_AFTER_SECONDS = int(os.getenv("PROCESSING_STUCK_AFTER_SECONDS", "900"))
 # Perceptual hashing of screenshots is optional. Disabling it leaves exact
 # SHA-256 duplicate detection working unchanged.
 NEAR_DUPLICATE_DETECTION_ENABLED = (
