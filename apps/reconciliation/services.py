@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
@@ -21,11 +22,7 @@ from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
 from apps.processing.models import SourceDocument
 
-from .duplicates import (
-    AUTOMATIC_MERGE_ENABLED,
-    DuplicateCandidate,
-    ObservationFacts,
-)
+from .duplicates import LIKELY_MERGE_SCORE, DuplicateCandidate, ObservationFacts
 from .images import SimilarPair, near_duplicate_detection_enabled, sorted_pair
 from .matching import MatchProposal
 from .models import NearDuplicateDocument, ReconciliationMatch
@@ -252,27 +249,64 @@ def record_duplicate_candidates(
     data_key: bytes | None = None,
     key_version: int = 1,
 ) -> tuple[ReconciliationMatch, ...]:
-    """Persist scored duplicate pairs as candidates for review.
-
-    Nothing is merged here even at a perfect score: automatic merging stays
-    disabled for the initial release.
-    """
+    """Persist duplicate pairs and apply the explicitly enabled merge policy."""
 
     stored: list[ReconciliationMatch] = []
     for candidate in candidates:
-        stored.append(
-            record_match(
-                user=user,
-                left_observation_id=candidate.left.observation_id,
-                right_observation_id=candidate.right.observation_id,
-                match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
-                score=candidate.score.score,
-                features=candidate.features,
-                data_key=data_key,
-                key_version=key_version,
-            )
+        match = record_match(
+            user=user,
+            left_observation_id=candidate.left.observation_id,
+            right_observation_id=candidate.right.observation_id,
+            match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+            score=candidate.score.score,
+            features=candidate.features,
+            data_key=data_key,
+            key_version=key_version,
         )
+        if automatic_merge_enabled() and match.match_score >= LIKELY_MERGE_SCORE:
+            _automatically_merge_duplicate(match=match, user=user, features=candidate.features)
+        stored.append(match)
     return tuple(stored)
+
+
+@db_transaction.atomic
+def _automatically_merge_duplicate(
+    *, match: ReconciliationMatch, user: Any, features: Sequence[str]
+) -> None:
+    """Merge one eligible pair and retain the policy evidence in its audit."""
+
+    if match.status != ReconciliationMatch.Status.PROPOSED:
+        return
+    observations = list(
+        ImportedObservation.objects.select_for_update()
+        .filter(
+            pk__in=(match.left_observation_id, match.right_observation_id),
+            user_id=user.pk,
+            merged_into__isnull=True,
+        )
+        .order_by("created_at", "pk")
+    )
+    if len(observations) != 2:
+        return
+    winner, loser = observations
+    merge_observations(user=user, winner_id=winner.pk, duplicate_ids=[loser.pk])
+    match.status = ReconciliationMatch.Status.CONFIRMED
+    match.reviewed_by = None
+    match.reviewed_at = timezone.now()
+    match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+    record_audit_event(
+        user=user,
+        event_type="duplicate_merged",
+        obj=match,
+        metadata={
+            "automatic": True,
+            "policy_enabled": True,
+            "winner_observation_id": str(winner.pk),
+            "merged_observation_id": str(loser.pk),
+            "score": match.match_score,
+            "features": sorted(features),
+        },
+    )
 
 
 def record_proposals(
@@ -563,9 +597,9 @@ def lock_match(match_id: Any, user: Any) -> ReconciliationMatch:
 
 
 def automatic_merge_enabled() -> bool:
-    """Whether a perfect score may merge without a person. It may not."""
+    """Whether specification-band duplicate matches may merge automatically."""
 
-    return AUTOMATIC_MERGE_ENABLED
+    return bool(settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED)
 
 
 def facts_from(

@@ -6,7 +6,6 @@ import pytest
 
 from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import (
-    AUTOMATIC_MERGE_ENABLED,
     LIKELY_MERGE_SCORE,
     REVIEW_CANDIDATE_SCORE,
     ObservationFacts,
@@ -324,7 +323,3 @@ def test_exact_blind_index_pair_wins_the_candidate_cap() -> None:
     }
     assert selected_ids == {"base", "exact"}
     assert candidates[0].from_deterministic_key is True
-
-
-def test_automatic_merging_is_disabled_for_the_initial_release() -> None:
-    assert AUTOMATIC_MERGE_ENABLED is False
