@@ -11,6 +11,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core import metrics
 from apps.reports.exports import ExportError
 from apps.reports.models import TransactionExport
 from apps.reports.services import export_file
@@ -145,6 +146,11 @@ def _remove_candidates(candidates: tuple[CleanupCandidate, ...]) -> tuple[int, i
                 candidate.identifier,
             )
             if candidate.kind == "document_directory":
+                metrics.record(
+                    metrics.CLEANUP_FAILED,
+                    document_id=candidate.identifier,
+                    reason="orphan_directory",
+                )
                 SourceDocument.objects.filter(pk=candidate.identifier).update(
                     cleanup_error_code="CLEANUP_FAILED"
                 )
@@ -179,6 +185,11 @@ def cleanup_document_storage(document_id: UUID, temporary_path: str) -> bool:
         return True
     except (OSError, ValueError):
         logger.warning("Temporary cleanup failed for %s (CLEANUP_FAILED)", document_id)
+        metrics.record(
+            metrics.CLEANUP_FAILED,
+            document_id=str(document_id),
+            reason="document_directory",
+        )
         SourceDocument.objects.filter(pk=document_id).update(cleanup_error_code="CLEANUP_FAILED")
         return False
 

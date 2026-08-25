@@ -311,6 +311,23 @@ def test_process_document_jobs_once_exits_when_queue_is_empty(capsys: Any) -> No
 
 
 @pytest.mark.django_db
+def test_worker_runs_orphan_cleanup_at_startup(monkeypatch: Any) -> None:
+    from apps.processing.management.commands import process_document_jobs
+
+    cutoffs: list[object] = []
+
+    def cleanup(*, cutoff: object) -> tuple[int, int]:
+        cutoffs.append(cutoff)
+        return (1, 0)
+
+    monkeypatch.setattr(process_document_jobs, "cleanup_stale_directories", cleanup)
+
+    call_command("process_document_jobs", once=True)
+
+    assert len(cutoffs) == 1
+
+
+@pytest.mark.django_db
 def test_worker_finishes_the_current_job_after_sigterm(user: Any, monkeypatch: Any) -> None:
     from apps.processing.management.commands import process_document_jobs
 
