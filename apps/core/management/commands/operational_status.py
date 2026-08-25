@@ -15,12 +15,11 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError, connection
 from django.db.models import Count
-from django.utils import timezone
 
 from apps.core import metrics
-from apps.core.models import WorkerHeartbeat
+from apps.core.operational_health import worker_queue_summary
 from apps.observations.models import ImportedObservation
-from apps.processing.models import ProcessingJob, SourceDocument
+from apps.processing.models import SourceDocument
 
 
 class Command(BaseCommand):
@@ -69,6 +68,8 @@ class Command(BaseCommand):
         if not database_available:
             reading = {
                 "queue_depth": -1,
+                "oldest_queued_age_seconds": -1,
+                "stuck_documents": -1,
                 "processing": -1,
                 "failed": -1,
                 "cleanup_failures": -1,
@@ -93,7 +94,6 @@ class Command(BaseCommand):
         reading = {
             # Depth is what has not started, not what is in flight: a queue that
             # looks empty because everything is mid-OCR is not an empty queue.
-            "queue_depth": ProcessingJob.objects.filter(status=ProcessingJob.Status.QUEUED).count(),
             "processing": sum(statuses.get(status, 0) for status in running),
             "failed": statuses.get(SourceDocument.Status.FAILED, 0),
             "cleanup_failures": SourceDocument.objects.exclude(cleanup_error_code="").count(),
@@ -102,16 +102,8 @@ class Command(BaseCommand):
             ).count(),
             "database_latency_ms": latency_ms,
             "database_available": database_available,
+            **worker_queue_summary(),
         }
-
-        heartbeat = WorkerHeartbeat.objects.order_by("-last_seen_at").first()
-        if heartbeat is None:
-            reading["worker_heartbeat_age_seconds"] = -1
-            reading["worker_available"] = 0
-        else:
-            age = max(0.0, (timezone.now() - heartbeat.last_seen_at).total_seconds())
-            reading["worker_heartbeat_age_seconds"] = round(age, 3)
-            reading["worker_available"] = 1
 
         reading["healthy"] = int(not self._violations(reading, options))
 
