@@ -5,6 +5,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.context import request_id_context
 from apps.core.errors import ConflictError, InvalidRequestError, public_error_message
 
 from .models import ProcessingJob, SourceDocument
@@ -134,6 +135,9 @@ def retry_failed_document(document_id: Any, *, user: Any) -> SourceDocument:
             user=user,
             document_id=document.pk,
             task_name="process_document",
-            payload={"document_id": str(document.pk)},
+            payload={
+                "document_id": str(document.pk),
+                "request_id": request_id_context.get(),
+            },
         )
     return document

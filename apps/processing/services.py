@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 
-from apps.core.context import request_id_context
+from apps.core.context import (
+    document_id_context,
+    job_id_context,
+    request_id_context,
+    task_id_context,
+)
 from apps.core.key_scope import clear_scope
 
 from .models import ProcessingJob
 
 logger = logging.getLogger(__name__)
+_CORRELATION_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 class UnsupportedTaskError(Exception):
@@ -60,7 +67,14 @@ def process_one_job() -> bool:
     if job is None:
         return False
 
-    context_token = request_id_context.set(f"job-{job.id}")
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    queued_request_id = str(payload.get("request_id", ""))
+    if queued_request_id == "-" or not _CORRELATION_ID.fullmatch(queued_request_id):
+        queued_request_id = f"job-{job.id}"
+    request_token = request_id_context.set(queued_request_id)
+    task_token = task_id_context.set(str(job.id))
+    job_token = job_id_context.set(str(job.id))
+    document_token = document_id_context.set(str(job.document_id))
     try:
         try:
             dispatch_job(job)
@@ -76,7 +90,10 @@ def process_one_job() -> bool:
         else:
             job.mark_succeeded()
     finally:
-        request_id_context.reset(context_token)
+        document_id_context.reset(document_token)
+        job_id_context.reset(job_token)
+        task_id_context.reset(task_token)
+        request_id_context.reset(request_token)
         # Whatever the job did, it does not get to leave an unwrapped key in
         # the worker process for the next document — which may belong to
         # somebody else entirely.

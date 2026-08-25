@@ -8,6 +8,7 @@ from django.db import IntegrityError, transaction
 
 from apps.core import metrics
 from apps.core.audit import record_audit_event
+from apps.core.context import request_id_context
 from apps.core.errors import ConflictError
 
 from .models import ProcessingJob, SourceDocument
@@ -69,7 +70,10 @@ def create_uploaded_document(
                 user=user,
                 document_id=document.id,
                 task_name="process_document",
-                payload={"document_id": str(document.id)},
+                payload={
+                    "document_id": str(document.id),
+                    "request_id": request_id_context.get(),
+                },
             )
             record_audit_event(
                 user=user,

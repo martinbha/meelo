@@ -18,7 +18,12 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.core import metrics
-from apps.core.context import request_id_context, task_id_context
+from apps.core.context import (
+    document_id_context,
+    job_id_context,
+    request_id_context,
+    task_id_context,
+)
 from apps.core.logging import RequestContextFilter, StructuredFormatter
 from apps.core.metrics import MetricError, record, timed
 from apps.core.models import WorkerHeartbeat
@@ -148,9 +153,11 @@ def test_no_task_label_appears_outside_a_task() -> None:
     assert "task_id" not in payload
 
 
-def test_log_lines_carry_both_identifiers() -> None:
+def test_log_lines_carry_pipeline_identifiers() -> None:
     request = request_id_context.set("req-abc")
     task = task_id_context.set("task-def")
+    job = job_id_context.set("job-ghi")
+    document = document_id_context.set("doc-jkl")
     try:
         record_obj = logging.LogRecord(
             "apps.test", logging.INFO, __file__, 1, "processing document", None, None
@@ -158,11 +165,15 @@ def test_log_lines_carry_both_identifiers() -> None:
         RequestContextFilter().filter(record_obj)
         payload = json.loads(StructuredFormatter().format(record_obj))
     finally:
+        document_id_context.reset(document)
+        job_id_context.reset(job)
         task_id_context.reset(task)
         request_id_context.reset(request)
 
     assert payload["request_id"] == "req-abc"
     assert payload["task_id"] == "task-def"
+    assert payload["job_id"] == "job-ghi"
+    assert payload["document_id"] == "doc-jkl"
 
 
 def test_a_metric_reaches_the_log_as_structured_fields() -> None:

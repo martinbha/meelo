@@ -9,3 +9,8 @@ request_id_context: ContextVar[str] = ContextVar("request_id", default="-")
 #: work — which is the only way to answer "why did this document never finish"
 #: without the two halves of the system having a shared identifier.
 task_id_context: ContextVar[str] = ContextVar("task_id", default="-")
+
+#: Worker-only identifiers. They are UUIDs from database rows, never filenames,
+#: user identifiers, or values extracted from a screenshot.
+job_id_context: ContextVar[str] = ContextVar("job_id", default="-")
+document_id_context: ContextVar[str] = ContextVar("document_id", default="-")

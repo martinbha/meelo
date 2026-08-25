@@ -6,7 +6,12 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .context import request_id_context, task_id_context
+from .context import (
+    document_id_context,
+    job_id_context,
+    request_id_context,
+    task_id_context,
+)
 
 SENSITIVE_FIELD_NAMES = (
     "ocr_text",
@@ -97,6 +102,8 @@ class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_context.get()
         record.task_id = task_id_context.get()
+        record.job_id = job_id_context.get()
+        record.document_id = document_id_context.get()
         return True
 
 
@@ -122,6 +129,8 @@ class StructuredFormatter(logging.Formatter):
             "message": redact_sensitive(record.getMessage()),
             "request_id": getattr(record, "request_id", request_id_context.get()),
             "task_id": getattr(record, "task_id", task_id_context.get()),
+            "job_id": getattr(record, "job_id", job_id_context.get()),
+            "document_id": getattr(record, "document_id", document_id_context.get()),
         }
         metric = getattr(record, "metric", None)
         if isinstance(metric, dict):
