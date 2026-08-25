@@ -48,9 +48,6 @@ MERCHANT_SIMILARITY_THRESHOLD = 85.0
 CANDIDATE_SEARCH_WINDOW = timedelta(days=31)
 MAX_CANDIDATES_PER_OBSERVATION = 25
 
-#: Automatic merging stays off for the initial release, per specification 16.3.
-AUTOMATIC_MERGE_ENABLED = False
-
 
 @dataclass(frozen=True, slots=True)
 class ObservationFacts:

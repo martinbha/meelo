@@ -168,6 +168,11 @@ NEAR_DUPLICATE_DETECTION_ENABLED = (
     os.getenv("NEAR_DUPLICATE_DETECTION_ENABLED", "true").strip().casefold() == "true"
 )
 NEAR_DUPLICATE_DISTANCE_THRESHOLD = int(os.getenv("NEAR_DUPLICATE_DISTANCE_THRESHOLD", "8"))
+# Governs the only path that may merge duplicate observations without a
+# reviewer. Keep disabled unless an operator deliberately accepts that policy.
+AUTOMATIC_RECONCILIATION_MERGE_ENABLED = (
+    os.getenv("AUTOMATIC_RECONCILIATION_MERGE_ENABLED", "false").strip().casefold() == "true"
+)
 
 FIELD_ENCRYPTION_MASTER_KEY_FILE = os.getenv("FIELD_ENCRYPTION_MASTER_KEY_FILE", "")
 FIELD_ENCRYPTION_MASTER_KEY_REQUIRED = False
