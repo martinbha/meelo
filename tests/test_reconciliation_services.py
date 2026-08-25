@@ -225,6 +225,62 @@ def test_duplicate_candidates_are_stored_without_merging_anything(owner: Any) ->
     assert automatic_merge_enabled() is False
 
 
+def test_enabled_policy_merges_only_the_likely_merge_band(owner: Any, settings: Any) -> None:
+    settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = True
+    _, rows = seed(owner, parsed(), parsed())
+    candidates = find_duplicate_candidates(
+        [
+            facts_from(row, merchant="스타벅스", amount_minor=4200, approval_code="A123")
+            for row in rows
+        ],
+        search_key=SEARCH_KEY,
+    )
+
+    stored = record_duplicate_candidates(
+        user=owner,
+        candidates=candidates,
+        data_key=KEY,
+    )
+
+    assert stored[0].match_score == 95
+    assert stored[0].status == ReconciliationMatch.Status.CONFIRMED
+    assert stored[0].reviewed_by is None
+    merged = ImportedObservation.objects.exclude(merged_into=None).get()
+    event = AuditEvent.objects.get(
+        user=owner,
+        event_type=AuditEvent.EventType.DUPLICATE_MERGED,
+    )
+    assert event.metadata == {
+        "automatic": True,
+        "policy_enabled": True,
+        "winner_observation_id": str(merged.merged_into_id),
+        "merged_observation_id": str(merged.pk),
+        "score": 95,
+        "features": [
+            "date_within_one_day",
+            "exact_amount",
+            "merchant_similarity",
+            "same_approval_code",
+            "same_direction",
+        ],
+    }
+
+
+def test_enabled_policy_keeps_review_band_for_a_person(owner: Any, settings: Any) -> None:
+    settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = True
+    _, rows = seed(owner, parsed(), parsed())
+    candidates = find_duplicate_candidates(
+        [facts_from(row, merchant="스타벅스", amount_minor=4200) for row in rows],
+        search_key=SEARCH_KEY,
+    )
+
+    stored = record_duplicate_candidates(user=owner, candidates=candidates, data_key=KEY)
+
+    assert stored[0].match_score == 65
+    assert stored[0].status == ReconciliationMatch.Status.PROPOSED
+    assert ImportedObservation.objects.exclude(merged_into=None).exists() is False
+
+
 def test_re_running_detection_updates_rather_than_duplicating(owner: Any) -> None:
     _, rows = seed(owner, parsed(), parsed())
 
