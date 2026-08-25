@@ -15,6 +15,7 @@ from django.conf import settings
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
+from apps.core import metrics
 from apps.core.audit import record_audit_event
 from apps.core.encrypted_values import MalformedPayloadError
 from apps.core.errors import ConflictError, ForbiddenError, InvalidRequestError
@@ -123,6 +124,7 @@ def record_match(
             "features": sorted(features),
         },
     )
+    metrics.record(metrics.MATCH_PROPOSED, match_type=match_type, status="proposed")
     return match
 
 
@@ -307,6 +309,7 @@ def _automatically_merge_duplicate(
             "features": sorted(features),
         },
     )
+    metrics.record(metrics.MATCH_CONFIRMED, match_type=match.match_type, status="automatic")
 
 
 def record_proposals(
@@ -442,6 +445,7 @@ def confirm_duplicate_match(match_id: Any, *, user: Any, winner_id: Any) -> Reco
             "score": match.match_score,
         },
     )
+    metrics.record(metrics.MATCH_CONFIRMED, match_type=match.match_type, status="confirmed")
     return match
 
 
@@ -476,6 +480,7 @@ def confirm_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
         obj=match,
         metadata={"match_type": match.match_type, "score": match.match_score},
     )
+    metrics.record(metrics.MATCH_CONFIRMED, match_type=match.match_type, status="confirmed")
     return match
 
 
@@ -499,6 +504,7 @@ def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
         obj=match,
         metadata={"match_type": match.match_type, "score": match.match_score},
     )
+    metrics.record(metrics.MATCH_REJECTED, match_type=match.match_type, status="rejected")
     return match
 
 
