@@ -219,7 +219,9 @@ class ProcessingJob(models.Model):
                         .first()
                     )
                     if document is not None:
-                        if document.processing_status not in {
+                        if document.processing_status == SourceDocument.Status.DELETED:
+                            pass
+                        elif document.processing_status not in {
                             SourceDocument.Status.QUEUED,
                             SourceDocument.Status.FAILED,
                         }:
@@ -239,19 +241,20 @@ class ProcessingJob(models.Model):
                                 ]
                             )
                             continue
-                        from .state import transition_document
+                        else:
+                            from .state import transition_document
 
-                        if document.processing_status == SourceDocument.Status.FAILED:
+                            if document.processing_status == SourceDocument.Status.FAILED:
+                                transition_document(
+                                    document.pk,
+                                    user=job.user,
+                                    status=SourceDocument.Status.QUEUED,
+                                )
                             transition_document(
                                 document.pk,
                                 user=job.user,
-                                status=SourceDocument.Status.QUEUED,
+                                status=SourceDocument.Status.VALIDATING,
                             )
-                        transition_document(
-                            document.pk,
-                            user=job.user,
-                            status=SourceDocument.Status.VALIDATING,
-                        )
 
                 job.status = cls.Status.RUNNING
                 job.attempt_count += 1
