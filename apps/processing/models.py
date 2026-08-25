@@ -179,6 +179,14 @@ class ProcessingJob(models.Model):
                 condition=Q(max_attempts__gte=1),
                 name="processing_job_max_attempts_positive",
             ),
+            models.UniqueConstraint(
+                fields=("document_id",),
+                condition=Q(
+                    task_name="process_document",
+                    status__in=("queued", "running"),
+                ),
+                name="processing_one_active_job_per_document",
+            ),
         ]
 
     @classmethod
@@ -206,6 +214,30 @@ class ProcessingJob(models.Model):
             )
             if job is None:
                 return None
+
+            if job.task_name == "process_document":
+                document = (
+                    SourceDocument.objects.select_for_update().filter(pk=job.document_id).first()
+                )
+                if document is not None:
+                    if document.processing_status not in {
+                        SourceDocument.Status.QUEUED,
+                        SourceDocument.Status.FAILED,
+                    }:
+                        return None
+                    from .state import transition_document
+
+                    if document.processing_status == SourceDocument.Status.FAILED:
+                        transition_document(
+                            document.pk,
+                            user=job.user,
+                            status=SourceDocument.Status.QUEUED,
+                        )
+                    transition_document(
+                        document.pk,
+                        user=job.user,
+                        status=SourceDocument.Status.VALIDATING,
+                    )
 
             job.status = cls.Status.RUNNING
             job.attempt_count += 1

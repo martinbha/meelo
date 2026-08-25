@@ -41,11 +41,8 @@ def process_document_job(job: ProcessingJob) -> None:
 
 def _process_document(job: ProcessingJob, document: SourceDocument) -> None:
     try:
-        if document.processing_status == SourceDocument.Status.FAILED:
-            document = transition_document(
-                document.pk, user=job.user, status=SourceDocument.Status.QUEUED
-            )
-        transition_document(document.pk, user=job.user, status=SourceDocument.Status.VALIDATING)
+        if document.processing_status != SourceDocument.Status.VALIDATING:
+            transition_document(document.pk, user=job.user, status=SourceDocument.Status.VALIDATING)
         try:
             path = safe_document_path(document.pk, document.temporary_path)
         except ValueError as exc:
