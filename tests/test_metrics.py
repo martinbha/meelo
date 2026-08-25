@@ -285,6 +285,8 @@ def test_the_status_command_reports_worker_heartbeat_and_thresholds() -> None:
     assert reading["worker_available"] == 1
     assert reading["worker_heartbeat_age_seconds"] >= 0
     assert reading["healthy"] == 1
+    assert reading["oldest_queued_age_seconds"] == -1
+    assert reading["stuck_documents"] == 0
 
 
 @pytest.mark.django_db

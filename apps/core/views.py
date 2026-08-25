@@ -3,6 +3,8 @@ from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 
+from .operational_health import worker_queue_summary
+
 
 @login_required
 def dashboard(request: HttpRequest) -> HttpResponse:
@@ -17,4 +19,4 @@ def health_check(request: HttpRequest) -> JsonResponse:
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
         cursor.fetchone()
-    return JsonResponse({"status": "ok"})
+    return JsonResponse({"status": "ok", **worker_queue_summary()})
