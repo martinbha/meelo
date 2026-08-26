@@ -9,7 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     PADDLE_OCR_MODEL_ROOT="/opt/meelo/paddle-models" \
     PADDLE_PDX_CACHE_HOME="/opt/meelo/paddle-models" \
-    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True"
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True" \
+    TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata"
 
 WORKDIR /app
 

@@ -11,6 +11,7 @@ def env_list(name: str, default: str = "") -> list[str]:
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = False
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
+OCR_VERIFY_TESSERACT_INSTALLATION = False
 
 INSTALLED_APPS = [
     "django.contrib.admin",

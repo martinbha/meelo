@@ -8,6 +8,8 @@ from django.test import Client
 from django.utils import timezone
 
 from apps.core.models import WorkerHeartbeat
+from apps.ocr.contracts import OcrConfigurationError
+from apps.ocr.tesseract import TesseractInstallation
 from apps.processing.models import ProcessingJob, SourceDocument
 from tests.factories import make_user
 
@@ -33,6 +35,46 @@ def test_health_check_reports_database_readiness(client: Client) -> None:
         "stuck_documents": 0,
         "worker_heartbeat_age_seconds": -1.0,
         "worker_available": 0,
+    }
+
+
+@pytest.mark.django_db
+def test_health_check_reports_missing_korean_language_data(
+    client: Client, settings: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OCR_VERIFY_TESSERACT_INSTALLATION = True  # type: ignore[attr-defined]
+
+    def missing_installation() -> TesseractInstallation:
+        raise OcrConfigurationError("Missing required Tesseract language pack(s): kor.")
+
+    monkeypatch.setattr("apps.core.views.inspect_tesseract_installation", missing_installation)
+
+    response = client.get("/health/")
+
+    assert response.status_code == 503
+    assert response.json()["tesseract"] == {
+        "status": "error",
+        "message": "Missing required Tesseract language pack(s): kor.",
+    }
+
+
+@pytest.mark.django_db
+def test_health_check_reports_verified_tesseract_installation(
+    client: Client, settings: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OCR_VERIFY_TESSERACT_INSTALLATION = True  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        "apps.core.views.inspect_tesseract_installation",
+        lambda: TesseractInstallation("5.5.1", {"language_eng": "a", "language_kor": "b"}),
+    )
+
+    response = client.get("/health/")
+
+    assert response.status_code == 200
+    assert response.json()["tesseract"] == {
+        "status": "ok",
+        "binary_version": "5.5.1",
+        "languages": ["eng", "kor"],
     }
 
 

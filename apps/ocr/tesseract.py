@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -20,6 +23,17 @@ from .contracts import (
 
 LANGUAGE_PACKS = {"en": "eng", "ko": "kor"}
 SUPPORTED_PSM_MODES = frozenset({3, 4, 6, 7, 11, 12, 13})
+TESSDATA_CANDIDATES = (
+    Path("/usr/share/tesseract-ocr/5/tessdata"),
+    Path("/usr/share/tessdata"),
+    Path("/usr/local/share/tessdata"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class TesseractInstallation:
+    binary_version: str
+    language_versions: dict[str, str]
 
 
 def _pytesseract_module() -> Any:
@@ -45,6 +59,50 @@ def _default_version() -> str:
         return str(_pytesseract_module().get_tesseract_version())
     except Exception as exc:
         raise OcrConfigurationError("The Tesseract version could not be inspected.") from exc
+
+
+def _default_tessdata_root() -> Path:
+    configured = os.environ.get("TESSDATA_PREFIX")
+    candidates = (Path(configured),) if configured else TESSDATA_CANDIDATES
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    raise OcrConfigurationError("The Tesseract language-data directory could not be found.")
+
+
+def _language_data_versions(packs: Sequence[str]) -> dict[str, str]:
+    root = _default_tessdata_root()
+    versions: dict[str, str] = {}
+    for pack in packs:
+        path = root / f"{pack}.traineddata"
+        try:
+            digest = hashlib.sha256()
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(block)
+        except OSError as exc:
+            raise OcrConfigurationError(
+                f"Missing Tesseract language-data file: {pack}.traineddata."
+            ) from exc
+        versions[f"language_{pack}"] = f"sha256:{digest.hexdigest()}"
+    return versions
+
+
+def inspect_tesseract_installation(
+    required_packs: Sequence[str] = tuple(LANGUAGE_PACKS.values()),
+) -> TesseractInstallation:
+    """Verify the local binary and required traineddata without network access."""
+
+    installed = set(_default_languages())
+    missing = set(required_packs) - installed
+    if missing:
+        raise OcrConfigurationError(
+            f"Missing required Tesseract language pack(s): {', '.join(sorted(missing))}."
+        )
+    return TesseractInstallation(
+        binary_version=_default_version(),
+        language_versions=_language_data_versions(required_packs),
+    )
 
 
 def _default_runner(image: Image.Image, **kwargs: Any) -> dict[str, list[Any]]:
@@ -95,10 +153,12 @@ class TesseractOcrEngine(OcrEngine):
         runner: Callable[..., dict[str, list[Any]]] = _default_runner,
         languages: Callable[[], Sequence[str]] = _default_languages,
         version: Callable[[], str] = _default_version,
+        language_versions: Callable[[Sequence[str]], dict[str, str]] = _language_data_versions,
     ) -> None:
         self._runner = runner
         self._installed_languages = languages
         self._version = version
+        self._language_versions = language_versions
 
     @property
     def metadata(self) -> EngineMetadata:
@@ -118,6 +178,8 @@ class TesseractOcrEngine(OcrEngine):
             raise OcrConfigurationError(
                 f"Missing Tesseract language pack(s): {', '.join(sorted(missing))}."
             )
+        binary_version = self._version()
+        language_versions = self._language_versions(requested_packs)
         psm = int(configuration.options.get("psm", 6))
         if psm not in SUPPORTED_PSM_MODES:
             raise OcrConfigurationError(f"Unsupported Tesseract PSM mode: {psm}.")
@@ -131,9 +193,14 @@ class TesseractOcrEngine(OcrEngine):
         except Exception as exc:
             raise OcrConfigurationError("Tesseract could not read the input image.") from exc
         duration_ms = round((perf_counter() - started) * 1000)
+        metadata = EngineMetadata(
+            "tesseract",
+            binary_version,
+            language_versions,
+        )
         return OcrRunResult(
             tokens=_tokens(data),
-            metadata=self.metadata,
+            metadata=metadata,
             configuration=configuration,
             duration_ms=duration_ms,
             raw_output=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
