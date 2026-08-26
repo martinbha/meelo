@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError
+from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
 from apps.ocr.paddle import PaddleOcrEngine
 
 
@@ -108,3 +109,64 @@ def test_paddle_adapter_rejects_missing_input_and_multi_model_runs(tmp_path: Pat
     image.touch()
     with pytest.raises(OcrConfigurationError, match="exactly one"):
         adapter.run(image, OcrConfiguration(("ko", "en")))
+
+
+def test_default_adapter_fails_with_stable_code_when_models_are_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image = tmp_path / "fixture.png"
+    image.touch()
+    monkeypatch.setenv("PADDLE_OCR_MODEL_ROOT", str(tmp_path / "missing-models"))
+
+    with pytest.raises(ClassifiedOcrError) as failure:
+        run_engine_bounded(PaddleOcrEngine(), image, OcrConfiguration(("ko",)), timeout_seconds=2)
+
+    assert failure.value.code == "PADDLEOCR_FAILED"
+    assert failure.value.retryable is False
+
+
+def test_default_adapter_loads_pinned_manifest_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "models"
+    detection = root / "official_models" / "det"
+    recognition = root / "official_models" / "rec-ko"
+    detection.mkdir(parents=True)
+    recognition.mkdir(parents=True)
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "ocr_version": "PP-OCRv5",
+                "detection": {
+                    "name": "det",
+                    "directory": "official_models/det",
+                    "sha256": "det-digest",
+                },
+                "recognition": {
+                    "ko": {
+                        "name": "rec-ko",
+                        "directory": "official_models/rec-ko",
+                        "sha256": "rec-digest",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PADDLE_OCR_MODEL_ROOT", str(root))
+    captured: dict[str, Any] = {}
+    adapter = PaddleOcrEngine()
+
+    def factory(**options: Any) -> FakePaddle:
+        captured.update(options)
+        return FakePaddle([])
+
+    adapter._factory = factory
+    image = tmp_path / "fixture.png"
+    image.touch()
+    result = adapter.run(image, OcrConfiguration(("ko",)))
+
+    assert captured["text_detection_model_dir"] == str(detection)
+    assert captured["text_recognition_model_dir"] == str(recognition)
+    assert result.metadata.model_versions["detection"] == "det@sha256:det-digest"
+    assert result.metadata.model_versions["recognition"] == "rec-ko@sha256:rec-digest"

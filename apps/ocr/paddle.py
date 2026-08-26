@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from time import perf_counter
@@ -14,12 +15,65 @@ from .contracts import (
     OcrConfiguration,
     OcrConfigurationError,
     OcrEngine,
+    OcrEngineError,
     OcrRunResult,
     OcrToken,
 )
 
 PADDLE_LANGUAGES = frozenset({"en", "ko"})
 LANGUAGE_MODEL_NAMES = {"en": "en", "ko": "korean"}
+MODEL_MANIFEST_NAME = "manifest.json"
+MODEL_ROOT_ENV = "PADDLE_OCR_MODEL_ROOT"
+
+
+@dataclass(frozen=True, slots=True)
+class PaddleModelAssets:
+    detection_name: str
+    detection_dir: Path
+    detection_digest: str
+    recognition_name: str
+    recognition_dir: Path
+    recognition_digest: str
+    ocr_version: str
+
+    @property
+    def versions(self) -> dict[str, str]:
+        return {
+            "ocr": self.ocr_version,
+            "detection": f"{self.detection_name}@sha256:{self.detection_digest}",
+            "recognition": f"{self.recognition_name}@sha256:{self.recognition_digest}",
+        }
+
+
+def _local_assets(language: str) -> PaddleModelAssets:
+    configured = os.environ.get(MODEL_ROOT_ENV, "")
+    root = Path(configured) if configured else Path("/nonexistent/paddle-models")
+    try:
+        payload = json.loads((root / MODEL_MANIFEST_NAME).read_text(encoding="utf-8"))
+        detection = payload["detection"]
+        recognition = payload["recognition"][language]
+        assets = PaddleModelAssets(
+            detection_name=str(detection["name"]),
+            detection_dir=root / str(detection["directory"]),
+            detection_digest=str(detection["sha256"]),
+            recognition_name=str(recognition["name"]),
+            recognition_dir=root / str(recognition["directory"]),
+            recognition_digest=str(recognition["sha256"]),
+            ocr_version=str(payload["ocr_version"]),
+        )
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise OcrEngineError(
+            "Pinned PaddleOCR model assets are missing or invalid.",
+            code="PADDLEOCR_FAILED",
+            retryable=False,
+        ) from exc
+    if not assets.detection_dir.is_dir() or not assets.recognition_dir.is_dir():
+        raise OcrEngineError(
+            "Pinned PaddleOCR model assets are missing or invalid.",
+            code="PADDLEOCR_FAILED",
+            retryable=False,
+        )
+    return assets
 
 
 def _package_version(package: str) -> str:
@@ -119,6 +173,7 @@ class PaddleOcrEngine(OcrEngine):
 
     def __init__(self, *, factory: Callable[..., Any] = _default_factory) -> None:
         self._factory = factory
+        self._requires_local_assets = factory is _default_factory
 
     @property
     def metadata(self) -> EngineMetadata:
@@ -139,10 +194,18 @@ class PaddleOcrEngine(OcrEngine):
         if len(configuration.languages) != 1:
             raise OcrConfigurationError("PaddleOCR runs require exactly one model language.")
         options = dict(configuration.options)
-        options.setdefault("lang", LANGUAGE_MODEL_NAMES[configuration.languages[0]])
+        language = configuration.languages[0]
+        options.setdefault("lang", LANGUAGE_MODEL_NAMES[language])
         options.setdefault("use_doc_orientation_classify", False)
         options.setdefault("use_doc_unwarping", False)
         options.setdefault("use_textline_orientation", False)
+        assets = _local_assets(language) if self._requires_local_assets else None
+        if assets is not None:
+            options.setdefault("ocr_version", assets.ocr_version)
+            options.setdefault("text_detection_model_name", assets.detection_name)
+            options.setdefault("text_detection_model_dir", str(assets.detection_dir))
+            options.setdefault("text_recognition_model_name", assets.recognition_name)
+            options.setdefault("text_recognition_model_dir", str(assets.recognition_dir))
         engine = self._factory(**options)
         started = perf_counter()
         try:
@@ -162,6 +225,7 @@ class PaddleOcrEngine(OcrEngine):
                 "paddlepaddle": _package_version("paddlepaddle"),
                 "ocr": str(options.get("ocr_version", "PP-OCRv5")),
                 "language": str(options["lang"]),
+                **(assets.versions if assets is not None else {}),
             },
         )
         return OcrRunResult(

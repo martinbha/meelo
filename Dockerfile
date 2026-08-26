@@ -6,7 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    PADDLE_OCR_MODEL_ROOT="/opt/meelo/paddle-models" \
+    PADDLE_PDX_CACHE_HOME="/opt/meelo/paddle-models" \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True"
 
 WORKDIR /app
 
@@ -16,6 +19,9 @@ RUN apt-get update \
 
 COPY pyproject.toml uv.lock .python-version README.md ./
 RUN uv sync --locked --no-dev --no-install-project
+
+COPY scripts/provision_paddle_models.py ./scripts/provision_paddle_models.py
+RUN uv run python scripts/provision_paddle_models.py "$PADDLE_OCR_MODEL_ROOT"
 
 COPY config ./config
 COPY apps ./apps
