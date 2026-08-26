@@ -8,6 +8,7 @@ from apps.ocr.contracts import (
     OcrConfiguration,
     OcrConfigurationError,
     OcrEngine,
+    OcrEngineError,
     OcrRunResult,
 )
 from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
@@ -43,6 +44,11 @@ class LargeResultEngine(SlowEngine):
         )
 
 
+class NamedFailureEngine(SlowEngine):
+    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+        raise OcrEngineError("missing assets", code="PADDLEOCR_FAILED", retryable=False)
+
+
 def test_bounded_execution_terminates_hung_engine() -> None:
     started = time.monotonic()
     with pytest.raises(ClassifiedOcrError) as failure:
@@ -68,6 +74,19 @@ def test_bounded_execution_marks_configuration_failure_permanent() -> None:
         )
 
     assert failure.value.code == "OCR_CONFIGURATION_INVALID"
+    assert failure.value.retryable is False
+
+
+def test_bounded_execution_preserves_engine_failure_code() -> None:
+    with pytest.raises(ClassifiedOcrError) as failure:
+        run_engine_bounded(
+            NamedFailureEngine(),
+            Path("fixture.png"),
+            OcrConfiguration(("en",)),
+            timeout_seconds=1,
+        )
+
+    assert failure.value.code == "PADDLEOCR_FAILED"
     assert failure.value.retryable is False
 
 

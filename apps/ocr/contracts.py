@@ -16,6 +16,15 @@ class OcrConfigurationError(OcrError):
     """The requested engine configuration cannot be used."""
 
 
+class OcrEngineError(OcrError):
+    """An engine-specific failure with a stable public error code."""
+
+    def __init__(self, message: str, *, code: str, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+
+
 class UnsupportedLanguageError(OcrConfigurationError):
     """An OCR engine does not support a requested language."""
 

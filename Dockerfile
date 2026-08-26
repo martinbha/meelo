@@ -6,7 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    PADDLE_OCR_MODEL_ROOT="/opt/meelo/paddle-models" \
+    PADDLE_PDX_CACHE_HOME="/opt/meelo/paddle-models" \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True"
 
 WORKDIR /app
 
@@ -17,13 +20,16 @@ RUN apt-get update \
 COPY pyproject.toml uv.lock .python-version README.md ./
 RUN uv sync --locked --no-dev --no-install-project
 
+COPY scripts/provision_paddle_models.py ./scripts/provision_paddle_models.py
+RUN uv run --no-sync python scripts/provision_paddle_models.py "$PADDLE_OCR_MODEL_ROOT"
+
 COPY config ./config
 COPY apps ./apps
 COPY templates ./templates
 COPY static ./static
 COPY manage.py ./manage.py
 
-RUN DJANGO_SETTINGS_MODULE=config.settings.base uv run python manage.py collectstatic --noinput
+RUN DJANGO_SETTINGS_MODULE=config.settings.base uv run --no-sync python manage.py collectstatic --noinput
 
 RUN addgroup --system app && adduser --system --ingroup app app \
     && chown -R app:app /app
