@@ -76,12 +76,15 @@ def _language_data_versions(packs: Sequence[str]) -> dict[str, str]:
     for pack in packs:
         path = root / f"{pack}.traineddata"
         try:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = hashlib.sha256()
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(block)
         except OSError as exc:
             raise OcrConfigurationError(
                 f"Missing Tesseract language-data file: {pack}.traineddata."
             ) from exc
-        versions[f"language_{pack}"] = f"sha256:{digest}"
+        versions[f"language_{pack}"] = f"sha256:{digest.hexdigest()}"
     return versions
 
 
