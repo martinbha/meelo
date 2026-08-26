@@ -116,7 +116,11 @@ def _default_factory(**options: Any) -> Any:
     try:
         return PaddleOCR(**options)
     except Exception as exc:
-        raise OcrConfigurationError("PaddleOCR model initialization failed.") from exc
+        raise OcrEngineError(
+            "PaddleOCR model initialization failed.",
+            code="PADDLEOCR_FAILED",
+            retryable=False,
+        ) from exc
 
 
 def _box(points: Sequence[Sequence[float]]) -> BoundingBox:
@@ -221,6 +225,7 @@ class PaddleOcrEngine(OcrEngine):
         options.setdefault("use_doc_orientation_classify", False)
         options.setdefault("use_doc_unwarping", False)
         options.setdefault("use_textline_orientation", False)
+        options.setdefault("enable_mkldnn", False)
         assets = _local_assets(language) if self._requires_local_assets else None
         if assets is not None:
             options.setdefault("ocr_version", assets.ocr_version)
@@ -238,7 +243,9 @@ class PaddleOcrEngine(OcrEngine):
                 else engine.ocr(str(image_path), cls=False)
             )
         except Exception as exc:
-            raise OcrConfigurationError("PaddleOCR execution failed.") from exc
+            raise OcrEngineError(
+                "PaddleOCR execution failed.", code="PADDLEOCR_FAILED", retryable=True
+            ) from exc
         duration_ms = round((perf_counter() - started) * 1000)
         metadata = EngineMetadata(
             engine="paddleocr",

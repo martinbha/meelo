@@ -49,6 +49,7 @@ def test_paddle_adapter_normalizes_korean_tokens_without_network(tmp_path: Path)
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
+        "enable_mkldnn": False,
     }
     assert paddle.calls == [(str(image), False)]
     assert "결제" in result.raw_output
