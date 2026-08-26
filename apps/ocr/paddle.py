@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -67,13 +68,34 @@ def _local_assets(language: str) -> PaddleModelAssets:
             code="PADDLEOCR_FAILED",
             retryable=False,
         ) from exc
-    if not assets.detection_dir.is_dir() or not assets.recognition_dir.is_dir():
+    if (
+        not assets.detection_dir.is_dir()
+        or not assets.recognition_dir.is_dir()
+        or _model_digest(assets.detection_dir) != assets.detection_digest
+        or _model_digest(assets.recognition_dir) != assets.recognition_digest
+    ):
         raise OcrEngineError(
             "Pinned PaddleOCR model assets are missing or invalid.",
             code="PADDLEOCR_FAILED",
             retryable=False,
         )
     return assets
+
+
+def _model_digest(directory: Path) -> str:
+    digest = hashlib.sha256()
+    files = sorted(
+        path for path in directory.rglob("*") if path.is_file() and ".cache" not in path.parts
+    )
+    if not files:
+        return ""
+    for path in files:
+        digest.update(path.relative_to(directory).as_posix().encode())
+        digest.update(b"\0")
+        with path.open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(block)
+    return digest.hexdigest()
 
 
 def _package_version(package: str) -> str:

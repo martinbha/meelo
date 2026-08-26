@@ -6,7 +6,7 @@ import pytest
 
 from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError
 from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
-from apps.ocr.paddle import PaddleOcrEngine
+from apps.ocr.paddle import PaddleOcrEngine, _model_digest
 
 
 class FakePaddle:
@@ -133,6 +133,8 @@ def test_default_adapter_loads_pinned_manifest_paths(
     recognition = root / "official_models" / "rec-ko"
     detection.mkdir(parents=True)
     recognition.mkdir(parents=True)
+    (detection / "inference.json").write_text("detection", encoding="utf-8")
+    (recognition / "inference.json").write_text("recognition", encoding="utf-8")
     (root / "manifest.json").write_text(
         json.dumps(
             {
@@ -140,13 +142,13 @@ def test_default_adapter_loads_pinned_manifest_paths(
                 "detection": {
                     "name": "det",
                     "directory": "official_models/det",
-                    "sha256": "det-digest",
+                    "sha256": _model_digest(detection),
                 },
                 "recognition": {
                     "ko": {
                         "name": "rec-ko",
                         "directory": "official_models/rec-ko",
-                        "sha256": "rec-digest",
+                        "sha256": _model_digest(recognition),
                     }
                 },
             }
@@ -168,5 +170,44 @@ def test_default_adapter_loads_pinned_manifest_paths(
 
     assert captured["text_detection_model_dir"] == str(detection)
     assert captured["text_recognition_model_dir"] == str(recognition)
-    assert result.metadata.model_versions["detection"] == "det@sha256:det-digest"
-    assert result.metadata.model_versions["recognition"] == "rec-ko@sha256:rec-digest"
+    assert result.metadata.model_versions["detection"] == (f"det@sha256:{_model_digest(detection)}")
+    assert result.metadata.model_versions["recognition"] == (
+        f"rec-ko@sha256:{_model_digest(recognition)}"
+    )
+
+
+def test_default_adapter_rejects_model_content_that_does_not_match_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "models"
+    detection = root / "det"
+    recognition = root / "rec"
+    detection.mkdir(parents=True)
+    recognition.mkdir()
+    (detection / "model").write_text("changed", encoding="utf-8")
+    (recognition / "model").write_text("valid", encoding="utf-8")
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "ocr_version": "PP-OCRv5",
+                "detection": {"name": "det", "directory": "det", "sha256": "wrong"},
+                "recognition": {
+                    "ko": {
+                        "name": "rec",
+                        "directory": "rec",
+                        "sha256": _model_digest(recognition),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PADDLE_OCR_MODEL_ROOT", str(root))
+    image = tmp_path / "fixture.png"
+    image.touch()
+
+    with pytest.raises(ClassifiedOcrError) as failure:
+        run_engine_bounded(PaddleOcrEngine(), image, OcrConfiguration(("ko",)), timeout_seconds=2)
+
+    assert failure.value.code == "PADDLEOCR_FAILED"
+    assert failure.value.retryable is False

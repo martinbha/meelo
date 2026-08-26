@@ -15,6 +15,13 @@ RECOGNITION_MODELS = {
     "en": "en_PP-OCRv5_mobile_rec",
     "ko": "korean_PP-OCRv5_mobile_rec",
 }
+EXPECTED_DIGESTS = {
+    DETECTION_MODEL: "7c834619124ede53cfa6aafcfda35fcb8de89e901e8f290db7ead8d95c98cc94",
+    "en_PP-OCRv5_mobile_rec": "fa511346096ae1b0853e9501161f6f1483b1fef2d28169bc38bad62893749a2d",
+    "korean_PP-OCRv5_mobile_rec": (
+        "c22b640ad22b1de0fe433ef0d4d955313647bbfc849df71934caefbab85ccadc"
+    ),
+}
 
 
 def _digest(directory: Path) -> str:
@@ -50,11 +57,20 @@ def provision(root: Path) -> dict[str, Any]:
         )
 
     models = root / "official_models"
+    actual_digests = {
+        name: _digest(models / name) for name in (DETECTION_MODEL, *RECOGNITION_MODELS.values())
+    }
+    for name, expected in EXPECTED_DIGESTS.items():
+        if actual_digests[name] != expected:
+            raise RuntimeError(
+                f"PaddleOCR model digest mismatch for {name}: "
+                f"expected {expected}, got {actual_digests[name]}"
+            )
     recognition = {
         language: {
             "name": name,
             "directory": str(Path("official_models") / name),
-            "sha256": _digest(models / name),
+            "sha256": actual_digests[name],
         }
         for language, name in RECOGNITION_MODELS.items()
     }
@@ -64,7 +80,7 @@ def provision(root: Path) -> dict[str, Any]:
         "detection": {
             "name": DETECTION_MODEL,
             "directory": str(Path("official_models") / DETECTION_MODEL),
-            "sha256": _digest(models / DETECTION_MODEL),
+            "sha256": actual_digests[DETECTION_MODEL],
         },
         "recognition": recognition,
     }
