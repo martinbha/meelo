@@ -167,7 +167,16 @@ def test_default_adapter_loads_pinned_manifest_paths(
     adapter._factory = factory
     image = tmp_path / "fixture.png"
     image.touch()
-    result = adapter.run(image, OcrConfiguration(("ko",)))
+    result = adapter.run(
+        image,
+        OcrConfiguration(
+            ("ko",),
+            {
+                "text_detection_model_dir": "/tmp/unpinned-detector",
+                "text_recognition_model_dir": "/tmp/unpinned-recognizer",
+            },
+        ),
+    )
 
     assert captured["text_detection_model_dir"] == str(detection)
     assert captured["text_recognition_model_dir"] == str(recognition)

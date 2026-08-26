@@ -228,11 +228,11 @@ class PaddleOcrEngine(OcrEngine):
         options.setdefault("enable_mkldnn", False)
         assets = _local_assets(language) if self._requires_local_assets else None
         if assets is not None:
-            options.setdefault("ocr_version", assets.ocr_version)
-            options.setdefault("text_detection_model_name", assets.detection_name)
-            options.setdefault("text_detection_model_dir", str(assets.detection_dir))
-            options.setdefault("text_recognition_model_name", assets.recognition_name)
-            options.setdefault("text_recognition_model_dir", str(assets.recognition_dir))
+            options["ocr_version"] = assets.ocr_version
+            options["text_detection_model_name"] = assets.detection_name
+            options["text_detection_model_dir"] = str(assets.detection_dir)
+            options["text_recognition_model_name"] = assets.recognition_name
+            options["text_recognition_model_dir"] = str(assets.recognition_dir)
         engine = self._factory(**options)
         started = perf_counter()
         try:
