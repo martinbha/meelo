@@ -24,6 +24,7 @@ def env_bool(name: str, default: bool) -> bool:
 
 SECRET_KEY = required_env("DJANGO_SECRET_KEY")
 DEBUG = False
+OCR_VERIFY_TESSERACT_INSTALLATION = True
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")  # noqa: F405
 if not ALLOWED_HOSTS:
     raise RuntimeError("DJANGO_ALLOWED_HOSTS must contain at least one host in production")

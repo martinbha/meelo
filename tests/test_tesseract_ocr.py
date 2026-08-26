@@ -2,10 +2,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 from PIL import Image
 
 from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError
-from apps.ocr.tesseract import TesseractOcrEngine
+from apps.ocr.tesseract import TesseractOcrEngine, inspect_tesseract_installation
 
 
 def make_image(path: Path) -> None:
@@ -100,3 +102,27 @@ def test_tesseract_adapter_records_language_data_hashes(
         "language_kor": "sha256:0874206a177d83d573b502df5f302ab4db614c648077cc584a5df9f07e726d51",
         "language_eng": "sha256:39e29f134404576294bf69a26051e8a0952e489f8370a3a71bf6b4d52f5dca9d",
     }
+
+
+def test_installation_inspection_reports_missing_required_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("apps.ocr.tesseract._default_languages", lambda: ["eng"])
+
+    with pytest.raises(OcrConfigurationError, match="kor"):
+        inspect_tesseract_installation()
+
+
+@override_settings(OCR_VERIFY_TESSERACT_INSTALLATION=True)
+def test_application_startup_rejects_invalid_tesseract_installation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.ocr.apps import OcrConfig
+
+    def invalid_installation() -> None:
+        raise OcrConfigurationError("Missing required Tesseract language pack(s): kor.")
+
+    monkeypatch.setattr("apps.ocr.apps.inspect_tesseract_installation", invalid_installation)
+
+    with pytest.raises(ImproperlyConfigured, match="kor"):
+        OcrConfig.ready(OcrConfig("apps.ocr", __import__("apps.ocr")))

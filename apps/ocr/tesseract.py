@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -27,6 +28,12 @@ TESSDATA_CANDIDATES = (
     Path("/usr/share/tessdata"),
     Path("/usr/local/share/tessdata"),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class TesseractInstallation:
+    binary_version: str
+    language_versions: dict[str, str]
 
 
 def _pytesseract_module() -> Any:
@@ -76,6 +83,23 @@ def _language_data_versions(packs: Sequence[str]) -> dict[str, str]:
             ) from exc
         versions[f"language_{pack}"] = f"sha256:{digest}"
     return versions
+
+
+def inspect_tesseract_installation(
+    required_packs: Sequence[str] = tuple(LANGUAGE_PACKS.values()),
+) -> TesseractInstallation:
+    """Verify the local binary and required traineddata without network access."""
+
+    installed = set(_default_languages())
+    missing = set(required_packs) - installed
+    if missing:
+        raise OcrConfigurationError(
+            f"Missing required Tesseract language pack(s): {', '.join(sorted(missing))}."
+        )
+    return TesseractInstallation(
+        binary_version=_default_version(),
+        language_versions=_language_data_versions(required_packs),
+    )
 
 
 def _default_runner(image: Image.Image, **kwargs: Any) -> dict[str, list[Any]]:
