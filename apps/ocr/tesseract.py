@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from time import perf_counter
@@ -20,6 +22,11 @@ from .contracts import (
 
 LANGUAGE_PACKS = {"en": "eng", "ko": "kor"}
 SUPPORTED_PSM_MODES = frozenset({3, 4, 6, 7, 11, 12, 13})
+TESSDATA_CANDIDATES = (
+    Path("/usr/share/tesseract-ocr/5/tessdata"),
+    Path("/usr/share/tessdata"),
+    Path("/usr/local/share/tessdata"),
+)
 
 
 def _pytesseract_module() -> Any:
@@ -45,6 +52,30 @@ def _default_version() -> str:
         return str(_pytesseract_module().get_tesseract_version())
     except Exception as exc:
         raise OcrConfigurationError("The Tesseract version could not be inspected.") from exc
+
+
+def _default_tessdata_root() -> Path:
+    configured = os.environ.get("TESSDATA_PREFIX")
+    candidates = (Path(configured),) if configured else TESSDATA_CANDIDATES
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    raise OcrConfigurationError("The Tesseract language-data directory could not be found.")
+
+
+def _language_data_versions(packs: Sequence[str]) -> dict[str, str]:
+    root = _default_tessdata_root()
+    versions: dict[str, str] = {}
+    for pack in packs:
+        path = root / f"{pack}.traineddata"
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise OcrConfigurationError(
+                f"Missing Tesseract language-data file: {pack}.traineddata."
+            ) from exc
+        versions[f"language_{pack}"] = f"sha256:{digest}"
+    return versions
 
 
 def _default_runner(image: Image.Image, **kwargs: Any) -> dict[str, list[Any]]:
@@ -95,10 +126,12 @@ class TesseractOcrEngine(OcrEngine):
         runner: Callable[..., dict[str, list[Any]]] = _default_runner,
         languages: Callable[[], Sequence[str]] = _default_languages,
         version: Callable[[], str] = _default_version,
+        language_versions: Callable[[Sequence[str]], dict[str, str]] = _language_data_versions,
     ) -> None:
         self._runner = runner
         self._installed_languages = languages
         self._version = version
+        self._language_versions = language_versions
 
     @property
     def metadata(self) -> EngineMetadata:
@@ -131,9 +164,14 @@ class TesseractOcrEngine(OcrEngine):
         except Exception as exc:
             raise OcrConfigurationError("Tesseract could not read the input image.") from exc
         duration_ms = round((perf_counter() - started) * 1000)
+        metadata = EngineMetadata(
+            "tesseract",
+            self._version(),
+            self._language_versions(requested_packs),
+        )
         return OcrRunResult(
             tokens=_tokens(data),
-            metadata=self.metadata,
+            metadata=metadata,
             configuration=configuration,
             duration_ms=duration_ms,
             raw_output=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
