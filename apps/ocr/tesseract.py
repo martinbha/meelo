@@ -175,6 +175,8 @@ class TesseractOcrEngine(OcrEngine):
             raise OcrConfigurationError(
                 f"Missing Tesseract language pack(s): {', '.join(sorted(missing))}."
             )
+        binary_version = self._version()
+        language_versions = self._language_versions(requested_packs)
         psm = int(configuration.options.get("psm", 6))
         if psm not in SUPPORTED_PSM_MODES:
             raise OcrConfigurationError(f"Unsupported Tesseract PSM mode: {psm}.")
@@ -190,8 +192,8 @@ class TesseractOcrEngine(OcrEngine):
         duration_ms = round((perf_counter() - started) * 1000)
         metadata = EngineMetadata(
             "tesseract",
-            self._version(),
-            self._language_versions(requested_packs),
+            binary_version,
+            language_versions,
         )
         return OcrRunResult(
             tokens=_tokens(data),
