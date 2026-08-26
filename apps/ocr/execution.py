@@ -11,6 +11,7 @@ from .contracts import (
     OcrConfiguration,
     OcrConfigurationError,
     OcrEngine,
+    OcrEngineError,
     OcrError,
     OcrRunResult,
     OcrToken,
@@ -78,6 +79,8 @@ def _result_from_payload(payload: dict[str, Any]) -> OcrRunResult:
 
 
 def _failure_details(exc: Exception) -> tuple[str, bool]:
+    if isinstance(exc, OcrEngineError):
+        return exc.code, exc.retryable
     if isinstance(exc, UnsupportedLanguageError | OcrConfigurationError):
         return "OCR_CONFIGURATION_INVALID", False
     if isinstance(exc, OcrError):
