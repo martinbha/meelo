@@ -11,6 +11,9 @@ from PIL import Image, ImageDraw
 from .contracts import BoundingBox, OcrRunResult
 from .matching import MatchStatus, TokenGroup
 
+EXPECTED_ROW_FIELDS = frozenset({"date", "amount", "merchant", "direction", "suffix", "confidence"})
+EXPECTED_ROW_STRING_FIELDS = EXPECTED_ROW_FIELDS - {"confidence"}
+
 
 @dataclass(frozen=True, slots=True)
 class ExpectedToken:
@@ -21,9 +24,13 @@ class ExpectedToken:
 @dataclass(frozen=True, slots=True)
 class OcrFixtureCase:
     name: str
-    image_path: Path
+    institution: str
+    source_type: str
+    image_path: Path | None
     expected_tokens: tuple[ExpectedToken, ...]
     expected_fields: Mapping[str, str]
+    expected_rows: tuple[Mapping[str, object], ...]
+    expected_failure: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,25 +52,102 @@ def load_fixture_cases(root: Path) -> tuple[OcrFixtureCase, ...]:
     resolved_root = root.resolve()
     cases: list[OcrFixtureCase] = []
     for metadata_path in sorted(resolved_root.glob("*.json")):
-        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-        image_path = (resolved_root / payload["image"]).resolve()
-        if not image_path.is_relative_to(resolved_root) or not image_path.is_file():
-            message = f"Fixture image is missing or outside the fixture root: {metadata_path}"
-            raise ValueError(message)
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Fixture JSON is invalid at {metadata_path}:{exc.lineno}.") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"Fixture manifest must be an object: {metadata_path}.")
+        for field in ("name", "institution", "source_type"):
+            if not isinstance(payload.get(field), str) or not payload[field].strip():
+                raise ValueError(
+                    f"Fixture field '{field}' must be a non-empty string: {metadata_path}."
+                )
+        raw_tokens = payload.get("tokens", [])
+        raw_rows = payload.get("expected_rows", [])
+        raw_fields = payload.get("fields", {})
+        if (
+            not isinstance(raw_tokens, list)
+            or not isinstance(raw_rows, list)
+            or not isinstance(raw_fields, dict)
+        ):
+            message = "Fixture tokens and expected_rows must be arrays and fields an object"
+            raise ValueError(f"{message}: {metadata_path}.")
+        image_path: Path | None = None
+        if "image" in payload:
+            if not isinstance(payload["image"], str):
+                raise ValueError(f"Fixture field 'image' must be a string: {metadata_path}.")
+            image_path = (resolved_root / payload["image"]).resolve()
+            if not image_path.is_relative_to(resolved_root) or not image_path.is_file():
+                raise ValueError(
+                    f"Fixture image is missing or outside the fixture root: {metadata_path}."
+                )
+        if image_path is None and not raw_tokens:
+            raise ValueError(f"Fixture requires an image or tokens: {metadata_path}.")
+        for index, token in enumerate(raw_tokens):
+            if (
+                not isinstance(token, dict)
+                or not isinstance(token.get("text"), str)
+                or not isinstance(token.get("bounds"), list)
+                or len(token["bounds"]) != 4
+                or any(not isinstance(value, int) for value in token["bounds"])
+            ):
+                message = f"Fixture tokens[{index}] requires text and four integer bounds"
+                raise ValueError(f"{message}: {metadata_path}.")
+        for index, row in enumerate(raw_rows):
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"Fixture expected_rows[{index}] must be an object: {metadata_path}."
+                )
+            unknown_fields = set(row) - EXPECTED_ROW_FIELDS
+            if unknown_fields:
+                names = ", ".join(sorted(str(field) for field in unknown_fields))
+                raise ValueError(
+                    f"Fixture expected_rows[{index}] has unknown field(s) {names}: {metadata_path}."
+                )
+            for field in EXPECTED_ROW_STRING_FIELDS & set(row):
+                if not isinstance(row[field], str):
+                    raise ValueError(
+                        f"Fixture expected_rows[{index}].{field} must be a string: {metadata_path}."
+                    )
+            if row.get("direction") not in {None, "debit", "credit", "unknown"}:
+                raise ValueError(
+                    f"Fixture expected_rows[{index}].direction is invalid: {metadata_path}."
+                )
+            confidence = row.get("confidence")
+            minimum = confidence.get("min") if isinstance(confidence, dict) else None
+            maximum = confidence.get("max") if isinstance(confidence, dict) else None
+            if confidence is not None and (
+                not isinstance(confidence, dict)
+                or not isinstance(minimum, int | float)
+                or not isinstance(maximum, int | float)
+                or not 0 <= minimum <= maximum <= 1
+            ):
+                message = (
+                    f"Fixture expected_rows[{index}].confidence must contain a 0..1 min/max range"
+                )
+                raise ValueError(f"{message}: {metadata_path}.")
+        failure = payload.get("expected_failure")
+        if failure is not None and (
+            not isinstance(failure, dict) or not isinstance(failure.get("code"), str)
+        ):
+            raise ValueError(f"Fixture expected_failure.code must be a string: {metadata_path}.")
         cases.append(
             OcrFixtureCase(
                 name=str(payload["name"]),
+                institution=str(payload["institution"]),
+                source_type=str(payload["source_type"]),
                 image_path=image_path,
                 expected_tokens=tuple(
                     ExpectedToken(
                         text=str(token["text"]),
                         bounding_box=BoundingBox(*token["bounds"]),
                     )
-                    for token in payload.get("tokens", [])
+                    for token in raw_tokens
                 ),
-                expected_fields={
-                    str(key): str(value) for key, value in payload.get("fields", {}).items()
-                },
+                expected_fields={str(key): str(value) for key, value in raw_fields.items()},
+                expected_rows=tuple(dict(row) for row in raw_rows),
+                expected_failure=failure["code"] if failure is not None else None,
             )
         )
     return tuple(cases)
@@ -77,6 +161,8 @@ def run_fixture_suite(
 ) -> tuple[FixtureMetrics, ...]:
     metrics: list[FixtureMetrics] = []
     for case in cases:
+        if case.image_path is None:
+            continue
         result = runner(case.image_path)
         observed = field_extractor(result)
         accuracy = {
