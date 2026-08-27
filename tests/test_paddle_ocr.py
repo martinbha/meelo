@@ -129,7 +129,6 @@ def test_default_adapter_fails_with_stable_code_when_models_are_missing(
 def test_paddle_reuses_a_model_and_rebuilds_it_after_failure(tmp_path: Path) -> None:
     image_path = tmp_path / "fixture.png"
     image_path.touch()
-    created: list[FakePaddle] = []
 
     class FailingPaddle(FakePaddle):
         fail = False
@@ -138,6 +137,8 @@ def test_paddle_reuses_a_model_and_rebuilds_it_after_failure(tmp_path: Path) -> 
             if self.fail:
                 raise RuntimeError("inference failed")
             return super().ocr(path, cls=cls)
+
+    created: list[FailingPaddle] = []
 
     def factory(**options: Any) -> FailingPaddle:
         del options
