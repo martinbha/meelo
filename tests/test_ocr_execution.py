@@ -49,6 +49,14 @@ class NamedFailureEngine(SlowEngine):
         raise OcrEngineError("missing assets", code="PADDLEOCR_FAILED", retryable=False)
 
 
+class SpawnEngine(LargeResultEngine):
+    prepared = False
+
+    def prepare(self, configuration: OcrConfiguration) -> None:
+        del configuration
+        self.prepared = True
+
+
 def test_bounded_execution_terminates_hung_engine() -> None:
     started = time.monotonic()
     with pytest.raises(ClassifiedOcrError) as failure:
@@ -122,3 +130,18 @@ def test_bounded_execution_prepares_and_resets_warm_engines() -> None:
         )
 
     assert events == ["prepared", "reset"]
+
+
+def test_spawn_execution_does_not_prepare_an_unpicklable_parent_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.ocr.execution.multiprocessing.get_all_start_methods", lambda: ["spawn"]
+    )
+    engine = SpawnEngine()
+    result = run_engine_bounded(
+        engine, Path("fixture.png"), OcrConfiguration(("en",)), timeout_seconds=2
+    )
+
+    assert result.duration_ms == 10
+    assert engine.prepared is False

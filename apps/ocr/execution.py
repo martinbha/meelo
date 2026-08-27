@@ -92,9 +92,11 @@ def _run_child(
     output: Any,
     engine: OcrEngine,
     image_path: Path,
-    configuration: OcrConfiguration,
+    languages: tuple[str, ...],
+    options: dict[str, Any],
 ) -> None:
     try:
+        configuration = OcrConfiguration(languages, options)
         output.put(("success", _result_payload(engine.run(image_path, configuration))))
     except Exception as exc:
         output.put(("failure", _failure_details(exc)))
@@ -109,19 +111,25 @@ def run_engine_bounded(
 ) -> OcrRunResult:
     if timeout_seconds <= 0:
         raise ValueError("OCR timeout must be positive.")
-    prepare = getattr(engine, "prepare", None)
+    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    prepare = getattr(engine, "prepare", None) if method == "fork" else None
     try:
         if callable(prepare):
             prepare(configuration)
     except Exception as exc:
         code, retryable = _failure_details(exc)
         raise ClassifiedOcrError(code=code, retryable=retryable) from exc
-    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
     context: Any = multiprocessing.get_context(method)
     output = context.Queue(maxsize=1)
     process = context.Process(
         target=_run_child,
-        args=(output, engine, image_path, configuration),
+        args=(
+            output,
+            engine,
+            image_path,
+            tuple(configuration.languages),
+            dict(configuration.options),
+        ),
     )
     process.start()
     try:
