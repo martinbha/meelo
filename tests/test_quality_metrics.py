@@ -85,6 +85,8 @@ def test_quality_aggregation_is_dimensioned_and_idempotent() -> None:
     assert row.ocr_issue_count == 1
     assert row.parser_issue_count == 2
     assert str(row.correction_rate) == "0.50000"
+    assert str(row.mean_confidence) == "0.67500"
+    assert row.engine == "unknown"
     assert str(row.duplicate_rate) == "0.50000"
 
     aggregate_day(day)
@@ -105,4 +107,6 @@ def test_quality_command_can_backfill_and_emit_machine_output() -> None:
     assert payload[0]["day"] == day.isoformat()
     assert payload[0]["institution"] == "toss_bank"
     assert payload[0]["source_type"] == "bank_transaction_list"
+    assert payload[0]["engine"] == "unknown"
+    assert payload[0]["mean_confidence"] == "0.95000"
     assert "merchant" not in output.getvalue()

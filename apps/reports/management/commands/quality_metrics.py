@@ -32,7 +32,7 @@ class Command(BaseCommand):
 
         rows = list(
             QualityMetricDaily.objects.filter(day__gte=start, day__lte=end).order_by(
-                "day", "institution", "source_type"
+                "day", "institution", "source_type", "engine"
             )
         )
         payload = [
@@ -40,6 +40,7 @@ class Command(BaseCommand):
                 "day": row.day.isoformat(),
                 "institution": row.institution,
                 "source_type": row.source_type,
+                "engine": row.engine,
                 "observations": row.observations_count,
                 "corrected": row.corrected_count,
                 "disagreements": row.disagreement_count,
@@ -52,6 +53,7 @@ class Command(BaseCommand):
                 "duplicate_rate": str(row.duplicate_rate),
                 "ocr_issue_rate": str(row.ocr_issue_rate),
                 "parser_issue_rate": str(row.parser_issue_rate),
+                "mean_confidence": str(row.mean_confidence),
             }
             for row in rows
         ]
@@ -61,7 +63,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Built {len(payload)} quality dimension(s) for {start} through {end}.")
         for row in payload:
             self.stdout.write(
-                f"{row['day']} {row['institution']}/{row['source_type']}: "
+                f"{row['day']} {row['institution']}/{row['source_type']}/{row['engine']}: "
                 f"{row['observations']} observation(s), "
                 f"correction rate {row['correction_rate']}, "
                 f"disagreement rate {row['disagreement_rate']}, "
