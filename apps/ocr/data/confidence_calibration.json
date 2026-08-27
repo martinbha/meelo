@@ -1,0 +1,25 @@
+{
+  "fixture_corpus_version": 1,
+  "review_threshold": 0.8,
+  "candidates": [
+    {
+      "engine": 0.6,
+      "agreement": 0.2,
+      "validation": 0.2,
+      "field_accuracy": {"amount": 0.94, "date": 0.91, "merchant": 0.88, "direction": 0.93, "instrument": 0.90, "balance": 0.89}
+    },
+    {
+      "engine": 0.5,
+      "agreement": 0.3,
+      "validation": 0.2,
+      "field_accuracy": {"amount": 0.98, "date": 0.95, "merchant": 0.93, "direction": 0.96, "instrument": 0.94, "balance": 0.93}
+    },
+    {
+      "engine": 0.4,
+      "agreement": 0.4,
+      "validation": 0.2,
+      "field_accuracy": {"amount": 0.97, "date": 0.94, "merchant": 0.91, "direction": 0.95, "instrument": 0.92, "balance": 0.92}
+    }
+  ],
+  "selected": {"engine": 0.5, "agreement": 0.3, "validation": 0.2}
+}
