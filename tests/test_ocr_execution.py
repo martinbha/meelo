@@ -99,3 +99,26 @@ def test_bounded_execution_drains_large_result_before_joining_child() -> None:
     )
 
     assert len(result.raw_output) == 2 * 1024 * 1024
+
+
+def test_bounded_execution_prepares_and_resets_warm_engines() -> None:
+    events: list[str] = []
+
+    class WarmInvalidEngine(InvalidEngine):
+        def prepare(self, configuration: OcrConfiguration) -> None:
+            del configuration
+            events.append("prepared")
+
+        def reset(self, configuration: OcrConfiguration) -> None:
+            del configuration
+            events.append("reset")
+
+    with pytest.raises(ClassifiedOcrError):
+        run_engine_bounded(
+            WarmInvalidEngine(),
+            Path("fixture.png"),
+            OcrConfiguration(("en",)),
+            timeout_seconds=1,
+        )
+
+    assert events == ["prepared", "reset"]

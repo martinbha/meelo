@@ -109,6 +109,13 @@ def run_engine_bounded(
 ) -> OcrRunResult:
     if timeout_seconds <= 0:
         raise ValueError("OCR timeout must be positive.")
+    prepare = getattr(engine, "prepare", None)
+    try:
+        if callable(prepare):
+            prepare(configuration)
+    except Exception as exc:
+        code, retryable = _failure_details(exc)
+        raise ClassifiedOcrError(code=code, retryable=retryable) from exc
     method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
     context: Any = multiprocessing.get_context(method)
     output = context.Queue(maxsize=1)
@@ -127,6 +134,9 @@ def run_engine_bounded(
         if process.is_alive():
             process.kill()
             process.join()
+        reset = getattr(engine, "reset", None)
+        if callable(reset):
+            reset(configuration)
         code = "OCR_ENGINE_TIMEOUT" if timed_out else "OCR_ENGINE_CRASHED"
         raise ClassifiedOcrError(code=code, retryable=True) from exc
     finally:
@@ -137,6 +147,9 @@ def run_engine_bounded(
         process.terminate()
         process.join()
     if status == "failure":
+        reset = getattr(engine, "reset", None)
+        if callable(reset):
+            reset(configuration)
         code, retryable = payload
         raise ClassifiedOcrError(code=code, retryable=retryable)
     return _result_from_payload(payload)

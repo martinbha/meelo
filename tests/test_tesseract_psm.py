@@ -35,3 +35,4 @@ def test_default_plan_records_measured_mode_and_allows_per_run_override() -> Non
 
     assert measured.configuration.options["psm"] == 11
     assert overridden.configuration.options["psm"] == 12
+    assert default_engine_plans()[0].engine is default_engine_plans()[0].engine
