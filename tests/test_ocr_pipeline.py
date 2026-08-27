@@ -136,6 +136,49 @@ def test_pipeline_persists_partial_success_and_hands_off_after_ocr(
 
 
 @pytest.mark.django_db
+def test_degraded_default_handoff_forces_review(user: Any, tmp_path: Path) -> None:
+    from apps.observations.models import ImportedObservation
+
+    source = tmp_path / "source.png"
+    Image.new("RGB", (300, 50), "white").save(source)
+    document = make_document(user)
+    key = os.urandom(32)
+
+    class RowEngine(StubEngine):
+        def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+            return OcrRunResult(
+                tokens=(
+                    OcrToken("2026.8.15", 0.99, BoundingBox(0, 10, 60, 20)),
+                    OcrToken("Cafe", 0.99, BoundingBox(70, 10, 120, 20)),
+                    OcrToken("출금", 0.99, BoundingBox(130, 10, 160, 20)),
+                    OcrToken("₩4,200", 0.99, BoundingBox(170, 10, 230, 20)),
+                ),
+                metadata=self.metadata,
+                configuration=configuration,
+                duration_ms=2,
+            )
+
+    with worker_data_key_scope(document=document):
+        orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=key,
+            key_version=1,
+            plans=(
+                EnginePlan(RowEngine("paddleocr"), OcrConfiguration(("ko",))),
+                EnginePlan(StubEngine("tesseract", fails=True), OcrConfiguration(("ko",))),
+            ),
+            preprocessing_settings=PreprocessingSettings(),
+        )
+
+    observation = ImportedObservation.objects.get(source_document=document)
+    assert observation.requires_review is True
+    assert "degraded_ocr" in observation.review_flags
+    assert observation.ocr_confidence < 0.8
+
+
+@pytest.mark.django_db
 def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
     user: Any, tmp_path: Path
 ) -> None:
@@ -156,6 +199,21 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
         )
     assert failure.value.retryable is False
     assert failure.value.code == "OCR_CONFIGURATION_INVALID"
+
+    with pytest.raises(OcrPipelineError) as all_failed:
+        orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=key,
+            key_version=1,
+            plans=(
+                EnginePlan(StubEngine("paddleocr", fails=True), OcrConfiguration(("ko",))),
+                EnginePlan(StubEngine("tesseract", fails=True), OcrConfiguration(("ko",))),
+            ),
+            preprocessing_settings=PreprocessingSettings(),
+        )
+    assert all_failed.value.code == "OCR_ALL_ENGINES_FAILED"
 
     with pytest.raises(OcrPipelineError, match="handed to parsing"):
         orchestrate_document_ocr(
