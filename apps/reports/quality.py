@@ -31,6 +31,7 @@ class _Counts:
     duplicate_confirmed: int = 0
     ocr_issues: int = 0
     parser_issues: int = 0
+    confidence_total: Decimal = Decimal("0")
 
 
 def _rate(numerator: int, denominator: int) -> Decimal:
@@ -39,10 +40,11 @@ def _rate(numerator: int, denominator: int) -> Decimal:
     return (Decimal(numerator) / Decimal(denominator)).quantize(Decimal("0.00001"))
 
 
-def _dimension(observation: ImportedObservation) -> tuple[str, str]:
+def _dimension(observation: ImportedObservation) -> tuple[str, str, str]:
     institution = observation.parser_name or UNKNOWN
     source_type = observation.source_document.effective_source_type or UNKNOWN
-    return institution[:64], source_type[:40]
+    engine = observation.ocr_run.engine if observation.ocr_run is not None else UNKNOWN
+    return institution[:64], source_type[:40], engine[:32]
 
 
 def _parser_has_issue(observation: ImportedObservation) -> bool:
@@ -69,6 +71,9 @@ def _metric_defaults(counts: _Counts) -> dict[str, Any]:
         "duplicate_rate": _rate(counts.duplicate_confirmed, counts.observations),
         "ocr_issue_rate": _rate(counts.ocr_issues, counts.observations),
         "parser_issue_rate": _rate(counts.parser_issues, counts.observations),
+        "mean_confidence": (
+            counts.confidence_total / counts.observations if counts.observations else Decimal("0")
+        ).quantize(Decimal("0.00001")),
     }
 
 
@@ -76,16 +81,17 @@ def _metric_defaults(counts: _Counts) -> dict[str, Any]:
 def aggregate_day(day: date) -> tuple[QualityMetricDaily, ...]:
     """Rebuild one day's dimensions, making reruns exact and idempotent."""
 
-    grouped: dict[tuple[str, str], _Counts] = defaultdict(_Counts)
-    observations = ImportedObservation.objects.select_related("source_document").filter(
+    grouped: dict[tuple[str, str, str], _Counts] = defaultdict(_Counts)
+    observations = ImportedObservation.objects.select_related("source_document", "ocr_run").filter(
         created_at__date=day
     )
-    observation_dimensions: dict[Any, tuple[str, str]] = {}
+    observation_dimensions: dict[Any, tuple[str, str, str]] = {}
     for observation in observations.iterator():
         dimension = _dimension(observation)
         observation_dimensions[observation.pk] = dimension
         counts = grouped[dimension]
         counts.observations += 1
+        counts.confidence_total += Decimal(str(observation.ocr_confidence))
         counts.corrected += int(
             observation.review_status == ImportedObservation.ReviewStatus.CORRECTED
             or bool(observation.corrected_fields)
@@ -99,10 +105,10 @@ def aggregate_day(day: date) -> tuple[QualityMetricDaily, ...]:
         match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
     ).values_list("left_observation_id", "status")
     for observation_id, status in matches:
-        match_dimension: tuple[str, str] | None = observation_dimensions.get(observation_id)
+        match_dimension: tuple[str, str, str] | None = observation_dimensions.get(observation_id)
         if match_dimension is None:
             match_observation = (
-                ImportedObservation.objects.select_related("source_document")
+                ImportedObservation.objects.select_related("source_document", "ocr_run")
                 .filter(pk=observation_id)
                 .first()
             )
@@ -119,9 +125,10 @@ def aggregate_day(day: date) -> tuple[QualityMetricDaily, ...]:
             day=day,
             institution=institution,
             source_type=source_type,
+            engine=engine,
             **_metric_defaults(counts),
         )
-        for (institution, source_type), counts in sorted(grouped.items())
+        for (institution, source_type, engine), counts in sorted(grouped.items())
     )
     if rows:
         QualityMetricDaily.objects.bulk_create(rows)

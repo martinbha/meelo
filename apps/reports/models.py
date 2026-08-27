@@ -106,6 +106,7 @@ class QualityMetricDaily(models.Model):
     day = models.DateField()
     institution = models.CharField(max_length=64)
     source_type = models.CharField(max_length=40)
+    engine = models.CharField(max_length=32, default="unknown")
     observations_count = models.PositiveIntegerField(default=0)
     corrected_count = models.PositiveIntegerField(default=0)
     disagreement_count = models.PositiveIntegerField(default=0)
@@ -118,13 +119,14 @@ class QualityMetricDaily(models.Model):
     duplicate_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
     ocr_issue_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
     parser_issue_rate = models.DecimalField(max_digits=6, decimal_places=5, default=0)
+    mean_confidence = models.DecimalField(max_digits=6, decimal_places=5, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=("day", "institution", "source_type"),
+                fields=("day", "institution", "source_type", "engine"),
                 name="quality_metric_daily_dimension_unique",
             )
         ]
