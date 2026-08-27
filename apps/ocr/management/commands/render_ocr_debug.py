@@ -60,6 +60,6 @@ class Command(BaseCommand):
                         for token in result.tokens
                     )
                 )
-        groups = match_engine_tokens(candidates[0], candidates[1])
-        render_debug_overlay(image_path, groups, output_path)
+            groups = match_engine_tokens(candidates[0], candidates[1])
+            render_debug_overlay(prepared.variant("normalized").path, groups, output_path)
         self.stdout.write(str(output_path))

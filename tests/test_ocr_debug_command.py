@@ -59,3 +59,5 @@ def test_debug_command_renders_without_database_writes(
     call_command("render_ocr_debug", image, output)
 
     assert output.is_file()
+    with Image.open(output) as overlay:
+        assert overlay.size == (40, 40)
