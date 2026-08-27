@@ -200,6 +200,21 @@ def test_pipeline_rejects_total_failure_and_parser_handoff_failure(
     assert failure.value.retryable is False
     assert failure.value.code == "OCR_CONFIGURATION_INVALID"
 
+    with pytest.raises(OcrPipelineError) as all_failed:
+        orchestrate_document_ocr(
+            document=document,
+            source_path=source,
+            user=user,
+            data_key=key,
+            key_version=1,
+            plans=(
+                EnginePlan(StubEngine("paddleocr", fails=True), OcrConfiguration(("ko",))),
+                EnginePlan(StubEngine("tesseract", fails=True), OcrConfiguration(("ko",))),
+            ),
+            preprocessing_settings=PreprocessingSettings(),
+        )
+    assert all_failed.value.code == "OCR_ALL_ENGINES_FAILED"
+
     with pytest.raises(OcrPipelineError, match="handed to parsing"):
         orchestrate_document_ocr(
             document=document,
