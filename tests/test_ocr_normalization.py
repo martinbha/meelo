@@ -27,7 +27,7 @@ def test_korean_and_english_normalization_is_deterministic(value: str, expected:
 
 
 def test_checked_in_normalization_corpus_is_idempotent() -> None:
-    path = Path(__file__).parent / "fixtures" / "ocr" / "normalization-corpus.json"
+    path = Path(__file__).parent / "fixtures" / "normalization" / "korean-ocr.json"
     cases = json.loads(path.read_text(encoding="utf-8"))
 
     for case in cases:
