@@ -93,3 +93,8 @@ def test_loader_reports_precise_manifest_errors(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"expected_rows\[0\]\.confidence"):
         load_fixture_cases(tmp_path)
+
+    manifest["expected_rows"] = [{"merhcant": "typo"}]
+    (tmp_path / "case.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"unknown field.*merhcant"):
+        load_fixture_cases(tmp_path)

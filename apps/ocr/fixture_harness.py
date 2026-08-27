@@ -11,6 +11,9 @@ from PIL import Image, ImageDraw
 from .contracts import BoundingBox, OcrRunResult
 from .matching import MatchStatus, TokenGroup
 
+EXPECTED_ROW_FIELDS = frozenset({"date", "amount", "merchant", "direction", "suffix", "confidence"})
+EXPECTED_ROW_STRING_FIELDS = EXPECTED_ROW_FIELDS - {"confidence"}
+
 
 @dataclass(frozen=True, slots=True)
 class ExpectedToken:
@@ -95,6 +98,21 @@ def load_fixture_cases(root: Path) -> tuple[OcrFixtureCase, ...]:
             if not isinstance(row, dict):
                 raise ValueError(
                     f"Fixture expected_rows[{index}] must be an object: {metadata_path}."
+                )
+            unknown_fields = set(row) - EXPECTED_ROW_FIELDS
+            if unknown_fields:
+                names = ", ".join(sorted(str(field) for field in unknown_fields))
+                raise ValueError(
+                    f"Fixture expected_rows[{index}] has unknown field(s) {names}: {metadata_path}."
+                )
+            for field in EXPECTED_ROW_STRING_FIELDS & set(row):
+                if not isinstance(row[field], str):
+                    raise ValueError(
+                        f"Fixture expected_rows[{index}].{field} must be a string: {metadata_path}."
+                    )
+            if row.get("direction") not in {None, "debit", "credit", "unknown"}:
+                raise ValueError(
+                    f"Fixture expected_rows[{index}].direction is invalid: {metadata_path}."
                 )
             confidence = row.get("confidence")
             minimum = confidence.get("min") if isinstance(confidence, dict) else None
