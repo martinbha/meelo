@@ -1,0 +1,11 @@
+[
+  {"raw": "₩42,900", "normalized": "42900 KRW"},
+  {"raw": "42 900 원", "normalized": "42900 KRW"},
+  {"raw": "４２，９００원", "normalized": "42900 KRW"},
+  {"raw": "₩4O,2OO", "normalized": "40200 KRW"},
+  {"raw": "2O26년 O8월 O5일", "normalized": "2026-08-05"},
+  {"raw": "２０２６．８．５", "normalized": "2026-08-05"},
+  {"raw": "승인—완료", "normalized": "승인-완료"},
+  {"raw": "B2B STORE", "normalized": "b2b store"},
+  {"raw": "S1 COFFEE", "normalized": "s1 coffee"}
+]
