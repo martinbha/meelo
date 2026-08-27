@@ -21,7 +21,7 @@ from .execution import ClassifiedOcrError, run_engine_bounded
 from .matching import MatchStatus, TokenCandidate, match_engine_tokens
 from .models import OcrRun, OcrToken
 from .paddle import PaddleOcrEngine
-from .preprocessing import PreprocessingSettings, preprocess_image
+from .preprocessing import PreprocessingSettings, preprocess_image, select_variant
 from .services import record_failed_run, record_successful_run
 from .tesseract import TesseractOcrEngine
 
@@ -230,8 +230,12 @@ def orchestrate_document_ocr(
     successful: list[OcrRun] = []
     failures: list[ClassifiedOcrError] = []
     with preprocess_image(source_path, source_path.parent, preprocessing_settings) as prepared:
-        selected = prepared.variant(prepared.selected_variant)
         for plan in plans:
+            variant_name = select_variant(
+                engine=plan.engine.engine_name,
+                source_type=document.effective_source_type,
+            )
+            selected = prepared.variant(variant_name)
             try:
                 result = run_engine_bounded(
                     plan.engine,
@@ -271,7 +275,7 @@ def orchestrate_document_ocr(
                     result=result,
                     data_key=data_key,
                     key_version=key_version,
-                    preprocessing=prepared,
+                    preprocessing=prepared.for_variant(variant_name),
                 )
             )
     if not successful:

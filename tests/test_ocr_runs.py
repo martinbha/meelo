@@ -66,7 +66,10 @@ def test_successful_runs_encrypt_payloads_and_preserve_reproducibility(
     raw = decrypt_model_field(run, "raw_output_encrypted", key=data_key)
     assert json.loads(raw) == result.raw_output
     settings = decrypt_model_field(run, "preprocessing_encrypted", key=data_key)
-    assert json.loads(settings)["threshold"] == 170
+    preprocessing_payload = json.loads(settings)
+    assert preprocessing_payload["settings"]["threshold"] == 170
+    assert preprocessing_payload["selected_variant"] == "threshold"
+    assert len(preprocessing_payload["selected_variant_sha256"]) == 64
     assert OcrRun.objects.get(source_document=document) == run
 
 

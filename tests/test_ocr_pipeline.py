@@ -44,7 +44,8 @@ class StubEngine(OcrEngine):
     def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
         if self.fails:
             raise OcrConfigurationError("engine failed")
-        assert image_path.name == "ocr-threshold.png"
+        expected = "normalized" if self.name == "paddleocr" else "threshold"
+        assert image_path.name == f"ocr-{expected}.png"
         return OcrRunResult(
             tokens=(OcrToken(self.name, 0.9, BoundingBox(1, 2, 10, 12)),),
             metadata=self.metadata,
@@ -131,6 +132,7 @@ def test_pipeline_persists_partial_success_and_hands_off_after_ocr(
         "OCR_CONFIGURATION_INVALID"
     )
     assert runs[0].tokens.count() == 1
+    assert runs[0].selected_preprocessing_variant == "normalized"
 
 
 @pytest.mark.django_db
