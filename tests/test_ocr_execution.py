@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -11,7 +12,13 @@ from apps.ocr.contracts import (
     OcrEngineError,
     OcrRunResult,
 )
-from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
+from apps.ocr.execution import (
+    ClassifiedOcrError,
+    OcrResourceLimits,
+    _apply_resource_limits,
+    _failure_details,
+    run_engine_bounded,
+)
 
 
 class SlowEngine(OcrEngine):
@@ -145,3 +152,21 @@ def test_spawn_execution_does_not_prepare_an_unpicklable_parent_model(
 
     assert result.duration_ms == 10
     assert engine.prepared is False
+
+
+def test_resource_limits_validate_and_classify_memory_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="positive"):
+        OcrResourceLimits(max_threads=0)
+    assert _failure_details(MemoryError()) == ("OCR_RESOURCE_EXHAUSTED", True)
+
+    applied: list[tuple[int, tuple[int, int]]] = []
+    monkeypatch.setattr("resource.setrlimit", lambda kind, value: applied.append((kind, value)))
+    for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        monkeypatch.setenv(name, "original")
+    limits = OcrResourceLimits(timeout_seconds=3, max_threads=1, memory_bytes=1024)
+    _apply_resource_limits(limits)
+
+    assert os.environ["OMP_NUM_THREADS"] == "1"
+    assert applied[0][1] == (1024, 1024)

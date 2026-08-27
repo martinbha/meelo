@@ -18,7 +18,7 @@ from apps.parsing.registry import ParserRegistry, ParserSelection
 from apps.processing.models import SourceDocument
 
 from .contracts import BoundingBox, EngineMetadata, OcrConfiguration, OcrEngine, OcrError
-from .execution import ClassifiedOcrError, run_engine_bounded
+from .execution import ClassifiedOcrError, OcrResourceLimits, run_engine_bounded
 from .matching import MatchStatus, TokenCandidate, match_engine_tokens
 from .models import OcrRun, OcrToken
 from .paddle import PaddleOcrEngine
@@ -237,6 +237,7 @@ def orchestrate_document_ocr(
     parser_handoff: ParserHandoff | None = None,
     preprocessing_settings: PreprocessingSettings = DEFAULT_PREPROCESSING_SETTINGS,
     engine_timeout_seconds: float = 120.0,
+    resource_limits: OcrResourceLimits | None = None,
 ) -> tuple[OcrRun, ...]:
     successful: list[OcrRun] = []
     failures: list[ClassifiedOcrError] = []
@@ -253,6 +254,7 @@ def orchestrate_document_ocr(
                     selected.path,
                     plan.configuration,
                     timeout_seconds=engine_timeout_seconds,
+                    limits=resource_limits,
                 )
             except ClassifiedOcrError as exc:
                 failures.append(exc)
@@ -324,6 +326,11 @@ def execute_document_ocr(
     # fallback would authenticate the owner as their own actor — the rule the
     # worker path exists to replace with one that checks the document.
     data_key = require_data_key(user=user)
+    limits = OcrResourceLimits(
+        timeout_seconds=settings.OCR_ENGINE_TIMEOUT_SECONDS,
+        max_threads=settings.OCR_ENGINE_MAX_THREADS,
+        memory_bytes=settings.OCR_ENGINE_MEMORY_LIMIT_MB * 1024 * 1024,
+    )
     return orchestrate_document_ocr(
         document=document,
         source_path=source_path,
@@ -331,4 +338,6 @@ def execute_document_ocr(
         data_key=data_key,
         key_version=user.encryption_key_version,
         plans=default_engine_plans(source_type=document.effective_source_type),
+        engine_timeout_seconds=limits.timeout_seconds,
+        resource_limits=limits,
     )

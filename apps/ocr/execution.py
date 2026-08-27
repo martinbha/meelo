@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 import queue
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,30 @@ class ClassifiedOcrError(OcrError):
         super().__init__("The local OCR engine did not complete.")
         self.code = code
         self.retryable = retryable
+
+
+@dataclass(frozen=True, slots=True)
+class OcrResourceLimits:
+    timeout_seconds: float = 120.0
+    max_threads: int = 2
+    memory_bytes: int = 2 * 1024 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0 or self.max_threads <= 0 or self.memory_bytes <= 0:
+            raise ValueError("OCR resource limits must be positive.")
+
+
+def _apply_resource_limits(limits: OcrResourceLimits) -> None:
+    thread_count = str(limits.max_threads)
+    for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        os.environ[name] = thread_count
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
+    except (ImportError, OSError, ValueError):
+        # Windows and constrained runtimes rely on their container memory cap.
+        pass
 
 
 def _result_payload(result: OcrRunResult) -> dict[str, Any]:
@@ -79,6 +105,8 @@ def _result_from_payload(payload: dict[str, Any]) -> OcrRunResult:
 
 
 def _failure_details(exc: Exception) -> tuple[str, bool]:
+    if isinstance(exc, MemoryError):
+        return "OCR_RESOURCE_EXHAUSTED", True
     if isinstance(exc, OcrEngineError):
         return exc.code, exc.retryable
     if isinstance(exc, UnsupportedLanguageError | OcrConfigurationError):
@@ -94,8 +122,10 @@ def _run_child(
     image_path: Path,
     languages: tuple[str, ...],
     options: dict[str, Any],
+    limits: OcrResourceLimits,
 ) -> None:
     try:
+        _apply_resource_limits(limits)
         configuration = OcrConfiguration(languages, options)
         output.put(("success", _result_payload(engine.run(image_path, configuration))))
     except Exception as exc:
@@ -107,8 +137,14 @@ def run_engine_bounded(
     image_path: Path,
     configuration: OcrConfiguration,
     *,
-    timeout_seconds: float,
+    timeout_seconds: float | None = None,
+    limits: OcrResourceLimits | None = None,
 ) -> OcrRunResult:
+    limits = limits or OcrResourceLimits(
+        timeout_seconds=timeout_seconds if timeout_seconds is not None else 120.0
+    )
+    if timeout_seconds is None:
+        timeout_seconds = limits.timeout_seconds
     if timeout_seconds <= 0:
         raise ValueError("OCR timeout must be positive.")
     method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
@@ -129,6 +165,7 @@ def run_engine_bounded(
             image_path,
             tuple(configuration.languages),
             dict(configuration.options),
+            limits,
         ),
     )
     process.start()
