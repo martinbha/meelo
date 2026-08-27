@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError
+from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError, OcrEngineError
 from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
 from apps.ocr.paddle import PaddleOcrEngine, _model_digest
 
@@ -124,6 +124,39 @@ def test_default_adapter_fails_with_stable_code_when_models_are_missing(
 
     assert failure.value.code == "PADDLEOCR_FAILED"
     assert failure.value.retryable is False
+
+
+def test_paddle_reuses_a_model_and_rebuilds_it_after_failure(tmp_path: Path) -> None:
+    image_path = tmp_path / "fixture.png"
+    image_path.touch()
+
+    class FailingPaddle(FakePaddle):
+        fail = False
+
+        def ocr(self, path: str, *, cls: bool) -> list[Any]:
+            if self.fail:
+                raise RuntimeError("inference failed")
+            return super().ocr(path, cls=cls)
+
+    created: list[FailingPaddle] = []
+
+    def factory(**options: Any) -> FailingPaddle:
+        del options
+        model = FailingPaddle([])
+        created.append(model)
+        return model
+
+    adapter = PaddleOcrEngine(factory=factory)
+    configuration = OcrConfiguration(("ko",))
+    adapter.run(image_path, configuration)
+    adapter.run(image_path, configuration)
+    assert len(created) == 1
+
+    created[0].fail = True
+    with pytest.raises(OcrEngineError, match="execution failed"):
+        adapter.run(image_path, configuration)
+    adapter.run(image_path, configuration)
+    assert len(created) == 2
 
 
 def test_default_adapter_loads_pinned_manifest_paths(

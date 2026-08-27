@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -209,13 +210,19 @@ def parse_ocr_runs(
     return build_parser_registry().parse(metadata, tokens)
 
 
+@lru_cache(maxsize=1)
+def _default_engines() -> tuple[OcrEngine, OcrEngine]:
+    return PaddleOcrEngine(), TesseractOcrEngine()
+
+
 def default_engine_plans(
     *, source_type: str = "unknown", tesseract_psm: int | None = None
 ) -> tuple[EnginePlan, ...]:
     selected_psm = default_psm(source_type) if tesseract_psm is None else tesseract_psm
+    paddle, tesseract = _default_engines()
     return (
-        EnginePlan(PaddleOcrEngine(), OcrConfiguration(("ko",), {"device": "cpu"})),
-        EnginePlan(TesseractOcrEngine(), OcrConfiguration(("ko", "en"), {"psm": selected_psm})),
+        EnginePlan(paddle, OcrConfiguration(("ko",), {"device": "cpu"})),
+        EnginePlan(tesseract, OcrConfiguration(("ko", "en"), {"psm": selected_psm})),
     )
 
 

@@ -200,23 +200,16 @@ class PaddleOcrEngine(OcrEngine):
     def __init__(self, *, factory: Callable[..., Any] = _default_factory) -> None:
         self._factory = factory
         self._requires_local_assets = factory is _default_factory
+        self._engines: dict[str, Any] = {}
 
-    @property
-    def metadata(self) -> EngineMetadata:
-        return EngineMetadata(
-            engine="paddleocr",
-            engine_version=_package_version("paddleocr"),
-            model_versions={"paddlepaddle": _package_version("paddlepaddle")},
-        )
+    def _cached_engine(self, options: dict[str, Any]) -> tuple[str, Any]:
+        cache_key = json.dumps(options, sort_keys=True, separators=(",", ":"))
+        if cache_key not in self._engines:
+            self._engines[cache_key] = self._factory(**options)
+        return cache_key, self._engines[cache_key]
 
-    @property
-    def supported_languages(self) -> frozenset[str]:
-        return PADDLE_LANGUAGES
-
-    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+    def _runtime_options(self, configuration: OcrConfiguration) -> dict[str, Any]:
         self.validate_configuration(configuration)
-        if not image_path.is_file():
-            raise OcrConfigurationError("The PaddleOCR input image does not exist.")
         if len(configuration.languages) != 1:
             raise OcrConfigurationError("PaddleOCR runs require exactly one model language.")
         options = dict(configuration.options)
@@ -233,7 +226,39 @@ class PaddleOcrEngine(OcrEngine):
             options["text_detection_model_dir"] = str(assets.detection_dir)
             options["text_recognition_model_name"] = assets.recognition_name
             options["text_recognition_model_dir"] = str(assets.recognition_dir)
-        engine = self._factory(**options)
+        return options
+
+    def prepare(self, configuration: OcrConfiguration) -> None:
+        """Initialize the process-local model before a bounded child is forked."""
+
+        self._cached_engine(self._runtime_options(configuration))
+
+    def reset(self, configuration: OcrConfiguration) -> None:
+        """Discard a model after a failed child run so the next run rebuilds it."""
+
+        options = self._runtime_options(configuration)
+        cache_key = json.dumps(options, sort_keys=True, separators=(",", ":"))
+        self._engines.pop(cache_key, None)
+
+    @property
+    def metadata(self) -> EngineMetadata:
+        return EngineMetadata(
+            engine="paddleocr",
+            engine_version=_package_version("paddleocr"),
+            model_versions={"paddlepaddle": _package_version("paddlepaddle")},
+        )
+
+    @property
+    def supported_languages(self) -> frozenset[str]:
+        return PADDLE_LANGUAGES
+
+    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+        if not image_path.is_file():
+            raise OcrConfigurationError("The PaddleOCR input image does not exist.")
+        options = self._runtime_options(configuration)
+        language = configuration.languages[0]
+        assets = _local_assets(language) if self._requires_local_assets else None
+        cache_key, engine = self._cached_engine(options)
         started = perf_counter()
         try:
             predict = getattr(engine, "predict", None)
@@ -243,6 +268,7 @@ class PaddleOcrEngine(OcrEngine):
                 else engine.ocr(str(image_path), cls=False)
             )
         except Exception as exc:
+            self._engines.pop(cache_key, None)
             raise OcrEngineError(
                 "PaddleOCR execution failed.", code="PADDLEOCR_FAILED", retryable=True
             ) from exc
