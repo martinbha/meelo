@@ -112,6 +112,8 @@ def _review_flags(observation: ParsedObservation) -> list[str]:
         flags.append("parser_fallback")
     if observation.confidence_factors.get("parser_error"):
         flags.append("parser_error")
+    if observation.confidence_factors.get("degraded_ocr"):
+        flags.append("degraded_ocr")
     if observation.is_settlement:
         flags.append("settlement_candidate")
     return sorted(set(flags))

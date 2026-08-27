@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -128,6 +128,7 @@ def import_document_observations(
     data_key: bytes,
     key_version: int,
     user: Any,
+    degraded: bool = False,
 ) -> bool:
     """Parse the OCR runs and store the rows for review.
 
@@ -141,6 +142,23 @@ def import_document_observations(
     except Exception:
         metrics.record(metrics.PARSER_FAILED, parser="unknown", reason="exception")
         raise
+    if degraded:
+        observations = tuple(
+            replace(
+                observation,
+                confidence_factors={
+                    **observation.confidence_factors,
+                    "token_confidence": min(
+                        float(observation.confidence_factors.get("token_confidence", 0.0)) * 0.75,
+                        0.79,
+                    ),
+                    "degraded_ocr": True,
+                    "requires_review": True,
+                },
+            )
+            for observation in selection.observations
+        )
+        selection = replace(selection, observations=observations)
     if not selection.observations:
         metrics.record(
             metrics.PARSER_FAILED,
@@ -308,6 +326,7 @@ def orchestrate_document_ocr(
             data_key=data_key,
             key_version=key_version,
             user=user,
+            degraded=bool(failures) and len(plans) > 1,
         )
     )
     if not parsing_succeeded:
