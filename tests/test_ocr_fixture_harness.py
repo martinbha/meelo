@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,9 @@ def test_fixture_suite_tracks_duration_and_key_field_regressions() -> None:
     )
 
     assert len(cases) == 1
+    assert cases[0].institution == "fixture_bank"
+    assert cases[0].source_type == "bank_transaction_list"
+    assert cases[0].expected_rows[0]["direction"] == "debit"
     assert [token.text for token in cases[0].expected_tokens] == ["Cafe", "₩4,200"]
     assert metrics[0].duration_ms == 12
     assert metrics[0].field_accuracy == {"amount": True, "date": False, "merchant": True}
@@ -43,6 +47,7 @@ def conflict_group() -> TokenGroup:
 @override_settings(DEBUG=True)
 def test_debug_overlay_renders_regions_only_in_development(tmp_path: Path) -> None:
     case = load_fixture_cases(FIXTURE_ROOT)[0]
+    assert case.image_path is not None
     output = render_debug_overlay(case.image_path, (conflict_group(),), tmp_path / "overlay.png")
 
     assert output.is_file()
@@ -54,5 +59,37 @@ def test_debug_overlay_renders_regions_only_in_development(tmp_path: Path) -> No
 @override_settings(DEBUG=False)
 def test_debug_overlay_is_unavailable_in_production(tmp_path: Path) -> None:
     case = load_fixture_cases(FIXTURE_ROOT)[0]
+    assert case.image_path is not None
     with pytest.raises(PermissionError, match="disabled"):
         render_debug_overlay(case.image_path, (conflict_group(),), tmp_path / "overlay.png")
+
+
+def test_loader_supports_token_only_expected_failure_fixtures(tmp_path: Path) -> None:
+    manifest = {
+        "name": "unreadable-row",
+        "institution": "fixture_bank",
+        "source_type": "bank_transaction_list",
+        "tokens": [{"text": "???", "bounds": [1, 1, 3, 3]}],
+        "expected_rows": [],
+        "expected_failure": {"code": "UNREADABLE_ROW"},
+    }
+    (tmp_path / "case.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    case = load_fixture_cases(tmp_path)[0]
+
+    assert case.image_path is None
+    assert case.expected_failure == "UNREADABLE_ROW"
+
+
+def test_loader_reports_precise_manifest_errors(tmp_path: Path) -> None:
+    manifest = {
+        "name": "bad-confidence",
+        "institution": "fixture_bank",
+        "source_type": "bank_transaction_list",
+        "tokens": [{"text": "row", "bounds": [1, 1, 3, 3]}],
+        "expected_rows": [{"confidence": {"min": 0.9, "max": 0.4}}],
+    }
+    (tmp_path / "case.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"expected_rows\[0\]\.confidence"):
+        load_fixture_cases(tmp_path)

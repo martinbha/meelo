@@ -1,5 +1,7 @@
 {
   "name": "sanitized-basic",
+  "institution": "fixture_bank",
+  "source_type": "bank_transaction_list",
   "image": "sanitized-basic.pbm",
   "tokens": [
     {"text": "Cafe", "bounds": [1, 1, 6, 6]},
@@ -9,5 +11,8 @@
     "amount": "4200 KRW",
     "date": "2026-08-15",
     "merchant": "cafe"
-  }
+  },
+  "expected_rows": [
+    {"date": "2026-08-15", "amount": "4200 KRW", "merchant": "cafe", "direction": "debit", "suffix": "1234", "confidence": {"min": 0.8, "max": 1.0}}
+  ]
 }
