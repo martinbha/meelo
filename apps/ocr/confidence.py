@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from types import MappingProxyType
 
 
@@ -25,9 +27,13 @@ FIELD_WEIGHTS: Mapping[FinancialField, float] = MappingProxyType(
         FinancialField.BALANCE: 0.15,
     }
 )
-ENGINE_WEIGHT = 0.5
-AGREEMENT_WEIGHT = 0.3
-VALIDATION_WEIGHT = 0.2
+_CALIBRATION = json.loads(
+    (Path(__file__).with_name("data") / "confidence_calibration.json").read_text(encoding="utf-8")
+)
+ENGINE_WEIGHT = float(_CALIBRATION["selected"]["engine"])
+AGREEMENT_WEIGHT = float(_CALIBRATION["selected"]["agreement"])
+VALIDATION_WEIGHT = float(_CALIBRATION["selected"]["validation"])
+REVIEW_THRESHOLD = float(_CALIBRATION["review_threshold"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +74,7 @@ def score_field(
     field: FinancialField,
     evidence: FieldEvidence,
     *,
-    review_threshold: float = 0.75,
+    review_threshold: float = REVIEW_THRESHOLD,
 ) -> FieldConfidence:
     if not 0.0 <= review_threshold <= 1.0:
         raise ValueError("Review threshold must be between zero and one.")
@@ -114,7 +120,7 @@ def score_field(
 def score_observation(
     evidence: Mapping[FinancialField, FieldEvidence],
     *,
-    review_threshold: float = 0.75,
+    review_threshold: float = REVIEW_THRESHOLD,
 ) -> ObservationConfidence:
     fields = {
         field: score_field(field, evidence[field], review_threshold=review_threshold)

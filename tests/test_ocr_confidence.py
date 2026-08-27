@@ -1,3 +1,8 @@
+import json
+from pathlib import Path
+
+import pytest
+
 from apps.ocr.confidence import (
     FieldEvidence,
     FinancialField,
@@ -52,3 +57,29 @@ def test_combined_score_exposes_every_field_factor() -> None:
     assert result.combined_score == 0.78625
     assert result.requires_review is True
     assert result.fields[FinancialField.BALANCE].factors["hard_review_reason"] == ("missing_value")
+
+
+def test_calibration_evidence_selects_the_best_measured_candidate() -> None:
+    path = Path(__file__).parents[1] / "apps" / "ocr" / "data" / "confidence_calibration.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    selected = payload["selected"]
+    candidates = payload["candidates"]
+    best = max(
+        candidates,
+        key=lambda candidate: (
+            sum(candidate["field_accuracy"].values()) / len(candidate["field_accuracy"])
+        ),
+    )
+
+    assert {key: best[key] for key in selected} == selected
+    assert sum(selected.values()) == pytest.approx(1.0)
+
+
+def test_fields_below_point_eight_require_manual_confirmation() -> None:
+    result = score_field(
+        FinancialField.MERCHANT,
+        strong_evidence(engine_confidences=(0.58,), engines_agree=True, parser_valid=True),
+    )
+
+    assert result.score == 0.79
+    assert result.requires_review is True
