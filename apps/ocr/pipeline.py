@@ -24,6 +24,7 @@ from .paddle import PaddleOcrEngine
 from .preprocessing import PreprocessingSettings, preprocess_image, select_variant
 from .services import record_failed_run, record_successful_run
 from .tesseract import TesseractOcrEngine
+from .tesseract_psm import default_psm
 
 
 class OcrPipelineError(RuntimeError):
@@ -208,10 +209,13 @@ def parse_ocr_runs(
     return build_parser_registry().parse(metadata, tokens)
 
 
-def default_engine_plans() -> tuple[EnginePlan, ...]:
+def default_engine_plans(
+    *, source_type: str = "unknown", tesseract_psm: int | None = None
+) -> tuple[EnginePlan, ...]:
+    selected_psm = default_psm(source_type) if tesseract_psm is None else tesseract_psm
     return (
         EnginePlan(PaddleOcrEngine(), OcrConfiguration(("ko",), {"device": "cpu"})),
-        EnginePlan(TesseractOcrEngine(), OcrConfiguration(("ko", "en"), {"psm": 6})),
+        EnginePlan(TesseractOcrEngine(), OcrConfiguration(("ko", "en"), {"psm": selected_psm})),
     )
 
 
@@ -319,5 +323,5 @@ def execute_document_ocr(
         user=user,
         data_key=data_key,
         key_version=user.encryption_key_version,
-        plans=default_engine_plans(),
+        plans=default_engine_plans(source_type=document.effective_source_type),
     )

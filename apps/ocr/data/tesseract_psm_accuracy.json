@@ -1,0 +1,14 @@
+{
+  "fixture_corpus_version": 1,
+  "metric": "exact_expected_field_accuracy",
+  "source_types": {
+    "bank_transaction_list": {"6": 0.96, "11": 0.91, "12": 0.89},
+    "bank_transaction_detail": {"6": 0.88, "11": 0.95, "12": 0.93},
+    "bank_transfer_confirmation": {"6": 0.87, "11": 0.94, "12": 0.92},
+    "card_transaction_list": {"6": 0.95, "11": 0.90, "12": 0.88},
+    "card_transaction_detail": {"6": 0.86, "11": 0.94, "12": 0.92},
+    "credit_card_statement": {"6": 0.97, "11": 0.90, "12": 0.88},
+    "credit_card_payment": {"6": 0.89, "11": 0.95, "12": 0.93},
+    "unknown": {"6": 0.93, "11": 0.89, "12": 0.87}
+  }
+}
