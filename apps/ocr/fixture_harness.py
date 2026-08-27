@@ -109,6 +109,19 @@ def render_debug_overlay(
             outline=colors[group.status],
             width=2,
         )
+        for token in group.tokens:
+            token_box = token.bounding_box
+            engine_color = "#2563eb" if token.engine == "paddleocr" else "#7c3aed"
+            draw.rectangle(
+                (token_box.left, token_box.top, token_box.right, token_box.bottom),
+                outline=engine_color,
+                width=1,
+            )
+            draw.text(
+                (token_box.left, max(0, token_box.top - 10)),
+                f"{token.engine} {token.confidence:.2f}",
+                fill=engine_color,
+            )
     output_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     image.save(output_path, format="PNG")
     return output_path
