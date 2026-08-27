@@ -119,10 +119,15 @@ def record_successful_run(
         key_version=key_version,
     )
     if preprocessing is not None:
+        selected = preprocessing.variant(preprocessing.selected_variant)
         run.preprocessing_encrypted = _encrypted_json(
             run,
             "preprocessing_encrypted",
-            preprocessing.settings.serializable(),
+            {
+                "settings": preprocessing.settings.serializable(),
+                "selected_variant": selected.name,
+                "selected_variant_sha256": selected.sha256,
+            },
             data_key=data_key,
             key_version=key_version,
         )

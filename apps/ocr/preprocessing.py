@@ -57,6 +57,24 @@ class PreprocessingResult:
         except StopIteration as exc:
             raise OcrConfigurationError(f"Unknown preprocessing variant: {name}.") from exc
 
+    def for_variant(self, name: str) -> PreprocessingResult:
+        """Return this deterministic result with one variant selected for an engine."""
+
+        self.variant(name)
+        return PreprocessingResult(self.settings, self.variants, name)
+
+
+def select_variant(*, engine: str, source_type: str) -> str:
+    """Choose the image representation suited to an engine and screenshot shape."""
+
+    if engine == "paddleocr":
+        return "normalized"
+    if engine == "tesseract":
+        if source_type in {"bank_transaction_detail", "card_transaction_detail"}:
+            return "grayscale"
+        return "threshold"
+    raise OcrConfigurationError(f"No preprocessing policy exists for OCR engine: {engine}.")
+
 
 def _digest(path: Path) -> str:
     digest = hashlib.sha256()

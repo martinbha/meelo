@@ -4,7 +4,7 @@ import pytest
 from PIL import Image
 
 from apps.ocr.contracts import OcrConfigurationError
-from apps.ocr.preprocessing import PreprocessingSettings, preprocess_image
+from apps.ocr.preprocessing import PreprocessingSettings, preprocess_image, select_variant
 
 
 def test_preprocessing_corrects_exif_and_generates_deterministic_variants(tmp_path: Path) -> None:
@@ -72,3 +72,22 @@ def test_preprocessing_rejects_invalid_crop_and_missing_source(tmp_path: Path) -
         preprocess_image(tmp_path / "missing.png", tmp_path / "work", PreprocessingSettings()),
     ):
         pass
+
+
+@pytest.mark.parametrize(
+    ("engine", "source_type", "expected"),
+    [
+        ("paddleocr", "bank_transaction_list", "normalized"),
+        ("tesseract", "bank_transaction_list", "threshold"),
+        ("tesseract", "card_transaction_detail", "grayscale"),
+    ],
+)
+def test_variant_selection_depends_on_engine_and_source_type(
+    engine: str, source_type: str, expected: str
+) -> None:
+    assert select_variant(engine=engine, source_type=source_type) == expected
+
+
+def test_variant_selection_rejects_unknown_engines() -> None:
+    with pytest.raises(OcrConfigurationError, match="No preprocessing policy"):
+        select_variant(engine="unknown", source_type="unknown")
