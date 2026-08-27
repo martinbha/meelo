@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from apps.ocr.normalization import normalize_money_text, normalize_ocr_text
@@ -21,3 +24,22 @@ def test_korean_money_variants_share_one_representation(value: str) -> None:
 def test_korean_and_english_normalization_is_deterministic(value: str, expected: str) -> None:
     assert normalize_ocr_text(value) == expected
     assert normalize_ocr_text(value) == normalize_ocr_text(value)
+
+
+def test_checked_in_normalization_corpus_is_idempotent() -> None:
+    path = Path(__file__).parent / "fixtures" / "normalization" / "korean-ocr.json"
+    cases = json.loads(path.read_text(encoding="utf-8"))
+
+    for case in cases:
+        normalized = normalize_ocr_text(case["raw"])
+        assert normalized == case["normalized"]
+        assert normalize_ocr_text(normalized) == normalized
+
+
+@pytest.mark.parametrize("value", ["1200", "-1200", "12.50", "B2B STORE", "S1 COFFEE"])
+def test_normalization_never_changes_an_existing_numeric_value(value: str) -> None:
+    original_digits = "".join(character for character in value if character.isdigit())
+    normalized_digits = "".join(
+        character for character in normalize_ocr_text(value) if character.isdigit()
+    )
+    assert normalized_digits == original_digits
