@@ -48,6 +48,7 @@ def test_debug_overlay_renders_regions_only_in_development(tmp_path: Path) -> No
     assert output.is_file()
     with Image.open(output) as image:
         assert image.mode == "RGB"
+        assert image.getbbox() is not None
 
 
 @override_settings(DEBUG=False)
