@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -28,13 +29,14 @@ from apps.reconciliation.images import (
     near_duplicate_detection_enabled,
     perceptual_hash,
 )
-from apps.reconciliation.matching import MatchProposal
+from apps.reconciliation.matching import MatchProposal, match_statement_membership
 from apps.reconciliation.models import NearDuplicateDocument, ReconciliationMatch
 from apps.reconciliation.services import (
     ReconciliationError,
     automatic_merge_enabled,
     confirm_duplicate_match,
     confirm_match,
+    decrypt_match_features,
     facts_from,
     open_matches,
     queue_match_ids,
@@ -42,6 +44,7 @@ from apps.reconciliation.services import (
     record_match,
     record_near_duplicates,
     record_proposals,
+    record_statement_memberships,
     reject_match,
     unlink_match,
 )
@@ -373,6 +376,77 @@ def test_proposals_of_other_types_are_stored(owner: Any) -> None:
 
     assert stored[0].match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER
     assert stored[0].match_score == 85
+
+
+def test_statement_membership_matches_card_period_and_reports_gap(owner: Any) -> None:
+    _, rows = seed(owner, parsed(), parsed(), parsed(), parsed())
+    statement = replace(facts_from(rows[0], amount_minor=10_000), instrument_id="card-a")
+    purchases = (
+        replace(
+            facts_from(rows[1], amount_minor=4_000),
+            occurred_at=date(2026, 8, 5),
+            instrument_id="card-a",
+        ),
+        replace(
+            facts_from(rows[2], amount_minor=5_000),
+            occurred_at=date(2026, 8, 20),
+            instrument_id="card-a",
+        ),
+        replace(
+            facts_from(rows[3], amount_minor=1_000),
+            occurred_at=date(2026, 8, 10),
+            instrument_id="card-b",
+        ),
+    )
+
+    coverage = match_statement_membership(
+        statement,
+        purchases,
+        period_start=date(2026, 8, 1),
+        period_end=date(2026, 8, 31),
+        card_id="card-a",
+        statement_total_minor=10_000,
+    )
+
+    assert len(coverage.proposals) == 2
+    assert coverage.matched_total_minor == 9_000
+    assert coverage.gap_minor == 1_000
+    assert coverage.is_balanced is False
+    assert all("statement_total_gap" in proposal.features for proposal in coverage.proposals)
+
+
+def test_purchase_has_one_reviewable_and_reversible_statement_membership(owner: Any) -> None:
+    _, rows = seed(owner, parsed(), parsed(), parsed())
+    first = MatchProposal(
+        rows[0].pk,
+        rows[1].pk,
+        ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP,
+        100,
+        ("same_card", "within_statement_period", "statement_total_balanced"),
+    )
+    second = MatchProposal(
+        rows[2].pk,
+        rows[1].pk,
+        ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP,
+        85,
+        ("same_card", "within_statement_period", "statement_total_gap"),
+    )
+
+    (membership,) = record_statement_memberships(user=owner, proposals=(first,), data_key=KEY)
+    assert membership.status == ReconciliationMatch.Status.PROPOSED
+    assert decrypt_match_features(membership, data_key=KEY) == (
+        "same_card",
+        "statement_total_balanced",
+        "within_statement_period",
+    )
+    with pytest.raises(ConflictError, match="already belongs"):
+        record_statement_memberships(user=owner, proposals=(second,), data_key=KEY)
+
+    confirm_match(membership.pk, user=owner)
+    unlinked = unlink_match(membership.pk, user=owner)
+    assert unlinked.status == ReconciliationMatch.Status.REJECTED
+    replacement = record_statement_memberships(user=owner, proposals=(second,), data_key=KEY)
+    assert replacement[0].status == ReconciliationMatch.Status.PROPOSED
 
 
 def test_queue_match_ids_group_by_review_filter(owner: Any) -> None:
