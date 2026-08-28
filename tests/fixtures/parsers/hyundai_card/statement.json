@@ -1,0 +1,24 @@
+{
+  "name": "hyundai-card-statement",
+  "parser": "hyundai_card",
+  "expected_source_type": "credit_card_statement",
+  "minimum_confidence": 0.6,
+  "document": {"source_type": "credit_card_statement", "width": 1080, "height": 1920, "uploaded_at": "2026-09-02T12:00:00+09:00", "time_zone": "Asia/Seoul", "statement_month": "2026-08-01", "instrument_type": "credit_card"},
+  "tokens": [
+    {"text": "현대카드", "bounds": [40, 60, 220, 100]},
+    {"text": "이용대금명세서", "bounds": [240, 60, 520, 100]},
+    {"text": "현대카드 Z", "bounds": [40, 140, 300, 178]},
+    {"text": "****-2468", "bounds": [320, 140, 560, 178]},
+    {"text": "08.24", "bounds": [40, 300, 180, 338]},
+    {"text": "청구금액", "bounds": [220, 300, 400, 338]},
+    {"text": "624,800원", "bounds": [700, 300, 940, 338]},
+    {"text": "08.19", "bounds": [40, 380, 180, 418]},
+    {"text": "테스트서점", "bounds": [220, 380, 500, 418]},
+    {"text": "할부 2개월", "bounds": [540, 380, 700, 418]},
+    {"text": "48,000원", "bounds": [760, 380, 940, 418]}
+  ],
+  "expected": [
+    {"date": "2026-08-24", "merchant": null, "amount_minor": 624800, "currency": "KRW", "direction": "credit", "instrument_suffix": "2468", "is_settlement": true},
+    {"date": "2026-08-19", "merchant": "테스트서점", "amount_minor": 48000, "currency": "KRW", "direction": "debit", "instrument_suffix": "2468", "installment_months": 2}
+  ]
+}
