@@ -100,6 +100,23 @@ def test_every_bank_parser_ships_a_low_quality_fixture() -> None:
     assert banks <= covered
 
 
+def test_every_card_parser_has_list_and_statement_fixtures() -> None:
+    card_parsers = {"hyundai_card", "samsung_card"}
+    source_types = {
+        case.parser: {
+            item.document.source_type for item in all_cases() if item.parser == case.parser
+        }
+        for case in all_cases()
+        if case.parser in card_parsers
+    }
+
+    assert set(source_types) == card_parsers
+    assert all(
+        {"card_transaction_list", "credit_card_statement"} <= covered
+        for covered in source_types.values()
+    )
+
+
 @pytest.mark.parametrize("case", all_cases(), ids=lambda case: case.name)
 def test_fixtures_meet_accuracy_targets(case: ParserFixtureCase) -> None:
     metrics = run_parser_fixture_suite((case,), registry=build_registry())[0]

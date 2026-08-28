@@ -1,0 +1,30 @@
+{
+  "name": "samsung-card-transaction-list",
+  "parser": "samsung_card",
+  "expected_source_type": "card_transaction_list",
+  "minimum_confidence": 0.7,
+  "document": {"source_type": "card_transaction_list", "width": 1080, "height": 1920, "uploaded_at": "2026-08-16T12:00:00+09:00", "time_zone": "Asia/Seoul", "instrument_type": "credit_card"},
+  "tokens": [
+    {"text": "삼성카드", "bounds": [40, 60, 220, 100]},
+    {"text": "이용내역", "bounds": [240, 60, 400, 100]},
+    {"text": "삼성카드 iD", "bounds": [40, 140, 300, 178]},
+    {"text": "****-1357", "bounds": [320, 140, 560, 178]},
+    {"text": "08.15", "bounds": [40, 260, 180, 298]},
+    {"text": "테스트마트", "bounds": [220, 260, 420, 298]},
+    {"text": "일시불", "bounds": [460, 260, 580, 298]},
+    {"text": "64,900원", "bounds": [720, 260, 900, 298]},
+    {"text": "08.14", "bounds": [40, 340, 180, 378]},
+    {"text": "테스트가구", "bounds": [220, 340, 420, 378]},
+    {"text": "할부 4개월", "bounds": [460, 340, 620, 378]},
+    {"text": "320,000원", "bounds": [720, 340, 900, 378]},
+    {"text": "08.13", "bounds": [40, 420, 180, 458]},
+    {"text": "테스트카페", "bounds": [220, 420, 420, 458]},
+    {"text": "취소", "bounds": [460, 420, 560, 458]},
+    {"text": "12,500원", "bounds": [720, 420, 900, 458]}
+  ],
+  "expected": [
+    {"date": "2026-08-15", "merchant": "테스트마트", "amount_minor": 64900, "currency": "KRW", "direction": "debit", "instrument_suffix": "1357", "installment_months": 1},
+    {"date": "2026-08-14", "merchant": "테스트가구", "amount_minor": 320000, "currency": "KRW", "direction": "debit", "instrument_suffix": "1357", "installment_months": 4},
+    {"date": "2026-08-13", "merchant": "테스트카페", "amount_minor": 12500, "currency": "KRW", "direction": "credit", "instrument_suffix": "1357"}
+  ]
+}
