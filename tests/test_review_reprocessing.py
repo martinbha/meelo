@@ -4,6 +4,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.core.errors import ConflictError, ForbiddenError
@@ -134,6 +136,52 @@ def test_reprocessing_enqueues_the_work(owner: Any) -> None:
     job = ProcessingJob.objects.get(user=owner, document_id=document.pk)
     assert job.task_name == "process_document"
     assert job.status == ProcessingJob.Status.QUEUED
+
+
+def test_parser_reprocess_command_targets_institution_and_version(owner: Any) -> None:
+    matching = ready_document(owner, file_sha256="1" * 64)
+    reviewed = ready_document(owner, file_sha256="3" * 64)
+    other = ready_document(owner, file_sha256="2" * 64)
+    matching_row = import_for(owner, matching, make_ocr_run(owner, matching))[0]
+    reviewed_row = import_for(owner, reviewed, make_ocr_run(owner, reviewed))[0]
+    other_row = import_for(owner, other, make_ocr_run(owner, other))[0]
+    matching_row.parser_version = "0.9"
+    matching_row.save(update_fields=["parser_version", "updated_at"])
+    reviewed_row.parser_version = "0.9"
+    reviewed_row.review_status = ImportedObservation.ReviewStatus.CORRECTED
+    reviewed_row.save(update_fields=["parser_version", "review_status", "updated_at"])
+    other_row.parser_name = "kakao_bank"
+    other_row.save(update_fields=["parser_name", "updated_at"])
+
+    call_command("reprocess_parser_documents", institution="toss_bank", parser_version="0.9")
+
+    matching.refresh_from_db()
+    reviewed.refresh_from_db()
+    other.refresh_from_db()
+    matching_row.refresh_from_db()
+    reviewed_row.refresh_from_db()
+    assert matching.processing_status == SourceDocument.Status.QUEUED
+    assert reviewed.processing_status == SourceDocument.Status.QUEUED
+    assert other.processing_status == SourceDocument.Status.READY_FOR_REVIEW
+    assert matching_row.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    assert reviewed_row.review_status == ImportedObservation.ReviewStatus.CORRECTED
+    assert ProcessingJob.objects.filter(document_id=matching.pk).exists()
+
+
+def test_parser_reprocess_command_requires_a_target() -> None:
+    with pytest.raises(CommandError, match="--institution or --parser-version"):
+        call_command("reprocess_parser_documents")
+
+
+def test_parser_reprocess_command_skips_documents_already_in_flight(owner: Any) -> None:
+    document = ready_document(owner, file_sha256="4" * 64)
+    import_for(owner, document, make_ocr_run(owner, document))
+    document.processing_status = SourceDocument.Status.QUEUED
+    document.save(update_fields=["processing_status"])
+
+    call_command("reprocess_parser_documents", institution="toss_bank")
+
+    assert not ProcessingJob.objects.filter(document_id=document.pk).exists()
 
 
 def test_reprocessing_does_not_stack_duplicate_jobs(owner: Any) -> None:
