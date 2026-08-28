@@ -1,4 +1,13 @@
 repos:
+  - repo: local
+    hooks:
+      - id: fixture-sanitization
+        name: fixture sanitization
+        entry: uv run python scripts/check_fixture_sanitization.py
+        language: system
+        pass_filenames: false
+        files: ^tests/fixtures/
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.1
     hooks:
