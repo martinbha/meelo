@@ -315,7 +315,14 @@ class InstitutionParser(ScreenshotParser):
         ]
         validations = self.validate_balances(fields, directions)
         observations = [
-            self.build_observation(document, item, direction, validation, header_suffix)
+            self.build_observation(
+                document,
+                item,
+                direction,
+                validation,
+                header_suffix,
+                source_type=source_type,
+            )
             for item, direction, validation in zip(fields, directions, validations, strict=True)
         ]
         observations.extend(self.unreadable_observation(row, reason) for row, reason in failures)
@@ -755,6 +762,8 @@ class InstitutionParser(ScreenshotParser):
         direction: DirectionResolution,
         validation: BalanceValidation,
         header_suffix: str | None = None,
+        *,
+        source_type: str | None = None,
     ) -> ParsedObservation:
         amount = fields.amount
         money = amount.money if amount is not None else None
@@ -800,6 +809,11 @@ class InstitutionParser(ScreenshotParser):
             currency=str(money.resolved_currency) if money is not None else None,
             direction=direction.direction,
             merchant=fields.merchant,
+            counterparty=(
+                fields.merchant
+                if source_type in {"bank_transfer_confirmation", "bank_transaction_detail"}
+                else None
+            ),
             instrument_suffix=fields.instrument_suffix or header_suffix,
             balance_after=_decimal(fields.balance),
             source_region=row_region(fields.row),

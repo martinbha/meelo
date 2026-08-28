@@ -81,6 +81,7 @@ class ParsedObservation:
     currency: str | None
     direction: TransactionDirection | None
     merchant: str | None
+    counterparty: str | None = None
     instrument_suffix: str | None = None
     balance_after: Decimal | None = None
     balance_before: Decimal | None = None

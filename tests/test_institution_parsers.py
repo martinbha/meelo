@@ -439,6 +439,31 @@ def test_ambiguous_card_payment_requires_generic_review() -> None:
     assert selection.support.score < 0.5
 
 
+def test_detail_and_transfer_screens_produce_one_reconcilable_observation() -> None:
+    cases = {
+        case.name: case
+        for case in all_cases()
+        if case.name in {"toss-bank-transaction-detail", "toss-bank-transfer-confirmation"}
+    }
+
+    detail = build_registry().parse(
+        cases["toss-bank-transaction-detail"].document, cases["toss-bank-transaction-detail"].tokens
+    )
+    transfer = build_registry().parse(
+        cases["toss-bank-transfer-confirmation"].document,
+        cases["toss-bank-transfer-confirmation"].tokens,
+    )
+
+    assert len(detail.observations) == 1
+    assert len(transfer.observations) == 1
+    assert detail.observations[0].counterparty == "테스트수취인"
+    assert detail.observations[0].merchant == detail.observations[0].counterparty
+    assert detail.observations[0].approval_code == "864209"
+    assert detail.observations[0].balance_after is not None
+    assert transfer.observations[0].counterparty == "김민수"
+    assert transfer.observations[0].merchant == transfer.observations[0].counterparty
+
+
 def test_the_screen_source_type_reaches_rows_that_do_not_state_it() -> None:
     # An un-triaged upload has source_type "unknown". The statement title sits
     # on the header row, so a row-local source type would lose it and resolve

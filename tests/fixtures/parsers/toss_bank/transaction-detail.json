@@ -1,0 +1,26 @@
+{
+  "name": "toss-bank-transaction-detail",
+  "parser": "toss_bank",
+  "expected_source_type": "bank_transaction_detail",
+  "minimum_confidence": 0.6,
+  "document": {"source_type": "bank_transaction_detail", "width": 1080, "height": 1920, "uploaded_at": "2026-08-16T12:00:00+09:00", "time_zone": "Asia/Seoul"},
+  "tokens": [
+    {"text": "토스뱅크", "bounds": [40, 60, 220, 100]},
+    {"text": "거래상세", "bounds": [240, 60, 400, 100]},
+    {"text": "출금계좌", "bounds": [40, 140, 200, 178]},
+    {"text": "1002-***-4321", "bounds": [240, 140, 520, 178]},
+    {"text": "거래일시", "bounds": [40, 240, 200, 278]},
+    {"text": "2026.08.15", "bounds": [240, 240, 460, 278]},
+    {"text": "받는분", "bounds": [40, 320, 200, 358]},
+    {"text": "테스트수취인", "bounds": [240, 320, 480, 358]},
+    {"text": "출금", "bounds": [40, 400, 160, 438]},
+    {"text": "75,000원", "bounds": [240, 400, 440, 438]},
+    {"text": "잔액", "bounds": [40, 480, 160, 518]},
+    {"text": "425,000원", "bounds": [240, 480, 460, 518]},
+    {"text": "거래번호", "bounds": [40, 560, 200, 598]},
+    {"text": "864209", "bounds": [240, 560, 420, 598]}
+  ],
+  "expected": [
+    {"date": "2026-08-15", "merchant": "테스트수취인", "counterparty": "테스트수취인", "amount_minor": 75000, "currency": "KRW", "direction": "debit", "instrument_suffix": "4321", "balance_after_minor": 425000, "approval_code": "864209"}
+  ]
+}

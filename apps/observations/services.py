@@ -241,6 +241,7 @@ def _encrypt_fields(
     plaintexts = {
         "merchant_raw_encrypted": parsed.merchant or "",
         "merchant_normalized_encrypted": normalized,
+        "counterparty_raw_encrypted": parsed.counterparty or "",
         "amount_encrypted": _money_plaintext(parsed),
         "balance_after_encrypted": _balance_plaintext(parsed),
         "approval_code_encrypted": parsed.approval_code or "",
