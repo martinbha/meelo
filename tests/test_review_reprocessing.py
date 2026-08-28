@@ -173,6 +173,17 @@ def test_parser_reprocess_command_requires_a_target() -> None:
         call_command("reprocess_parser_documents")
 
 
+def test_parser_reprocess_command_skips_documents_already_in_flight(owner: Any) -> None:
+    document = ready_document(owner, file_sha256="4" * 64)
+    import_for(owner, document, make_ocr_run(owner, document))
+    document.processing_status = SourceDocument.Status.QUEUED
+    document.save(update_fields=["processing_status"])
+
+    call_command("reprocess_parser_documents", institution="toss_bank")
+
+    assert not ProcessingJob.objects.filter(document_id=document.pk).exists()
+
+
 def test_reprocessing_does_not_stack_duplicate_jobs(owner: Any) -> None:
     document = ready_document(owner)
     request_reprocess(document.pk, user=owner)

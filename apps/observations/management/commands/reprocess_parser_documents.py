@@ -4,7 +4,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.core.errors import InvalidRequestError
+from apps.core.errors import ConflictError, InvalidRequestError
 from apps.observations.models import ImportedObservation
 from apps.observations.reprocessing import request_reprocess
 from apps.processing.models import SourceDocument
@@ -35,7 +35,7 @@ class Command(BaseCommand):
         for document in documents.order_by("pk"):
             try:
                 request_reprocess(document.pk, user=document.user)
-            except InvalidRequestError as error:
+            except (ConflictError, InvalidRequestError) as error:
                 skipped += 1
                 self.stderr.write(f"Skipped {document.pk}: {error}")
             else:
