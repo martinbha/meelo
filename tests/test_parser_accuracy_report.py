@@ -23,7 +23,7 @@ from apps.parsing.fixture_harness import (
 from apps.parsing.generic import GenericTransactionListParser
 from apps.parsing.institutions import TossBankParser, build_institution_parsers
 from apps.parsing.registry import ParserRegistry
-from scripts.parser_accuracy_report import main
+from scripts.parser_accuracy_report import baseline_failures, main
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "parsers"
 
@@ -113,3 +113,41 @@ def test_report_command_emits_human_and_machine_output(
     assert "overall fixtures=10" in captured.out
     assert f"json_report={output}" in captured.out
     assert output.read_text(encoding="utf-8").startswith("{\n")
+
+
+def test_accuracy_gate_rejects_regression_but_allows_improvement() -> None:
+    baseline = {
+        "by_institution": {
+            "test_bank": {
+                "amount_accuracy": 0.9,
+                "date_accuracy": 0.9,
+                "merchant_accuracy": 0.8,
+                "missed_rate": 0.1,
+                "false_rate": 0.1,
+            }
+        }
+    }
+    improved = {
+        "by_institution": {
+            "test_bank": {
+                "amount_accuracy": 1.0,
+                "date_accuracy": 0.95,
+                "merchant_accuracy": 0.9,
+                "missed_rate": 0.0,
+                "false_rate": 0.05,
+            }
+        }
+    }
+    regressed = {
+        "by_institution": {
+            "test_bank": {
+                **improved["by_institution"]["test_bank"],
+                "merchant_accuracy": 0.75,
+            }
+        }
+    }
+
+    assert baseline_failures(improved, baseline) == ()
+    assert baseline_failures(regressed, baseline) == (
+        "test_bank.merchant_accuracy: 0.7500 < 0.8000",
+    )

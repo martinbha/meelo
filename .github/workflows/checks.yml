@@ -47,6 +47,12 @@ jobs:
       - name: Parser regression tests
         run: uv run pytest tests/test_institution_parsers.py -v
 
+      - name: Parser accuracy gate
+        run: >-
+          uv run python -m scripts.parser_accuracy_report
+          --json-output parser-accuracy-report.json
+          --baseline tests/parser_accuracy_baselines.json
+
       - name: Tests and coverage
         run: |
           uv run coverage run --branch -m pytest

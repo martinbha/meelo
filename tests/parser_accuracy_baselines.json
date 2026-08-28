@@ -1,0 +1,47 @@
+{
+  "by_institution": {
+    "hyundai_card": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    },
+    "kakao_bank": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    },
+    "kb_bank": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    },
+    "samsung_card": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    },
+    "shinhan_bank": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    },
+    "toss_bank": {
+      "amount_accuracy": 1.0,
+      "date_accuracy": 1.0,
+      "false_rate": 0.0,
+      "merchant_accuracy": 1.0,
+      "missed_rate": 0.0
+    }
+  },
+  "schema_version": 1
+}
