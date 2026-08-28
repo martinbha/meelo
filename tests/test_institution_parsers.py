@@ -93,6 +93,13 @@ def test_every_institution_ships_at_least_one_fixture() -> None:
     assert covered == expected
 
 
+def test_every_bank_parser_ships_a_low_quality_fixture() -> None:
+    banks = {"toss_bank", "kakao_bank", "shinhan_bank", "kb_bank"}
+    covered = {case.institution for case in all_cases() if case.quality == "low"}
+
+    assert banks <= covered
+
+
 @pytest.mark.parametrize("case", all_cases(), ids=lambda case: case.name)
 def test_fixtures_meet_accuracy_targets(case: ParserFixtureCase) -> None:
     metrics = run_parser_fixture_suite((case,), registry=build_registry())[0]

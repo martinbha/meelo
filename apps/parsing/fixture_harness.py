@@ -59,6 +59,7 @@ class ParserFixtureCase:
     document: DocumentMetadata
     tokens: tuple[NormalizedToken, ...]
     expected: tuple[ExpectedObservation, ...]
+    quality: str = "standard"
     minimum_confidence: float = 0.0
     maximum_confidence: float = 1.0
     expected_source_type: str | None = None
@@ -289,6 +290,7 @@ def load_parser_fixtures(
                     document=_document(payload.get("document", {})),
                     tokens=_tokens(payload.get("tokens", [])),
                     expected=_expected(payload.get("expected", [])),
+                    quality=str(payload.get("quality", "standard")),
                     minimum_confidence=float(payload.get("minimum_confidence", 0.0)),
                     maximum_confidence=float(payload.get("maximum_confidence", 1.0)),
                     expected_source_type=payload.get("expected_source_type"),

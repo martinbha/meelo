@@ -1,0 +1,28 @@
+{
+  "name": "toss-bank-low-quality-list",
+  "parser": "toss_bank",
+  "quality": "low",
+  "expected_source_type": "bank_transaction_list",
+  "minimum_confidence": 0.6,
+  "document": {"source_type": "bank_transaction_list", "width": 720, "height": 1280, "uploaded_at": "2026-08-20T12:00:00+09:00", "time_zone": "Asia/Seoul"},
+  "tokens": [
+    {"text": "토스뱅크", "bounds": [30, 40, 170, 75], "confidence": 0.58},
+    {"text": "거래내역", "bounds": [190, 40, 310, 75], "confidence": 0.55},
+    {"text": "2026.08.18", "bounds": [30, 180, 170, 215], "confidence": 0.52},
+    {"text": "테스트상점 하나", "bounds": [190, 180, 390, 215], "confidence": 0.54},
+    {"text": "출금", "bounds": [400, 180, 460, 215], "confidence": 0.51},
+    {"text": "7,300원", "bounds": [480, 180, 570, 215], "confidence": 0.56},
+    {"text": "잔액", "bounds": [580, 180, 620, 215], "confidence": 0.50},
+    {"text": "892,700원", "bounds": [625, 180, 715, 215], "confidence": 0.53},
+    {"text": "08.17", "bounds": [30, 245, 120, 280], "confidence": 0.50},
+    {"text": "합성급여", "bounds": [190, 245, 310, 280], "confidence": 0.57},
+    {"text": "입금", "bounds": [400, 245, 460, 280], "confidence": 0.52},
+    {"text": "900,000원", "bounds": [480, 245, 570, 280], "confidence": 0.55},
+    {"text": "잔액", "bounds": [580, 245, 620, 280], "confidence": 0.51},
+    {"text": "900,000원", "bounds": [625, 245, 715, 280], "confidence": 0.54}
+  ],
+  "expected": [
+    {"date": "2026-08-18", "merchant": "테스트상점 하나", "amount_minor": 7300, "currency": "KRW", "direction": "debit", "balance_after_minor": 892700},
+    {"date": "2026-08-17", "merchant": "합성급여", "amount_minor": 900000, "currency": "KRW", "direction": "credit", "balance_after_minor": 900000}
+  ]
+}

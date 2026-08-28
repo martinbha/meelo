@@ -1,0 +1,17 @@
+{
+  "name": "kb-bank-low-quality-list", "parser": "kb_bank", "quality": "low",
+  "expected_source_type": "bank_transaction_list", "minimum_confidence": 0.6,
+  "document": {"source_type": "bank_transaction_list", "width": 720, "height": 1280, "uploaded_at": "2026-08-20T12:00:00+09:00", "time_zone": "Asia/Seoul"},
+  "tokens": [
+    {"text": "KB국민은행", "bounds": [30, 40, 190, 75], "confidence": 0.55},
+    {"text": "거래일", "bounds": [30, 120, 120, 155], "confidence": 0.51},
+    {"text": "출금", "bounds": [390, 120, 450, 155], "confidence": 0.53},
+    {"text": "입금", "bounds": [480, 120, 540, 155], "confidence": 0.50},
+    {"text": "잔액", "bounds": [600, 120, 660, 155], "confidence": 0.52},
+    {"text": "2026.08.14", "bounds": [30, 180, 170, 215], "confidence": 0.50},
+    {"text": "테스트상점 넷", "bounds": [190, 180, 320, 215], "confidence": 0.54},
+    {"text": "120,000", "bounds": [480, 180, 550, 215], "confidence": 0.56},
+    {"text": "820,000", "bounds": [590, 180, 710, 215], "confidence": 0.51}
+  ],
+  "expected": [{"date": "2026-08-14", "merchant": "테스트상점 넷", "amount_minor": 120000, "currency": "KRW", "direction": "credit", "balance_after_minor": 820000}]
+}

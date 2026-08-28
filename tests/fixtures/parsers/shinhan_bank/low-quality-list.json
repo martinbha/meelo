@@ -1,0 +1,17 @@
+{
+  "name": "shinhan-bank-low-quality-list", "parser": "shinhan_bank", "quality": "low",
+  "expected_source_type": "bank_transaction_list", "minimum_confidence": 0.6,
+  "document": {"source_type": "bank_transaction_list", "width": 720, "height": 1280, "uploaded_at": "2026-08-20T12:00:00+09:00", "time_zone": "Asia/Seoul"},
+  "tokens": [
+    {"text": "신한은행", "bounds": [30, 40, 170, 75], "confidence": 0.56},
+    {"text": "거래일자", "bounds": [30, 120, 140, 155], "confidence": 0.52},
+    {"text": "출금", "bounds": [390, 120, 450, 155], "confidence": 0.51},
+    {"text": "입금", "bounds": [480, 120, 540, 155], "confidence": 0.50},
+    {"text": "거래후잔액", "bounds": [580, 120, 710, 155], "confidence": 0.54},
+    {"text": "2026.08.15", "bounds": [30, 180, 170, 215], "confidence": 0.50},
+    {"text": "합성송금", "bounds": [190, 180, 320, 215], "confidence": 0.53},
+    {"text": "31,000", "bounds": [390, 180, 450, 215], "confidence": 0.55},
+    {"text": "669,000", "bounds": [580, 180, 710, 215], "confidence": 0.52}
+  ],
+  "expected": [{"date": "2026-08-15", "merchant": "합성송금", "amount_minor": 31000, "currency": "KRW", "direction": "debit", "balance_after_minor": 669000}]
+}

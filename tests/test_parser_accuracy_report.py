@@ -99,7 +99,7 @@ def test_human_and_json_reports_are_stable_across_runs() -> None:
     assert summarize_report(first) == summarize_report(second)
     assert first.to_json().endswith("\n")
     assert '"schema_version": 1' in first.to_json()
-    assert "overall fixtures=10" in summarize_report(first)
+    assert f"overall fixtures={len(metrics)}" in summarize_report(first)
 
 
 def test_report_command_emits_human_and_machine_output(
@@ -110,7 +110,7 @@ def test_report_command_emits_human_and_machine_output(
     assert main(["--fixtures", str(FIXTURE_ROOT), "--json-output", str(output)]) == 0
 
     captured = capsys.readouterr()
-    assert "overall fixtures=10" in captured.out
+    assert f"overall fixtures={len(load_parser_fixtures(FIXTURE_ROOT))}" in captured.out
     assert f"json_report={output}" in captured.out
     assert output.read_text(encoding="utf-8").startswith("{\n")
 
