@@ -24,6 +24,7 @@
     {
       "date": "2026-08-16",
       "merchant": "김민수",
+      "counterparty": "김민수",
       "amount_minor": 150000,
       "currency": "KRW",
       "direction": "debit",

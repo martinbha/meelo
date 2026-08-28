@@ -471,7 +471,7 @@ def test_accepting_an_observation_stores_nothing_readable(owner: Any, account: A
         selection=ParserSelection(
             ParserMetadata("toss_bank", "1.0"),
             ParserSupport(0.95, "bank_transaction_list", ()),
-            (parsed(),),
+            (parsed(counterparty=MERCHANT),),
         ),
         data_key=KEY,
         key_version=1,

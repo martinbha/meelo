@@ -39,6 +39,7 @@ class ExpectedObservation:
 
     occurred_on: date | None = None
     merchant: str | None = None
+    counterparty: str | None = None
     amount_minor: int | None = None
     currency: str | None = None
     direction: str | None = None
@@ -258,6 +259,7 @@ def _expected(payload: Sequence[Mapping[str, Any]]) -> tuple[ExpectedObservation
         ExpectedObservation(
             occurred_on=_parse_date(item.get("date")),
             merchant=item.get("merchant"),
+            counterparty=item.get("counterparty"),
             amount_minor=item.get("amount_minor"),
             currency=item.get("currency"),
             direction=item.get("direction"),
@@ -357,6 +359,7 @@ def _compare(
             name
             for name, actual_value, expected_value in (
                 ("instrument_suffix", actual.instrument_suffix, expected.instrument_suffix),
+                ("counterparty", actual.counterparty, expected.counterparty),
                 ("approval_code", actual.approval_code, expected.approval_code),
                 ("installment_months", actual.installment_months, expected.installment_months),
                 ("is_settlement", actual.is_settlement, expected.is_settlement),
