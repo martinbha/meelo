@@ -136,6 +136,19 @@ class ParsedObservation:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedStatement:
+    """A card statement summary kept separate from transaction candidates."""
+
+    period_start: date
+    period_end: date
+    due_date: date
+    total_minor: int
+    currency: str
+    summary: ParsedObservation
+    line_items: tuple[ParsedObservation, ...] = ()
+
+
 class ScreenshotParser(ABC):
     @property
     @abstractmethod

@@ -7,6 +7,7 @@ from .contracts import (
     DocumentMetadata,
     NormalizedToken,
     ParsedObservation,
+    ParsedStatement,
     ParserMetadata,
     ParserSupport,
     ScreenshotParser,
@@ -22,6 +23,7 @@ class ParserSelection:
     metadata: ParserMetadata
     support: ParserSupport
     observations: tuple[ParsedObservation, ...]
+    statement: ParsedStatement | None = None
 
 
 class ParserRegistry:
@@ -80,4 +82,24 @@ class ParserRegistry:
             )
             for observation in parser.parse(document, tokens)
         )
-        return ParserSelection(metadata, support, observations)
+        statement: ParsedStatement | None = None
+        if support.detected_source_type == "credit_card_statement":
+            builder = getattr(parser, "build_statement", None)
+            if callable(builder):
+                statement = builder(document, observations)
+            if statement is None:
+                parser = self._generic
+                metadata = parser.metadata
+                support = parser.supports(document, tokens)
+                observations = tuple(
+                    replace(
+                        observation,
+                        parser_name=metadata.name,
+                        parser_version=metadata.version,
+                        parser_support_score=support.score,
+                    )
+                    for observation in parser.parse(document, tokens)
+                )
+            else:
+                observations = statement.line_items
+        return ParserSelection(metadata, support, observations, statement)

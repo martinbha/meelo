@@ -319,7 +319,10 @@ def _compare(
     case: ParserFixtureCase,
     selection: ParserSelection,
 ) -> ParserMetrics:
-    observed = _ordered(selection.observations)
+    observed_items = selection.observations
+    if selection.statement is not None:
+        observed_items = (selection.statement.summary, *observed_items)
+    observed = _ordered(observed_items)
     compared = min(len(case.expected), len(observed))
     mismatches: list[str] = []
     amount_matches = date_matches = merchant_matches = 0
