@@ -13,6 +13,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db import transaction as db_transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.core import metrics
@@ -334,6 +335,61 @@ def record_proposals(
         )
         for proposal in proposals
     )
+
+
+@db_transaction.atomic
+def record_statement_memberships(
+    *,
+    user: Any,
+    proposals: Iterable[MatchProposal],
+    data_key: bytes | None = None,
+    key_version: int = 1,
+) -> tuple[ReconciliationMatch, ...]:
+    """Persist memberships while allowing one active statement per purchase."""
+    stored: list[ReconciliationMatch] = []
+    for proposal in proposals:
+        if proposal.match_type != ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP:
+            raise ReconciliationError("Expected only statement membership proposals.")
+        purchase_id = proposal.right_observation_id
+        if (
+            not ImportedObservation.objects.select_for_update()
+            .filter(pk=purchase_id, user_id=user.pk)
+            .exists()
+        ):
+            raise ForbiddenError("The purchase does not belong to the requesting user.")
+        conflict = (
+            ReconciliationMatch.objects.select_for_update()
+            .filter(
+                Q(left_observation_id=purchase_id) | Q(right_observation_id=purchase_id),
+                match_type=ReconciliationMatch.MatchType.STATEMENT_MEMBERSHIP,
+                status__in=(
+                    ReconciliationMatch.Status.PROPOSED,
+                    ReconciliationMatch.Status.CONFIRMED,
+                ),
+            )
+            .exclude(
+                Q(left_observation_id=proposal.left_observation_id)
+                & Q(right_observation_id=proposal.right_observation_id)
+                | Q(left_observation_id=proposal.right_observation_id)
+                & Q(right_observation_id=proposal.left_observation_id)
+            )
+            .exists()
+        )
+        if conflict:
+            raise ConflictError("This purchase already belongs to an active statement.")
+        stored.append(
+            record_match(
+                user=user,
+                left_observation_id=proposal.left_observation_id,
+                right_observation_id=purchase_id,
+                match_type=proposal.match_type,
+                score=proposal.score,
+                features=proposal.features,
+                data_key=data_key,
+                key_version=key_version,
+            )
+        )
+    return tuple(stored)
 
 
 @db_transaction.atomic

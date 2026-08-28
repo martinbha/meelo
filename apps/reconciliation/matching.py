@@ -79,6 +79,75 @@ class MatchProposal:
         return self.score < STRONG_MATCH_SCORE
 
 
+@dataclass(frozen=True, slots=True)
+class StatementMembershipCoverage:
+    """Card purchases proposed for one statement and their remaining gap."""
+
+    statement_observation_id: Any
+    statement_total_minor: int
+    matched_total_minor: int
+    proposals: tuple[MatchProposal, ...]
+
+    @property
+    def gap_minor(self) -> int:
+        return self.statement_total_minor - self.matched_total_minor
+
+    @property
+    def is_balanced(self) -> bool:
+        return self.gap_minor == 0
+
+
+def match_statement_membership(
+    statement: ObservationFacts,
+    purchases: Sequence[ObservationFacts],
+    *,
+    period_start: date,
+    period_end: date,
+    card_id: Any,
+    statement_total_minor: int,
+) -> StatementMembershipCoverage:
+    """Propose purchases from the same owner, card, and statement period."""
+    if period_end < period_start:
+        raise ValueError("Statement period end cannot precede its start.")
+    if statement_total_minor < 0:
+        raise ValueError("Statement total cannot be negative.")
+
+    eligible = [
+        purchase
+        for purchase in purchases
+        if purchase.user_id == statement.user_id
+        and purchase.observation_id != statement.observation_id
+        and purchase.instrument_id == card_id
+        and purchase.occurred_at is not None
+        and period_start <= purchase.occurred_at <= period_end
+        and purchase.direction == ImportedObservation.Direction.DEBIT
+        and purchase.amount_minor is not None
+    ]
+    eligible.sort(key=lambda item: (item.occurred_at, str(item.observation_id)))
+    matched_total = sum(item.amount_minor or 0 for item in eligible)
+    balanced = matched_total == statement_total_minor
+    proposals = tuple(
+        MatchProposal(
+            statement.observation_id,
+            purchase.observation_id,
+            "statement_membership",
+            100 if balanced else 85,
+            (
+                "same_card",
+                "within_statement_period",
+                *(("statement_total_balanced",) if balanced else ("statement_total_gap",)),
+            ),
+        )
+        for purchase in eligible
+    )
+    return StatementMembershipCoverage(
+        statement_observation_id=statement.observation_id,
+        statement_total_minor=statement_total_minor,
+        matched_total_minor=matched_total,
+        proposals=proposals,
+    )
+
+
 def _similar_merchant(left: str, right: str) -> bool:
     if not left or not right:
         return False
