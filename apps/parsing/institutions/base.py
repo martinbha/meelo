@@ -26,6 +26,7 @@ from ..balances import BalanceRow, BalanceStatus, BalanceValidation, validate_ba
 from ..contracts import (
     DocumentMetadata,
     NormalizedToken,
+    ParsedCardPayment,
     ParsedObservation,
     ParsedStatement,
     ParserMetadata,
@@ -348,6 +349,30 @@ class InstitutionParser(ScreenshotParser):
             currency=summary.currency,
             summary=summary,
             line_items=line_items,
+        )
+
+    def build_card_payment(
+        self, observations: Sequence[ParsedObservation]
+    ) -> ParsedCardPayment | None:
+        """Build one issuer-qualified settlement without guessing ambiguity."""
+        candidates = [item for item in observations if item.is_settlement]
+        if len(candidates) != 1:
+            return None
+        summary = candidates[0]
+        if (
+            summary.occurred_on is None
+            or summary.amount_minor is None
+            or summary.currency is None
+            or summary.ambiguous_fields
+        ):
+            return None
+        return ParsedCardPayment(
+            issuer=self.profile.name,
+            occurred_on=summary.occurred_on,
+            amount_minor=summary.amount_minor,
+            currency=summary.currency,
+            instrument_suffix=summary.instrument_suffix,
+            summary=summary,
         )
 
     # ------------------------------------------------------------------
