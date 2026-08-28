@@ -13,6 +13,7 @@ what the OCR pipeline hands them.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -54,6 +55,7 @@ class ParserFixtureCase:
 
     name: str
     parser: str
+    institution: str
     document: DocumentMetadata
     tokens: tuple[NormalizedToken, ...]
     expected: tuple[ExpectedObservation, ...]
@@ -68,6 +70,7 @@ class ParserMetrics:
 
     name: str
     parser: str
+    institution: str
     selected_parser: str
     support_score: float
     detected_source_type: str
@@ -117,6 +120,85 @@ class ParserMetrics:
     @property
     def is_clean(self) -> bool:
         return not self.mismatches and self.missed == 0 and self.false_positives == 0
+
+
+@dataclass(frozen=True, slots=True)
+class AccuracyAggregate:
+    """Weighted accuracy totals for a report group."""
+
+    fixtures: int
+    expected_count: int
+    observed_count: int
+    compared: int
+    amount_matches: int
+    date_matches: int
+    merchant_matches: int
+    missed: int
+    false_positives: int
+
+    def _accuracy(self, matches: int) -> float:
+        return matches / self.compared if self.compared else 1.0
+
+    @property
+    def amount_accuracy(self) -> float:
+        return self._accuracy(self.amount_matches)
+
+    @property
+    def date_accuracy(self) -> float:
+        return self._accuracy(self.date_matches)
+
+    @property
+    def merchant_accuracy(self) -> float:
+        return self._accuracy(self.merchant_matches)
+
+    @property
+    def missed_rate(self) -> float:
+        return self.missed / self.expected_count if self.expected_count else 0.0
+
+    @property
+    def false_rate(self) -> float:
+        return self.false_positives / self.observed_count if self.observed_count else 0.0
+
+    def as_dict(self) -> dict[str, int | float]:
+        """Return stable report fields without run-specific metadata."""
+        return {
+            "amount_accuracy": self.amount_accuracy,
+            "compared": self.compared,
+            "date_accuracy": self.date_accuracy,
+            "expected_count": self.expected_count,
+            "false_positives": self.false_positives,
+            "false_rate": self.false_rate,
+            "fixtures": self.fixtures,
+            "merchant_accuracy": self.merchant_accuracy,
+            "missed": self.missed,
+            "missed_rate": self.missed_rate,
+            "observed_count": self.observed_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ParserAccuracyReport:
+    """Deterministic aggregates at every required reporting level."""
+
+    overall: AccuracyAggregate
+    by_parser: Mapping[str, AccuracyAggregate]
+    by_institution: Mapping[str, AccuracyAggregate]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "by_institution": {
+                name: aggregate.as_dict() for name, aggregate in sorted(self.by_institution.items())
+            },
+            "by_parser": {
+                name: aggregate.as_dict() for name, aggregate in sorted(self.by_parser.items())
+            },
+            "overall": self.overall.as_dict(),
+            "schema_version": 1,
+        }
+
+    def to_json(self) -> str:
+        """Render a byte-stable machine-readable report."""
+        return json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
 def _parse_date(value: object) -> date | None:
@@ -203,6 +285,7 @@ def load_parser_fixtures(
                 ParserFixtureCase(
                     name=str(payload["name"]),
                     parser=str(payload["parser"]),
+                    institution=path.parent.name,
                     document=_document(payload.get("document", {})),
                     tokens=_tokens(payload.get("tokens", [])),
                     expected=_expected(payload.get("expected", [])),
@@ -288,6 +371,7 @@ def _compare(
     return ParserMetrics(
         name=case.name,
         parser=case.parser,
+        institution=case.institution,
         selected_parser=selection.metadata.name,
         support_score=selection.support.score,
         detected_source_type=selection.support.detected_source_type,
@@ -311,6 +395,55 @@ def run_parser_fixture_suite(
     """Parse every case through the registry and score the results."""
 
     return tuple(_compare(case, registry.parse(case.document, case.tokens)) for case in cases)
+
+
+def _aggregate(metrics: Sequence[ParserMetrics]) -> AccuracyAggregate:
+    return AccuracyAggregate(
+        fixtures=len(metrics),
+        expected_count=sum(item.expected_count for item in metrics),
+        observed_count=sum(item.observed_count for item in metrics),
+        compared=sum(item.compared for item in metrics),
+        amount_matches=sum(item.amount_matches for item in metrics),
+        date_matches=sum(item.date_matches for item in metrics),
+        merchant_matches=sum(item.merchant_matches for item in metrics),
+        missed=sum(item.missed for item in metrics),
+        false_positives=sum(item.false_positives for item in metrics),
+    )
+
+
+def build_accuracy_report(metrics: Sequence[ParserMetrics]) -> ParserAccuracyReport:
+    """Aggregate fixture metrics per parser, per institution, and overall."""
+    parser_groups: dict[str, list[ParserMetrics]] = defaultdict(list)
+    institution_groups: dict[str, list[ParserMetrics]] = defaultdict(list)
+    for item in metrics:
+        parser_groups[item.parser].append(item)
+        institution_groups[item.institution].append(item)
+    return ParserAccuracyReport(
+        overall=_aggregate(metrics),
+        by_parser={name: _aggregate(group) for name, group in sorted(parser_groups.items())},
+        by_institution={
+            name: _aggregate(group) for name, group in sorted(institution_groups.items())
+        },
+    )
+
+
+def summarize_report(report: ParserAccuracyReport) -> str:
+    """Render concise human output alongside the JSON report."""
+    lines: list[str] = []
+    for level, groups in (("parser", report.by_parser), ("institution", report.by_institution)):
+        for name, item in sorted(groups.items()):
+            lines.append(
+                f"{level}={name} fixtures={item.fixtures} amount={item.amount_accuracy:.4f} "
+                f"date={item.date_accuracy:.4f} merchant={item.merchant_accuracy:.4f} "
+                f"missed={item.missed_rate:.4f} false={item.false_rate:.4f}"
+            )
+    item = report.overall
+    lines.append(
+        f"overall fixtures={item.fixtures} amount={item.amount_accuracy:.4f} "
+        f"date={item.date_accuracy:.4f} merchant={item.merchant_accuracy:.4f} "
+        f"missed={item.missed_rate:.4f} false={item.false_rate:.4f}"
+    )
+    return "\n".join(lines)
 
 
 def summarize(metrics: Sequence[ParserMetrics]) -> str:
