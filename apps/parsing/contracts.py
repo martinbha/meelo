@@ -149,6 +149,18 @@ class ParsedStatement:
     line_items: tuple[ParsedObservation, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedCardPayment:
+    """A card-balance payment ready for settlement matching."""
+
+    issuer: str
+    occurred_on: date
+    amount_minor: int
+    currency: str
+    instrument_suffix: str | None
+    summary: ParsedObservation
+
+
 class ScreenshotParser(ABC):
     @property
     @abstractmethod

@@ -31,6 +31,7 @@ from apps.ocr.models import OcrRun
 from apps.parsing.contracts import ParsedObservation, TransactionDirection
 from apps.parsing.registry import ParserSelection
 from apps.processing.models import SourceDocument
+from apps.transactions.models import CanonicalTransaction
 
 from .models import ImportedObservation
 from .risk import projections, score_flags
@@ -183,6 +184,11 @@ def _build(
         occurred_at=parsed.occurred_on,
         currency=(parsed.currency or "").upper(),
         direction=_direction(parsed.direction),
+        transaction_type_guess=(
+            CanonicalTransaction.TransactionType.CREDIT_CARD_PAYMENT
+            if parsed.is_settlement
+            else CanonicalTransaction.TransactionType.UNKNOWN
+        ),
         installment_months=parsed.installment_months,
         ocr_confidence=ocr_confidence,
         parser_confidence=parser_confidence,

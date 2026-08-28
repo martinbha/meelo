@@ -407,6 +407,38 @@ def test_unparseable_statement_falls_back_to_generic_with_low_confidence() -> No
     assert selection.support.score < 0.5
 
 
+def test_card_payment_is_issuer_qualified_and_never_a_purchase() -> None:
+    case = next(item for item in all_cases() if item.name == "hyundai-card-payment-receipt")
+
+    selection = build_registry().parse(case.document, case.tokens)
+
+    assert selection.card_payment is not None
+    assert selection.card_payment.issuer == "hyundai_card"
+    assert selection.card_payment.amount_minor == 382_400
+    assert selection.card_payment.occurred_on == date(2026, 8, 12)
+    assert selection.card_payment.instrument_suffix == "1234"
+    assert selection.observations == (selection.card_payment.summary,)
+    assert selection.card_payment.summary.is_settlement is True
+
+
+def test_ambiguous_card_payment_requires_generic_review() -> None:
+    tokens = tokens_from(
+        (
+            (("현대카드", 40), ("결제완료", 240)),
+            (("2026.08.12", 40), ("카드대금", 240), ("100,000원", 700)),
+            (("2026.08.11", 40), ("카드대금", 240), ("50,000원", 700)),
+        )
+    )
+
+    selection = build_registry().parse(
+        document("credit_card_payment", instrument_type="credit_card"), tokens
+    )
+
+    assert selection.card_payment is None
+    assert selection.metadata.name == "generic"
+    assert selection.support.score < 0.5
+
+
 def test_the_screen_source_type_reaches_rows_that_do_not_state_it() -> None:
     # An un-triaged upload has source_type "unknown". The statement title sits
     # on the header row, so a row-local source type would lose it and resolve

@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from .contracts import (
     DocumentMetadata,
     NormalizedToken,
+    ParsedCardPayment,
     ParsedObservation,
     ParsedStatement,
     ParserMetadata,
@@ -24,6 +25,7 @@ class ParserSelection:
     support: ParserSupport
     observations: tuple[ParsedObservation, ...]
     statement: ParsedStatement | None = None
+    card_payment: ParsedCardPayment | None = None
 
 
 class ParserRegistry:
@@ -102,4 +104,22 @@ class ParserRegistry:
                 )
             else:
                 observations = statement.line_items
-        return ParserSelection(metadata, support, observations, statement)
+        card_payment: ParsedCardPayment | None = None
+        if support.detected_source_type == "credit_card_payment":
+            builder = getattr(parser, "build_card_payment", None)
+            if callable(builder):
+                card_payment = builder(observations)
+            if card_payment is None:
+                parser = self._generic
+                metadata = parser.metadata
+                support = parser.supports(document, tokens)
+                observations = tuple(
+                    replace(
+                        observation,
+                        parser_name=metadata.name,
+                        parser_version=metadata.version,
+                        parser_support_score=support.score,
+                    )
+                    for observation in parser.parse(document, tokens)
+                )
+        return ParserSelection(metadata, support, observations, statement, card_payment)

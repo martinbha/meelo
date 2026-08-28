@@ -441,6 +441,25 @@ def parsed(**overrides: Any) -> ParsedObservation:
     return ParsedObservation(**values)
 
 
+def test_card_payment_import_sets_the_settlement_type(owner: Any) -> None:
+    document = make_document(owner, file_sha256="d" * 64)
+    run = make_ocr_run(owner, document)
+
+    result = import_parser_selection(
+        document=document,
+        ocr_run=run,
+        selection=ParserSelection(
+            ParserMetadata("hyundai_card", "1.0"),
+            ParserSupport(0.95, "credit_card_payment", ()),
+            (parsed(is_settlement=True, parser_name="hyundai_card"),),
+        ),
+        data_key=KEY,
+        key_version=1,
+    )
+
+    assert result.observations[0].transaction_type_guess == "credit_card_payment"
+
+
 def test_accepting_an_observation_stores_nothing_readable(owner: Any, account: Any) -> None:
     """The observation held these encrypted; acceptance must not undo that."""
 
