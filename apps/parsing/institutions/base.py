@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from calendar import monthrange
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
@@ -26,6 +27,7 @@ from ..contracts import (
     DocumentMetadata,
     NormalizedToken,
     ParsedObservation,
+    ParsedStatement,
     ParserMetadata,
     ParserSupport,
     ScreenshotParser,
@@ -317,6 +319,36 @@ class InstitutionParser(ScreenshotParser):
         ]
         observations.extend(self.unreadable_observation(row, reason) for row, reason in failures)
         return tuple(observations)
+
+    def build_statement(
+        self,
+        document: DocumentMetadata,
+        observations: Sequence[ParsedObservation],
+    ) -> ParsedStatement | None:
+        """Separate one statement total from its purchase line items."""
+        totals = [item for item in observations if item.is_settlement]
+        if len(totals) != 1:
+            return None
+        summary = totals[0]
+        if (
+            document.statement_month is None
+            or summary.occurred_on is None
+            or summary.amount_minor is None
+            or summary.currency is None
+        ):
+            return None
+        period_start = document.statement_month.replace(day=1)
+        period_end = period_start.replace(day=monthrange(period_start.year, period_start.month)[1])
+        line_items = tuple(item for item in observations if item is not summary)
+        return ParsedStatement(
+            period_start=period_start,
+            period_end=period_end,
+            due_date=summary.occurred_on,
+            total_minor=summary.amount_minor,
+            currency=summary.currency,
+            summary=summary,
+            line_items=line_items,
+        )
 
     # ------------------------------------------------------------------
     # Hooks

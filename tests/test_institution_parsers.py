@@ -367,16 +367,44 @@ def test_card_statement_payments_are_not_emitted_as_purchases() -> None:
         )
     )
 
-    settlement, purchase = (
-        build_registry()
-        .parse(document("credit_card_statement", instrument_type="credit_card"), tokens)
-        .observations
+    selection = build_registry().parse(
+        document(
+            "credit_card_statement",
+            instrument_type="credit_card",
+            statement_month=date(2026, 8, 1),
+        ),
+        tokens,
     )
+    assert selection.statement is not None
+    settlement = selection.statement.summary
+    (purchase,) = selection.observations
 
     assert settlement.is_settlement is True
     assert settlement.direction is TransactionDirection.CREDIT
     assert purchase.is_settlement is False
     assert purchase.direction is TransactionDirection.DEBIT
+    assert selection.statement.total_minor == 1_204_300
+    assert selection.statement.period_start == date(2026, 8, 1)
+    assert selection.statement.period_end == date(2026, 8, 31)
+    assert selection.statement.due_date == date(2026, 8, 25)
+    assert selection.statement.line_items == (purchase,)
+
+
+def test_unparseable_statement_falls_back_to_generic_with_low_confidence() -> None:
+    tokens = tokens_from(((("삼성카드", 40), ("이용대금명세서", 240), ("읽을 수 없음", 540)),))
+
+    selection = build_registry().parse(
+        document(
+            "credit_card_statement",
+            instrument_type="credit_card",
+            statement_month=date(2026, 8, 1),
+        ),
+        tokens,
+    )
+
+    assert selection.statement is None
+    assert selection.metadata.name == "generic"
+    assert selection.support.score < 0.5
 
 
 def test_the_screen_source_type_reaches_rows_that_do_not_state_it() -> None:
