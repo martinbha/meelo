@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Recovery codes · Finance workspace{% endblock %}
+{% block content %}
+<section aria-labelledby="recovery-heading">
+  <h1 id="recovery-heading">Save your recovery codes</h1>
+  <p>Each code works once. This is the only time they will be shown.</p>
+  <ul>{% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}</ul>
+  <form method="get" action="{% url 'account-security' %}">
+    <button type="submit">I have saved these codes</button>
+  </form>
+</section>
+{% endblock %}

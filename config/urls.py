@@ -66,6 +66,7 @@ from apps.transactions.views import (
 )
 from apps.users.views import (
     AccountSecurityView,
+    RecoveryCodeRegenerateView,
     TOTPDisableView,
     TOTPEnrollView,
     UserLoginView,
@@ -240,6 +241,11 @@ urlpatterns = [
     path("account/security/", AccountSecurityView.as_view(), name="account-security"),
     path("account/security/totp/enroll/", TOTPEnrollView.as_view(), name="totp-enroll"),
     path("account/security/totp/disable/", TOTPDisableView.as_view(), name="totp-disable"),
+    path(
+        "account/security/recovery-codes/regenerate/",
+        RecoveryCodeRegenerateView.as_view(),
+        name="recovery-codes-regenerate",
+    ),
     # The detail page already states the processing status. #189 replaces this
     # with the polling endpoint the progress UI needs.
     path(

@@ -1,4 +1,5 @@
 import base64
+from typing import cast
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -22,6 +23,8 @@ from qrcode.image.svg import SvgPathImage
 from apps.core.audit import record_audit_event
 
 from .forms import EmailAuthenticationForm, TOTPConfirmationForm, TOTPDisableForm
+from .models import User
+from .recovery import regenerate_recovery_codes
 from .security import security_overview
 
 
@@ -162,7 +165,8 @@ class TOTPEnrollView(LoginRequiredMixin, View):
             device.confirmed = True
             device.save(update_fields=("confirmed",))
             record_audit_event(user=request.user, event_type="two_factor_enabled", obj=device)
-            return redirect("account-security")
+            codes = regenerate_recovery_codes(cast(User, request.user))
+            return render(request, "users/recovery_codes.html", {"codes": codes})
         if form.is_valid():
             form.add_error("token", "The code is incorrect or expired.")
         return render(
@@ -192,3 +196,11 @@ class TOTPDisableView(LoginRequiredMixin, View):
         if form.is_valid():
             form.add_error("password", "The password is incorrect.")
         return render(request, self.template_name, {"form": form}, status=400)
+
+
+class RecoveryCodeRegenerateView(LoginRequiredMixin, View):
+    template_name = "users/recovery_codes.html"
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        codes = regenerate_recovery_codes(cast(User, request.user))
+        return render(request, self.template_name, {"codes": codes})

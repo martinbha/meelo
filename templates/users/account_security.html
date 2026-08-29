@@ -37,6 +37,10 @@
         code{{ overview.recovery_codes_remaining|pluralize }} remaining.
       </p>
       <p><a href="{% url 'totp-disable' %}">Disable two-factor authentication</a></p>
+      <form method="post" action="{% url 'recovery-codes-regenerate' %}">
+        {% csrf_token %}
+        <button type="submit">Generate new recovery codes</button>
+      </form>
     {% else %}
       <p>Off. <a href="{% url 'totp-enroll' %}">Set up an authenticator</a>.</p>
     {% endif %}

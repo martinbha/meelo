@@ -8,6 +8,7 @@ from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from apps.core.models import AuditEvent
+from apps.users.models import RecoveryCode
 from tests.factories import make_user
 
 pytestmark = pytest.mark.django_db
@@ -39,9 +40,11 @@ def test_enrollment_renders_local_qr_and_confirms_current_code(
 
     response = signed_in.post(reverse("totp-enroll"), {"token": str(totp(device.bin_key)).zfill(6)})
 
-    assert response.status_code == 302
+    assert response.status_code == 200
     device.refresh_from_db()
     assert device.confirmed is True
+    assert RecoveryCode.objects.filter(user=owner).count() == 10
+    assert b"Save your recovery codes" in response.content
     assert AuditEvent.objects.filter(user=owner, event_type="two_factor_enabled").exists()
 
 
