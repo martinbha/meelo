@@ -650,6 +650,7 @@ dependencies = [
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pytesseract" },
+    { name = "qrcode" },
     { name = "rapidfuzz" },
     { name = "sentry-sdk" },
 ]
@@ -664,6 +665,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-django" },
     { name = "ruff" },
+    { name = "types-qrcode" },
 ]
 
 [package.metadata]
@@ -681,6 +683,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11,<13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pytesseract", specifier = ">=0.3.13,<1" },
+    { name = "qrcode", specifier = ">=8,<9" },
     { name = "rapidfuzz", specifier = ">=3.10,<4" },
     { name = "sentry-sdk", specifier = ">=2,<3" },
 ]
@@ -695,6 +698,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3,<9" },
     { name = "pytest-django", specifier = ">=4.9,<5" },
     { name = "ruff", specifier = ">=0.9,<1" },
+    { name = "types-qrcode", specifier = ">=8,<9" },
 ]
 
 [[package]]
@@ -1797,6 +1801,18 @@ wheels = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/b2/7fc2931bfae0af02d5f53b174e9cf701adbb35f39d69c2af63d4a39f81a9/qrcode-8.2.tar.gz", hash = "sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c", size = 43317 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/b8/d2d6d731733f51684bbf76bf34dab3b70a9148e8f2cef2bb544fccec681a/qrcode-8.2-py3-none-any.whl", hash = "sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f", size = 45986 },
+]
+
+[[package]]
 name = "rapidfuzz"
 version = "3.14.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2042,6 +2058,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3f/6f/a28f44bcd56bebed42b028a2894c79853e2f5e6b5279e633cb3f287a05e7/types_pyyaml-6.0.12.20260724.tar.gz", hash = "sha256:3c1ce1bb73cd5ec02e90390c2b1f00e810d241d8825fd73ff359696839271b6b", size = 17893 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/42/0337fefc615e20ee55d1c8f71b774a9b2b734a04669139c20753b27a2a3a/types_pyyaml-6.0.12.20260724-py3-none-any.whl", hash = "sha256:d57db930a4b2efbc57cf430ec8882765d246929432fa253092f383902329a453", size = 20312 },
+]
+
+[[package]]
+name = "types-qrcode"
+version = "8.2.0.20260518"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/08/6f4cbdbdc1238e07ea0ad42ad45a6ea89fef6d5606782b0398bdf5a63f5f/types_qrcode-8.2.0.20260518.tar.gz", hash = "sha256:5079a2bf5fe57c8c44ae16867c5b41520522b58d21bb07e886770b7413160b04", size = 15280 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/6f/48acc11e4b5cf84ab8a04d065691b3d6d16a535821ba5ad2efcc3548f227/types_qrcode-8.2.0.20260518-py3-none-any.whl", hash = "sha256:7dc344a5877a92c03e2ceeda33bc91af1e09cc8b574b87729c4b66ccb46b0f55", size = 19823 },
 ]
 
 [[package]]
