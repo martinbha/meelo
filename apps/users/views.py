@@ -165,7 +165,8 @@ class TOTPEnrollView(LoginRequiredMixin, View):
             device.confirmed = True
             device.save(update_fields=("confirmed",))
             record_audit_event(user=request.user, event_type="two_factor_enabled", obj=device)
-            return redirect("account-security")
+            codes = regenerate_recovery_codes(cast(User, request.user))
+            return render(request, "users/recovery_codes.html", {"codes": codes})
         if form.is_valid():
             form.add_error("token", "The code is incorrect or expired.")
         return render(
