@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Set up two-factor authentication · Finance workspace{% endblock %}
+{% block content %}
+<section aria-labelledby="totp-heading">
+  <h1 id="totp-heading">Set up two-factor authentication</h1>
+  <p>Scan this locally generated QR code with your authenticator app.</p>
+  <div aria-label="Authenticator QR code">{{ qr_svg|safe }}</div>
+  <p>If scanning is unavailable, enter this secret manually: <code>{{ manual_secret }}</code></p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Confirm authenticator</button>
+  </form>
+</section>
+{% endblock %}

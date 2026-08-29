@@ -36,8 +36,9 @@
         {{ overview.recovery_codes_remaining }} recovery
         code{{ overview.recovery_codes_remaining|pluralize }} remaining.
       </p>
+      <p><a href="{% url 'totp-disable' %}">Disable two-factor authentication</a></p>
     {% else %}
-      <p>Off. Enrolment arrives with the authenticator setup flow.</p>
+      <p>Off. <a href="{% url 'totp-enroll' %}">Set up an authenticator</a>.</p>
     {% endif %}
   </section>
 

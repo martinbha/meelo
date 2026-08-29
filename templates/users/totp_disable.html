@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Disable two-factor authentication · Finance workspace{% endblock %}
+{% block content %}
+<section aria-labelledby="totp-disable-heading">
+  <h1 id="totp-disable-heading">Disable two-factor authentication</h1>
+  <p>Confirm your current password to remove your authenticator devices.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Disable two-factor authentication</button>
+  </form>
+</section>
+{% endblock %}

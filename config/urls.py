@@ -66,6 +66,8 @@ from apps.transactions.views import (
 )
 from apps.users.views import (
     AccountSecurityView,
+    TOTPDisableView,
+    TOTPEnrollView,
     UserLoginView,
     UserLogoutView,
     UserPasswordChangeView,
@@ -236,6 +238,8 @@ urlpatterns = [
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("rules/", CategoryRuleListView.as_view(), name="category-rule-list"),
     path("account/security/", AccountSecurityView.as_view(), name="account-security"),
+    path("account/security/totp/enroll/", TOTPEnrollView.as_view(), name="totp-enroll"),
+    path("account/security/totp/disable/", TOTPDisableView.as_view(), name="totp-disable"),
     # The detail page already states the processing status. #189 replaces this
     # with the polling endpoint the progress UI needs.
     path(
