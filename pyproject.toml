@@ -20,6 +20,7 @@ dependencies = [
     "pytesseract>=0.3.13,<1",
     "rapidfuzz>=3.10,<4",
     "sentry-sdk>=2,<3",
+    "qrcode>=8,<9",
 ]
 
 [dependency-groups]
@@ -32,6 +33,7 @@ dev = [
     "pytest-django>=4.9,<5",
     "pytest>=8.3,<9",
     "ruff>=0.9,<1",
+    "types-qrcode>=8,<9",
 ]
 
 [tool.uv]
