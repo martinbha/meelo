@@ -476,6 +476,8 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "users.UserDataKey": "Per-user wrapped data keys and their versions (specification 22.2).",
     "users.UserSearchKey": "Per-user wrapped blind-index keys, versioned separately from the "
     "data keys so the two can rotate on their own schedules (specification 22.4).",
+    "users.RecoveryCode": "Password-hashed single-use two-factor recovery codes "
+    "(specification 20.2).",
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
     "core.RotationCheckpoint": "How far a key rotation got, so a resumed run does not re-read "
     "the whole history to find where it stopped (specification 22.6).",
