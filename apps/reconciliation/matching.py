@@ -345,6 +345,14 @@ class SettlementCoverage:
 
 
 @dataclass(frozen=True, slots=True)
+class InstallmentSettlement:
+    """A dated liability reduction belonging to an installment purchase."""
+
+    occurred_at: date
+    amount_minor: int
+
+
+@dataclass(frozen=True, slots=True)
 class InstallmentPlan:
     """One purchase and the liability movements that settle it.
 
@@ -354,11 +362,15 @@ class InstallmentPlan:
     """
 
     purchase_minor: int
+    purchase_date: date
     installment_months: int
     scheduled_minor: tuple[int, ...]
-    settled_minor: int
-    settlement_count: int
+    settlements: tuple[InstallmentSettlement, ...]
     cancelled_minor: int = 0
+
+    @property
+    def settled_minor(self) -> int:
+        return sum(settlement.amount_minor for settlement in self.settlements)
 
     @property
     def spending_minor(self) -> int:
@@ -377,15 +389,16 @@ class InstallmentPlan:
         return (
             self.is_settled
             and self.cancelled_minor == 0
-            and self.settlement_count < self.installment_months
+            and len(self.settlements) < self.installment_months
         )
 
 
 def model_installment_plan(
     *,
     purchase_minor: int,
+    purchase_date: date,
     installment_months: int,
-    settlements: Sequence[int] = (),
+    settlements: Sequence[InstallmentSettlement] = (),
     cancelled: bool = False,
 ) -> InstallmentPlan:
     """Derive an auditable plan from parser ``installment_months`` metadata."""
@@ -394,21 +407,23 @@ def model_installment_plan(
         raise ValueError("An installment purchase must be positive.")
     if installment_months < 1:
         raise ValueError("Installment months must be positive.")
-    if any(amount <= 0 for amount in settlements):
+    if any(settlement.amount_minor <= 0 for settlement in settlements):
         raise ValueError("Installment settlements must be positive.")
+    if any(settlement.occurred_at < purchase_date for settlement in settlements):
+        raise ValueError("Installment settlements cannot predate the purchase.")
 
     base, remainder = divmod(purchase_minor, installment_months)
     scheduled = tuple(base + (1 if index < remainder else 0) for index in range(installment_months))
-    settled = sum(settlements)
+    settled = sum(settlement.amount_minor for settlement in settlements)
     if settled > purchase_minor:
         raise ValueError("Installment settlements cannot exceed the purchase amount.")
     cancelled_minor = purchase_minor - settled if cancelled else 0
     return InstallmentPlan(
         purchase_minor=purchase_minor,
+        purchase_date=purchase_date,
         installment_months=installment_months,
         scheduled_minor=scheduled,
-        settled_minor=settled,
-        settlement_count=len(settlements),
+        settlements=tuple(settlements),
         cancelled_minor=cancelled_minor,
     )
 
