@@ -344,6 +344,75 @@ class SettlementCoverage:
         return self.fee_minor + self.interest_minor
 
 
+@dataclass(frozen=True, slots=True)
+class InstallmentPlan:
+    """One purchase and the liability movements that settle it.
+
+    The purchase remains the only spending event.  Scheduled instalments and
+    an early payoff merely reduce the card liability; cancelling a plan
+    reverses only the part that has not already been settled.
+    """
+
+    purchase_minor: int
+    installment_months: int
+    scheduled_minor: tuple[int, ...]
+    settled_minor: int
+    settlement_count: int
+    cancelled_minor: int = 0
+
+    @property
+    def spending_minor(self) -> int:
+        return self.purchase_minor - self.cancelled_minor
+
+    @property
+    def outstanding_minor(self) -> int:
+        return self.purchase_minor - self.settled_minor - self.cancelled_minor
+
+    @property
+    def is_settled(self) -> bool:
+        return self.outstanding_minor == 0
+
+    @property
+    def is_early_payoff(self) -> bool:
+        return (
+            self.is_settled
+            and self.cancelled_minor == 0
+            and self.settlement_count < self.installment_months
+        )
+
+
+def model_installment_plan(
+    *,
+    purchase_minor: int,
+    installment_months: int,
+    settlements: Sequence[int] = (),
+    cancelled: bool = False,
+) -> InstallmentPlan:
+    """Derive an auditable plan from parser ``installment_months`` metadata."""
+
+    if purchase_minor <= 0:
+        raise ValueError("An installment purchase must be positive.")
+    if installment_months < 1:
+        raise ValueError("Installment months must be positive.")
+    if any(amount <= 0 for amount in settlements):
+        raise ValueError("Installment settlements must be positive.")
+
+    base, remainder = divmod(purchase_minor, installment_months)
+    scheduled = tuple(base + (1 if index < remainder else 0) for index in range(installment_months))
+    settled = sum(settlements)
+    if settled > purchase_minor:
+        raise ValueError("Installment settlements cannot exceed the purchase amount.")
+    cancelled_minor = purchase_minor - settled if cancelled else 0
+    return InstallmentPlan(
+        purchase_minor=purchase_minor,
+        installment_months=installment_months,
+        scheduled_minor=scheduled,
+        settled_minor=settled,
+        settlement_count=len(settlements),
+        cancelled_minor=cancelled_minor,
+    )
+
+
 def summarize_settlement(
     *,
     statement_minor: int,
