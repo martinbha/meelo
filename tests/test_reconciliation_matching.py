@@ -7,12 +7,14 @@ from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import ObservationFacts
 from apps.reconciliation.matching import (
     STRONG_MATCH_SCORE,
+    InstallmentSettlement,
     classify_charge,
     is_card_issuer_counterparty,
     match_credit_card_settlement,
     match_debit_card_to_bank,
     match_internal_transfer,
     match_refund_to_purchase,
+    model_installment_plan,
     summarize_settlement,
 )
 
@@ -216,6 +218,90 @@ def test_fees_and_interest_are_classified_apart_from_purchases() -> None:
     assert classify_charge("할부수수료") == "interest"
     assert classify_charge("이자") == "interest"
     assert classify_charge("스타벅스") is None
+
+
+# ---------------------------------------------------------------------------
+# Installment purchases (#231, specification 17.2)
+# ---------------------------------------------------------------------------
+
+
+def test_installment_purchase_is_spending_once_and_settlements_reduce_liability() -> None:
+    plan = model_installment_plan(
+        purchase_minor=320_000,
+        purchase_date=date(2026, 5, 10),
+        installment_months=4,
+        settlements=[
+            InstallmentSettlement(date(2026, 6, 25), 80_000),
+            InstallmentSettlement(date(2026, 7, 25), 80_000),
+        ],
+    )
+
+    assert plan.scheduled_minor == (80_000, 80_000, 80_000, 80_000)
+    assert plan.spending_minor == 320_000
+    assert plan.settled_minor == 160_000
+    assert plan.outstanding_minor == 160_000
+    assert plan.purchase_date == date(2026, 5, 10)
+    assert plan.settlements[0].occurred_at == date(2026, 6, 25)
+
+
+def test_installment_remainder_is_distributed_without_losing_money() -> None:
+    plan = model_installment_plan(
+        purchase_minor=100, purchase_date=date(2026, 5, 10), installment_months=3
+    )
+
+    assert plan.scheduled_minor == (34, 33, 33)
+    assert sum(plan.scheduled_minor) == plan.purchase_minor
+
+
+def test_early_payoff_settles_liability_without_an_extra_expense() -> None:
+    plan = model_installment_plan(
+        purchase_minor=300_000,
+        purchase_date=date(2026, 5, 10),
+        installment_months=6,
+        settlements=[
+            InstallmentSettlement(date(2026, 6, 25), 50_000),
+            InstallmentSettlement(date(2026, 7, 2), 250_000),
+        ],
+    )
+
+    assert plan.is_settled is True
+    assert plan.is_early_payoff is True
+    assert plan.spending_minor == 300_000
+
+
+def test_cancellation_reverses_only_the_unsettled_plan() -> None:
+    plan = model_installment_plan(
+        purchase_minor=300_000,
+        purchase_date=date(2026, 5, 10),
+        installment_months=3,
+        settlements=[InstallmentSettlement(date(2026, 6, 25), 100_000)],
+        cancelled=True,
+    )
+
+    assert plan.cancelled_minor == 200_000
+    assert plan.spending_minor == 100_000
+    assert plan.outstanding_minor == 0
+
+
+def test_invalid_installment_plan_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        model_installment_plan(
+            purchase_minor=100, purchase_date=date(2026, 5, 10), installment_months=0
+        )
+    with pytest.raises(ValueError):
+        model_installment_plan(
+            purchase_minor=100,
+            purchase_date=date(2026, 5, 10),
+            installment_months=2,
+            settlements=[InstallmentSettlement(date(2026, 6, 25), 101)],
+        )
+    with pytest.raises(ValueError):
+        model_installment_plan(
+            purchase_minor=100,
+            purchase_date=date(2026, 5, 10),
+            installment_months=2,
+            settlements=[InstallmentSettlement(date(2026, 5, 9), 50)],
+        )
 
 
 # ---------------------------------------------------------------------------
