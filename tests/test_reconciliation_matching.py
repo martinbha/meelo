@@ -6,8 +6,8 @@ import pytest
 from apps.observations.models import ImportedObservation
 from apps.reconciliation.duplicates import ObservationFacts
 from apps.reconciliation.matching import (
-    InstallmentSettlement,
     STRONG_MATCH_SCORE,
+    InstallmentSettlement,
     classify_charge,
     is_card_issuer_counterparty,
     match_credit_card_settlement,
