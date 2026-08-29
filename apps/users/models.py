@@ -101,3 +101,16 @@ class UserSearchKey(models.Model):
 
     def __str__(self) -> str:
         return f"user-search-key-v{self.version}"
+
+
+class RecoveryCode(models.Model):
+    """A one-time two-factor fallback stored only as a password hash."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=256)
+    used_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=("user", "used_at"), name="recovery_user_unused_idx")]

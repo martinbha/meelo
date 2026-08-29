@@ -180,9 +180,12 @@ def security_overview(user: Any, *, current_session_key: str = "") -> SecurityOv
     from django_otp.plugins.otp_static.models import StaticToken
     from django_otp.plugins.otp_totp.models import TOTPDevice
 
+    from .models import RecoveryCode
+
     changed_at = _password_changed_at(user)
     devices = TOTPDevice.objects.filter(user=user, confirmed=True).count()
-    recovery = StaticToken.objects.filter(device__user=user).count()
+    recovery = RecoveryCode.objects.filter(user=user, used_at__isnull=True).count()
+    recovery += StaticToken.objects.filter(device__user=user).count()
     failures = AuditEvent.objects.filter(
         user=user,
         event_type=AuditEvent.EventType.LOGIN_FAILURE,
