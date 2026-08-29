@@ -8,6 +8,7 @@ from apps.reconciliation.duplicates import ObservationFacts
 from apps.reconciliation.matching import (
     STRONG_MATCH_SCORE,
     InstallmentSettlement,
+    classify_card_charge,
     classify_charge,
     is_card_issuer_counterparty,
     match_credit_card_settlement,
@@ -218,6 +219,19 @@ def test_fees_and_interest_are_classified_apart_from_purchases() -> None:
     assert classify_charge("할부수수료") == "interest"
     assert classify_charge("이자") == "interest"
     assert classify_charge("스타벅스") is None
+
+
+def test_card_charges_use_counterparty_and_label_markers() -> None:
+    assert classify_card_charge(counterparty="카드사", label="연회비").transaction_type == "fee"
+    assert classify_card_charge(counterparty="카드사 이자").transaction_type == "interest"
+    assert classify_card_charge(label="late fee").transaction_type == "fee"
+
+
+def test_ambiguous_card_charge_is_routed_to_review() -> None:
+    classification = classify_card_charge(label="interest fee adjustment")
+
+    assert classification.transaction_type is None
+    assert classification.needs_review is True
 
 
 # ---------------------------------------------------------------------------
