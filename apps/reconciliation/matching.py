@@ -58,7 +58,7 @@ CARD_ISSUER_MARKERS = (
 )
 
 #: Labels that mark a fee or interest charge, which stay separate expenses.
-FEE_MARKERS = ("수수료", "연회비", "fee", "charge")
+FEE_MARKERS = ("수수료", "연회비", "연체료", "late fee", "fee")
 INTEREST_MARKERS = ("이자", "이자율", "interest", "할부수수료")
 
 
@@ -187,6 +187,38 @@ def is_card_issuer_counterparty(text: str) -> bool:
     return _contains(text, CARD_ISSUER_MARKERS)
 
 
+@dataclass(frozen=True, slots=True)
+class ChargeClassification:
+    """A transaction type decision, or an explicit route to review."""
+
+    transaction_type: str | None
+    needs_review: bool
+
+
+def classify_card_charge(*, counterparty: str = "", label: str = "") -> ChargeClassification:
+    """Classify card charges only when their combined markers are unambiguous."""
+
+    text = " ".join(part for part in (counterparty, label) if part)
+    lowered = text.casefold()
+    interest_matches = [marker for marker in INTEREST_MARKERS if marker.casefold() in lowered]
+    fee_matches = [marker for marker in FEE_MARKERS if marker.casefold() in lowered]
+    # ``할부수수료`` is a specific interest label containing the generic Korean
+    # word for fee; that overlap is not ambiguity.
+    fee_matches = [
+        marker
+        for marker in fee_matches
+        if not any(marker.casefold() in interest.casefold() for interest in interest_matches)
+    ]
+    fee = bool(fee_matches)
+    interest = bool(interest_matches)
+    if fee == interest:
+        return ChargeClassification(transaction_type=None, needs_review=bool(text))
+    return ChargeClassification(
+        transaction_type="interest" if interest else "fee",
+        needs_review=False,
+    )
+
+
 def classify_charge(merchant: str) -> str | None:
     """Tell a fee or interest charge from ordinary spending.
 
@@ -194,11 +226,7 @@ def classify_charge(merchant: str) -> str | None:
     they are never folded into the settlement they arrive with.
     """
 
-    if _contains(merchant, INTEREST_MARKERS):
-        return "interest"
-    if _contains(merchant, FEE_MARKERS):
-        return "fee"
-    return None
+    return classify_card_charge(label=merchant).transaction_type
 
 
 def match_debit_card_to_bank(
