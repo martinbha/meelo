@@ -247,7 +247,7 @@ def test_a_session_identifier_is_never_rendered_in_full(owner: Any, signed_in: C
     overview = page(signed_in).context["overview"]
 
     assert session_key not in body
-    assert all(len(session.key_prefix) <= 8 for session in overview.sessions)
+    assert all(len(session.fingerprint_prefix) == 13 for session in overview.sessions)
 
 
 def test_audit_metadata_is_not_rendered(owner: Any, signed_in: Client) -> None:

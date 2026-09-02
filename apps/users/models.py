@@ -114,3 +114,19 @@ class RecoveryCode(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=("user", "used_at"), name="recovery_user_unused_idx")]
+
+
+class UserSession(models.Model):
+    """Privacy-safe metadata for one Django session."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="tracked_sessions")
+    session_key_hash = models.CharField(max_length=64, unique=True)
+    ip_hash = models.CharField(max_length=64)
+    user_agent_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_activity_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=("user", "revoked_at"), name="session_user_active_idx")]

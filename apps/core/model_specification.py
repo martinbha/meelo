@@ -478,6 +478,8 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "data keys so the two can rotate on their own schedules (specification 22.4).",
     "users.RecoveryCode": "Password-hashed single-use two-factor recovery codes "
     "(specification 20.2).",
+    "users.UserSession": "Hashed client and session metadata used for revocation "
+    "(specifications 20.2 and 21.4).",
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
     "core.RotationCheckpoint": "How far a key rotation got, so a resumed run does not re-read "
     "the whole history to find where it stopped (specification 22.6).",

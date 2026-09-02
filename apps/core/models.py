@@ -19,6 +19,7 @@ class AuditEvent(models.Model):
         TWO_FACTOR_ENABLED = "two_factor_enabled", "Two-factor enabled"
         TWO_FACTOR_DISABLED = "two_factor_disabled", "Two-factor disabled"
         TWO_FACTOR_FAILURE = "two_factor_failure", "Two-factor verification failed"
+        SESSION_REVOKED = "session_revoked", "Session revoked"
         SCREENSHOT_UPLOADED = "screenshot_uploaded", "Screenshot uploaded"
         SCREENSHOT_DELETED = "screenshot_deleted", "Screenshot deleted"
         OCR_STARTED = "ocr_started", "OCR started"

@@ -78,7 +78,7 @@ def test_new_passwords_use_argon2id(user: Any) -> None:
 
 
 @pytest.mark.django_db
-def test_authenticated_password_change_revokes_other_sessions(user: Any) -> None:
+def test_authenticated_password_change_revokes_all_sessions(user: Any) -> None:
     initiating_client = Client()
     other_client = Client()
     initiating_client.force_login(user)
@@ -94,7 +94,7 @@ def test_authenticated_password_change_revokes_other_sessions(user: Any) -> None
     )
 
     assert response.status_code == 302
-    assert initiating_client.get(reverse("transaction-list")).status_code == 200
+    assert initiating_client.get(reverse("transaction-list")).status_code == 302
     assert other_client.get(reverse("transaction-list")).status_code == 302
     assert user.audit_events.filter(event_type=AuditEvent.EventType.PASSWORD_CHANGED).exists()
 
