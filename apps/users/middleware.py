@@ -8,6 +8,30 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
+from .sessions import track_session
+
+
+class SessionTrackingMiddleware:
+    """Refresh privacy-safe activity metadata for authenticated sessions."""
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def _track(self, request: HttpRequest) -> None:
+        if request.user.is_authenticated and request.session.session_key:
+            track_session(
+                user=request.user,
+                session_key=request.session.session_key,
+                ip_address=request.META.get("REMOTE_ADDR", ""),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        self._track(request)
+        response = self.get_response(request)
+        self._track(request)
+        return response
+
 
 class TwoFactorRequiredMiddleware:
     """Keep enrolled users behind verification for every authenticated route."""
