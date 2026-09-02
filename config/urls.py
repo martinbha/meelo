@@ -66,7 +66,9 @@ from apps.transactions.views import (
 )
 from apps.users.views import (
     AccountSecurityView,
+    OtherSessionsRevokeView,
     RecoveryCodeRegenerateView,
+    SessionRevokeView,
     TOTPDisableView,
     TOTPEnrollView,
     TwoFactorVerifyView,
@@ -240,6 +242,16 @@ urlpatterns = [
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("rules/", CategoryRuleListView.as_view(), name="category-rule-list"),
     path("account/security/", AccountSecurityView.as_view(), name="account-security"),
+    path(
+        "account/security/sessions/<uuid:pk>/revoke/",
+        SessionRevokeView.as_view(),
+        name="session-revoke",
+    ),
+    path(
+        "account/security/sessions/revoke-others/",
+        OtherSessionsRevokeView.as_view(),
+        name="sessions-revoke-others",
+    ),
     path("account/security/totp/enroll/", TOTPEnrollView.as_view(), name="totp-enroll"),
     path("account/security/totp/disable/", TOTPDisableView.as_view(), name="totp-disable"),
     path("account/security/two-factor/", TwoFactorVerifyView.as_view(), name="two-factor-verify"),

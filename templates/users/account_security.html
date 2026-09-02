@@ -55,8 +55,14 @@
     <ul>
       {% for session in overview.sessions %}
         <li>
-          {{ session.label }} · expires {{ session.expires_at|date:"j F Y H:i" }}
+          {{ session.label }} · created {{ session.created_at|date:"j F Y H:i" }} ·
+          active {{ session.last_activity_at|date:"j F Y H:i" }}
           {% if session.is_current %}<strong>(this one)</strong>{% endif %}
+          {% if not session.is_current %}
+            <form method="post" action="{% url 'session-revoke' session.id %}">
+              {% csrf_token %}<button type="submit">Revoke</button>
+            </form>
+          {% endif %}
         </li>
       {% empty %}
         <li>No stored sessions.</li>
@@ -65,9 +71,11 @@
     {% if overview.other_session_count %}
       <p>
         {{ overview.other_session_count }} other
-        session{{ overview.other_session_count|pluralize }}. Signing out
-        everywhere arrives with session revocation.
+        session{{ overview.other_session_count|pluralize }}.
       </p>
+      <form method="post" action="{% url 'sessions-revoke-others' %}">
+        {% csrf_token %}<button type="submit">Revoke all other sessions</button>
+      </form>
     {% endif %}
   </section>
 

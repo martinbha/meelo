@@ -33,6 +33,7 @@ from .forms import (
 from .models import User
 from .recovery import consume_recovery_code, regenerate_recovery_codes
 from .security import security_overview
+from .sessions import revoke_all_sessions, revoke_other_sessions, revoke_session
 
 
 class UserLoginView(LoginView):
@@ -86,7 +87,7 @@ class UserPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
     success_url = reverse_lazy("password-change-done")
 
     def form_valid(self, form: object) -> HttpResponse:
-        response = super().form_valid(form)
+        super().form_valid(form)
         record_audit_event(
             user=self.request.user,
             event_type="password_changed",
@@ -94,7 +95,9 @@ class UserPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
             ip_address=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT"),
         )
-        return response
+        revoke_all_sessions(user=cast(User, self.request.user))
+        self.request.session.flush()
+        return redirect("login")
 
 
 class UserPasswordResetConfirmView(PasswordResetConfirmView):
@@ -111,6 +114,7 @@ class UserPasswordResetConfirmView(PasswordResetConfirmView):
             ip_address=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT"),
         )
+        revoke_all_sessions(user=user)
         return response
 
 
@@ -260,3 +264,25 @@ class TwoFactorVerifyView(LoginRequiredMixin, View):
         if form.is_valid():
             form.add_error("token", "The code is incorrect or expired.")
         return render(request, self.template_name, {"form": form}, status=400)
+
+
+class SessionRevokeView(LoginRequiredMixin, View):
+    def post(self, request: HttpRequest, pk: object) -> HttpResponse:
+        revoked_current = revoke_session(
+            user=cast(User, request.user),
+            session_id=pk,
+            current_session_key=request.session.session_key or "",
+        )
+        if revoked_current:
+            request.session.flush()
+            return redirect("login")
+        return redirect("account-security")
+
+
+class OtherSessionsRevokeView(LoginRequiredMixin, View):
+    def post(self, request: HttpRequest) -> HttpResponse:
+        revoke_other_sessions(
+            user=cast(User, request.user),
+            current_session_key=request.session.session_key or "",
+        )
+        return redirect("account-security")

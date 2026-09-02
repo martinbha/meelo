@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from django.contrib.sessions.models import Session
 from django.utils import timezone
 
 from apps.core.models import AuditEvent
@@ -37,6 +36,7 @@ SECURITY_EVENT_TYPES: tuple[str, ...] = (
     AuditEvent.EventType.TWO_FACTOR_ENABLED,
     AuditEvent.EventType.TWO_FACTOR_DISABLED,
     AuditEvent.EventType.TWO_FACTOR_FAILURE,
+    AuditEvent.EventType.SESSION_REVOKED,
     AuditEvent.EventType.ENCRYPTION_KEY_ROTATED,
     AuditEvent.EventType.SEARCH_KEY_ROTATED,
     AuditEvent.EventType.WORKER_KEY_ACCESSED,
@@ -70,13 +70,15 @@ class SecurityEvent:
 class ActiveSession:
     """One signed-in session, described without its contents."""
 
-    key_prefix: str
-    expires_at: datetime
+    id: Any
+    created_at: datetime
+    last_activity_at: datetime
+    fingerprint_prefix: str
     is_current: bool
 
     @property
     def label(self) -> str:
-        return "This browser" if self.is_current else f"Session {self.key_prefix}"
+        return "This browser" if self.is_current else f"Session {self.fingerprint_prefix}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,34 +126,29 @@ def _password_changed_at(user: Any) -> datetime | None:
 
 
 def _sessions_for(user: Any, *, current_key: str = "") -> tuple[ActiveSession, ...]:
-    """Unexpired sessions belonging to this user.
+    """Tracked active sessions belonging to this user."""
 
-    Every session in the table has to be decoded to find its owner, because the
-    user identifier lives inside the signed payload rather than in a column.
-    That is fine at this scale and would not be at another; the alternative is a
-    table of our own that can disagree with the real one.
+    from .models import UserSession
+    from .sessions import active_session_hashes, session_key_hash
 
-    Only a **prefix** of the key is shown. The full key is a bearer credential:
-    anybody who reads it off the screen is signed in as this person.
-    """
-
-    now = timezone.now()
-    found = []
-    for session in Session.objects.filter(expire_date__gt=now):
-        try:
-            data = session.get_decoded()
-        except Exception:  # noqa: BLE001 - a corrupt session is not this page's problem
-            continue
-        if str(data.get("_auth_user_id", "")) != str(user.pk):
-            continue
-        found.append(
-            ActiveSession(
-                key_prefix=session.session_key[:8],
-                expires_at=session.expire_date,
-                is_current=session.session_key == current_key,
-            )
+    current_hash = session_key_hash(current_key) if current_key else ""
+    found = (
+        ActiveSession(
+            id=record.pk,
+            created_at=record.created_at,
+            last_activity_at=record.last_activity_at,
+            fingerprint_prefix=f"{record.ip_hash[:6]}:{record.user_agent_hash[:6]}",
+            is_current=record.session_key_hash == current_hash,
         )
-    return tuple(sorted(found, key=lambda item: (not item.is_current, item.expires_at)))
+        for record in UserSession.objects.filter(
+            user=user,
+            revoked_at__isnull=True,
+            session_key_hash__in=active_session_hashes(),
+        )
+    )
+    return tuple(
+        sorted(found, key=lambda item: (not item.is_current, -item.last_activity_at.timestamp()))
+    )
 
 
 def _recent_events(user: Any) -> tuple[SecurityEvent, ...]:
