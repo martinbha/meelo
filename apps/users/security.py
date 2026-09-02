@@ -36,6 +36,7 @@ SECURITY_EVENT_TYPES: tuple[str, ...] = (
     AuditEvent.EventType.PASSWORD_CHANGED,
     AuditEvent.EventType.TWO_FACTOR_ENABLED,
     AuditEvent.EventType.TWO_FACTOR_DISABLED,
+    AuditEvent.EventType.TWO_FACTOR_FAILURE,
     AuditEvent.EventType.ENCRYPTION_KEY_ROTATED,
     AuditEvent.EventType.SEARCH_KEY_ROTATED,
     AuditEvent.EventType.WORKER_KEY_ACCESSED,

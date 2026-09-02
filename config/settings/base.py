@@ -63,6 +63,7 @@ MIDDLEWARE = [
     # request.user.is_verified() beside it. It verifies nothing on its own and
     # blocks nothing; enforcement is #173.
     "django_otp.middleware.OTPMiddleware",
+    "apps.users.middleware.TwoFactorRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",

@@ -69,6 +69,7 @@ from apps.users.views import (
     RecoveryCodeRegenerateView,
     TOTPDisableView,
     TOTPEnrollView,
+    TwoFactorVerifyView,
     UserLoginView,
     UserLogoutView,
     UserPasswordChangeView,
@@ -241,6 +242,7 @@ urlpatterns = [
     path("account/security/", AccountSecurityView.as_view(), name="account-security"),
     path("account/security/totp/enroll/", TOTPEnrollView.as_view(), name="totp-enroll"),
     path("account/security/totp/disable/", TOTPDisableView.as_view(), name="totp-disable"),
+    path("account/security/two-factor/", TwoFactorVerifyView.as_view(), name="two-factor-verify"),
     path(
         "account/security/recovery-codes/regenerate/",
         RecoveryCodeRegenerateView.as_view(),

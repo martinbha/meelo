@@ -11,20 +11,27 @@ from django.contrib.auth.views import (
     PasswordChangeView,
     PasswordResetConfirmView,
 )
+from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
+from django_otp import login as otp_login
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from qrcode import QRCode
 from qrcode.image.svg import SvgPathImage
 
 from apps.core.audit import record_audit_event
 
-from .forms import EmailAuthenticationForm, TOTPConfirmationForm, TOTPDisableForm
+from .forms import (
+    EmailAuthenticationForm,
+    TOTPConfirmationForm,
+    TOTPDisableForm,
+    TwoFactorVerificationForm,
+)
 from .models import User
-from .recovery import regenerate_recovery_codes
+from .recovery import consume_recovery_code, regenerate_recovery_codes
 from .security import security_overview
 
 
@@ -42,6 +49,8 @@ class UserLoginView(LoginView):
             ip_address=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT"),
         )
+        if TOTPDevice.objects.filter(user=self.request.user, confirmed=True).exists():
+            return redirect("two-factor-verify")
         return response
 
     def form_invalid(self, form: AuthenticationForm) -> HttpResponse:
@@ -204,3 +213,50 @@ class RecoveryCodeRegenerateView(LoginRequiredMixin, View):
     def post(self, request: HttpRequest) -> HttpResponse:
         codes = regenerate_recovery_codes(cast(User, request.user))
         return render(request, self.template_name, {"codes": codes})
+
+
+class TwoFactorVerifyView(LoginRequiredMixin, View):
+    template_name = "users/two_factor_verify.html"
+    failure_limit = 5
+    lock_seconds = 300
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        if bool(getattr(request.user, "is_verified", lambda: False)()):
+            return redirect(request.session.pop("two_factor_next", settings.LOGIN_REDIRECT_URL))
+        return render(request, self.template_name, {"form": TwoFactorVerificationForm()})
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        user = cast(User, request.user)
+        ip = request.META.get("REMOTE_ADDR", "unknown")
+        key = f"two-factor-failures:{user.pk}:{ip}"
+        failures = int(cache.get(key, 0))
+        if failures >= self.failure_limit:
+            return render(
+                request,
+                self.template_name,
+                {"form": TwoFactorVerificationForm(), "throttled": True},
+                status=429,
+            )
+
+        form = TwoFactorVerificationForm(request.POST)
+        device = TOTPDevice.objects.filter(user=user, confirmed=True).order_by("id").first()
+        token = form.cleaned_data["token"].strip() if form.is_valid() else ""
+        verified = bool(device and token and device.verify_token(token))
+        if not verified and token:
+            verified = consume_recovery_code(user, token)
+        if verified and device is not None:
+            cache.delete(key)
+            otp_login(request, device)
+            return redirect(request.session.pop("two_factor_next", settings.LOGIN_REDIRECT_URL))
+
+        cache.set(key, failures + 1, self.lock_seconds)
+        record_audit_event(
+            user=user,
+            event_type="two_factor_failure",
+            metadata={"method": "otp"},
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT"),
+        )
+        if form.is_valid():
+            form.add_error("token", "The code is incorrect or expired.")
+        return render(request, self.template_name, {"form": form}, status=400)

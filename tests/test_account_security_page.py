@@ -23,6 +23,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from django_otp import login as otp_login
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
@@ -65,6 +66,12 @@ def signed_in(owner: Any) -> Client:
 
 def page(client: Client) -> Any:
     return client.get(reverse("account-security"))
+
+
+def verify(client: Client, device: TOTPDevice) -> None:
+    request = client.get(reverse("two-factor-verify")).wsgi_request
+    otp_login(request, device)
+    request.session.save()
 
 
 # ----------------------------------------------------------------------
@@ -143,11 +150,12 @@ def test_an_old_password_is_flagged_without_being_expired(owner: Any) -> None:
 def test_the_page_reports_two_factor_state_and_recovery_codes(
     owner: Any, signed_in: Client
 ) -> None:
-    TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
+    confirmed = TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
     TOTPDevice.objects.create(user=owner, name="unconfirmed", confirmed=False)
     device = StaticDevice.objects.create(user=owner, name="recovery")
     for index in range(3):
         StaticToken.objects.create(device=device, token=f"code-{index}")
+    verify(signed_in, confirmed)
 
     overview = page(signed_in).context["overview"]
 
@@ -218,6 +226,7 @@ def test_no_key_material_reaches_the_page(owner: Any, signed_in: Client, master_
     static = StaticDevice.objects.create(user=owner, name="recovery")
     token = StaticToken.objects.create(device=static, token="a-recovery-code")
     data_key = get_user_data_key(user=owner, actor=owner, master_key=master_key)
+    verify(signed_in, device)
 
     body = page(signed_in).content.decode()
 

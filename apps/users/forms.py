@@ -24,3 +24,11 @@ class TOTPDisableForm(forms.Form):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={"autocomplete": "current-password"})
     )
+
+
+class TwoFactorVerificationForm(forms.Form):
+    token = forms.CharField(
+        label="Authenticator or recovery code",
+        max_length=32,
+        widget=forms.TextInput(attrs={"autocomplete": "one-time-code"}),
+    )

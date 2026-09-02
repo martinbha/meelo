@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django_otp import login as otp_login
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
@@ -57,7 +58,10 @@ def test_wrong_confirmation_code_leaves_device_inactive(owner: Any, signed_in: C
 
 
 def test_disabling_requires_current_password(owner: Any, signed_in: Client) -> None:
-    TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
+    device = TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
+    request = signed_in.get(reverse("two-factor-verify")).wsgi_request
+    otp_login(request, device)
+    request.session.save()
 
     assert signed_in.post(reverse("totp-disable"), {"password": "wrong"}).status_code == 400
     assert TOTPDevice.objects.filter(user=owner).exists()
