@@ -43,18 +43,20 @@ def test_session_metadata_is_hashed_and_lists_activity(owner: Any) -> None:
 
 def test_expired_session_is_not_listed_as_active(owner: Any) -> None:
     client = tracked_client(owner, ip="192.0.2.10", agent="expired")
-    Session.objects.filter(session_key=client.session.session_key).update(
-        expire_date=timezone.now()
-    )
+    key = client.session.session_key
+    assert key is not None
+    Session.objects.filter(session_key=key).update(expire_date=timezone.now())
 
-    assert not security_overview(owner, current_session_key=client.session.session_key).sessions
+    assert not security_overview(owner, current_session_key=key).sessions
 
 
 def test_revoke_one_rejects_that_session_on_its_next_request(owner: Any) -> None:
     current = tracked_client(owner, ip="192.0.2.1", agent="current")
     other = tracked_client(owner, ip="192.0.2.2", agent="other")
+    other_key = other.session.session_key
+    assert other_key is not None
     other_record = UserSession.objects.get(
-        user=owner, session_key_hash=hashlib.sha256(other.session.session_key.encode()).hexdigest()
+        user=owner, session_key_hash=hashlib.sha256(other_key.encode()).hexdigest()
     )
 
     response = current.post(reverse("session-revoke", args=[other_record.pk]))
