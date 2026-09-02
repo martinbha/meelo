@@ -72,8 +72,7 @@ def test_an_existing_login_still_works_with_no_device(owner: Any) -> None:
     assert not TOTPDevice.objects.filter(user=owner).exists()
 
 
-def test_a_confirmed_device_does_not_change_the_login_flow_yet(owner: Any) -> None:
-    """Enforcement is #173. Until then a device is stored and not consulted."""
+def test_a_confirmed_device_requires_verification_after_password_login(owner: Any) -> None:
 
     TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
     client = Client()
@@ -81,7 +80,8 @@ def test_a_confirmed_device_does_not_change_the_login_flow_yet(owner: Any) -> No
     response = client.post(reverse("login"), {"username": owner.email, "password": PASSWORD})
 
     assert response.status_code == 302
-    assert client.get(reverse("transaction-list")).status_code == 200
+    assert response["Location"] == reverse("two-factor-verify")
+    assert client.get(reverse("transaction-list"))["Location"] == reverse("two-factor-verify")
 
 
 # ----------------------------------------------------------------------
