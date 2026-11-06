@@ -12,8 +12,13 @@ from PIL import Image, ImageDraw, ImageFont
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ["PADDLE_PDX_CACHE_HOME"] = "/tmp/paddlex-cache"
 
-from apps.ocr.contracts import OcrConfiguration, OcrEngine, OcrRunResult
-from apps.ocr.execution import ClassifiedOcrError, OcrResourceLimits, run_engine_bounded
+from apps.ocr.contracts import EngineMetadata, OcrConfiguration, OcrEngine, OcrRunResult
+from apps.ocr.execution import (
+    ClassifiedOcrError,
+    OcrResourceLimits,
+    _current_vm_data_bytes,
+    run_engine_bounded,
+)
 from apps.ocr.paddle import (
     DEFAULT_OCR_CPU_THREADS,
     DEFAULT_TEXT_DET_LIMIT_SIDE_LEN,
@@ -40,6 +45,27 @@ class SmokePaddleOcrEngine(PaddleOcrEngine):
             # Keep library diagnostics here, never in the financial pipeline.
             traceback.print_exc()
             raise
+
+
+class OversizedAllocationEngine(OcrEngine):
+    @property
+    def metadata(self) -> EngineMetadata:
+        return EngineMetadata("resource-limit-probe", "1")
+
+    @property
+    def supported_languages(self) -> frozenset[str]:
+        return frozenset({"en"})
+
+    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+        del image_path
+        baseline_data = _current_vm_data_bytes()
+        if baseline_data is None:
+            raise RuntimeError("Could not establish the resource probe's VmData baseline.")
+        # Request more than the allowed additional data allocation. RLIMIT_DATA
+        # should reject this before pages are touched; the container's memory
+        # cgroup remains the hard total-memory ceiling if the guard regresses.
+        bytearray(baseline_data + 2 * RESOURCE_LIMITS.memory_bytes)
+        return OcrRunResult((), self.metadata, configuration, 0)
 
 
 def create_synthetic_image(path: Path, *, size: tuple[int, int]) -> None:
@@ -97,6 +123,25 @@ def verify_engine(
     )
 
 
+def verify_resource_limit() -> None:
+    try:
+        run_engine_bounded(
+            OversizedAllocationEngine(),
+            Path("resource-limit-probe"),
+            OcrConfiguration(("en",)),
+            limits=RESOURCE_LIMITS,
+        )
+    except ClassifiedOcrError as error:
+        if error.code != "OCR_RESOURCE_EXHAUSTED":
+            raise RuntimeError(
+                f"Oversized allocation probe failed with {error.code}; "
+                "expected resource exhaustion."
+            ) from error
+    else:
+        raise RuntimeError("Oversized allocation probe unexpectedly completed.")
+    print("resource limit smoke passed; oversized allocation was rejected")
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="meelo-ocr-smoke-") as temporary:
         root = Path(temporary)
@@ -113,6 +158,7 @@ def main() -> None:
         for name, engine, languages in engines:
             for image_path in image_paths:
                 verify_engine(name, engine, image_path, languages)
+        verify_resource_limit()
 
 
 if __name__ == "__main__":

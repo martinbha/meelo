@@ -46,30 +46,42 @@ def _apply_resource_limits(limits: OcrResourceLimits) -> None:
     try:
         import resource
 
-        if _has_finite_cgroup_memory_limit() and hasattr(resource, "RLIMIT_DATA"):
-            # Paddle's initialized CPU runtime maps shared libraries and model
-            # files into the child before inference. An absolute RLIMIT_AS then
-            # leaves too little address space for tensors despite low RSS. In a
-            # memory-limited container, bound additional data-segment
-            # allocations to the configured byte ceiling while the cgroup
-            # enforces the hard total-memory limit.
-            resource.setrlimit(resource.RLIMIT_DATA, (limits.memory_bytes, limits.memory_bytes))
-        else:
-            # Outside a container memory limit, retain the conservative total
-            # address-space ceiling rather than granting an unbounded fallback.
-            resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
+        cgroup_limit = _cgroup_memory_limit_bytes()
+        baseline_data = _current_vm_data_bytes()
+        if (
+            cgroup_limit is not None
+            and cgroup_limit <= limits.memory_bytes
+            and baseline_data is not None
+            and hasattr(resource, "RLIMIT_DATA")
+        ):
+            # Paddle initializes shared libraries and model state before this
+            # child starts. Allow the configured additional data allocation
+            # above that measured baseline; the cgroup remains the hard total
+            # memory limit. This does not make RLIMIT_DATA a total RSS limit.
+            data_ceiling = baseline_data + limits.memory_bytes
+            try:
+                resource.setrlimit(resource.RLIMIT_DATA, (data_ceiling, data_ceiling))
+                return
+            except (OSError, ValueError):
+                # If the data limit cannot be installed, retain the absolute
+                # address-space ceiling below.
+                pass
+        # Without a known cgroup cap no larger than this worker's budget, or a
+        # trusted VmData baseline, keep the conservative absolute ceiling.
+        resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
     except (ImportError, OSError, ValueError):
         # Windows and constrained runtimes rely on their container memory cap.
         pass
 
 
-def _has_finite_cgroup_memory_limit() -> bool:
-    """Whether a finite memory cgroup supplies the total process ceiling."""
+def _cgroup_memory_limit_bytes() -> int | None:
+    """Return a detected finite cgroup limit, or ``None`` when unknown."""
 
     cgroup_limits = (
         Path("/sys/fs/cgroup/memory.max"),
         Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
     )
+    limits: list[int] = []
     for path in cgroup_limits:
         try:
             value = path.read_text(encoding="ascii").strip()
@@ -83,8 +95,29 @@ def _has_finite_cgroup_memory_limit() -> bool:
             continue
         # cgroup v1 represents unlimited memory with a very large sentinel.
         if 0 < limit < 1 << 60:
-            return True
-    return False
+            limits.append(limit)
+    return min(limits) if limits else None
+
+
+def _current_vm_data_bytes() -> int | None:
+    """Read Linux VmData as the pre-inference data-segment baseline."""
+
+    try:
+        lines = Path("/proc/self/status").read_text(encoding="ascii").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if not line.startswith("VmData:"):
+            continue
+        fields = line.partition(":")[2].split()
+        if len(fields) != 2 or fields[1] != "kB":
+            return None
+        try:
+            kilobytes = int(fields[0])
+        except ValueError:
+            return None
+        return kilobytes * 1024 if kilobytes > 0 else None
+    return None
 
 
 def _result_payload(result: OcrRunResult) -> dict[str, Any]:
