@@ -215,3 +215,18 @@ def test_security_ci_smoke_tests_the_built_application_image() -> None:
 
     assert "docker build --tag finance-ocr:ci ." in security
     assert "./scripts/smoke_test_image.sh finance-ocr:ci" in security
+
+
+def test_image_smoke_checks_packaged_ocr_offline_with_runtime_limits() -> None:
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text()
+    smoke = (PROJECT_ROOT / "scripts" / "smoke_test_image.sh").read_text()
+    runner = (PROJECT_ROOT / "scripts" / "run_ocr_image_smoke.py").read_text()
+
+    assert "scripts/smoke_test_ocr.py" in dockerfile
+    assert "scripts/run_ocr_image_smoke.py" in smoke
+    assert '"none"' in runner
+    assert '"--read-only"' in runner
+    assert '"2g"' in runner
+    assert "/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777" in runner
+    assert "timeout=TIMEOUT_SECONDS" in runner
+    assert "_remove_container(container_name)" in runner

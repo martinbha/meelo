@@ -23,6 +23,7 @@ RUN uv sync --locked --no-dev --no-install-project
 
 COPY scripts/provision_paddle_models.py ./scripts/provision_paddle_models.py
 RUN uv run --no-sync python scripts/provision_paddle_models.py "$PADDLE_OCR_MODEL_ROOT"
+COPY scripts/smoke_test_ocr.py ./scripts/smoke_test_ocr.py
 
 COPY config ./config
 COPY apps ./apps

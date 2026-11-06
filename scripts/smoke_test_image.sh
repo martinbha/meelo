@@ -6,10 +6,12 @@ set -eu
 image="${1:?usage: $0 IMAGE[:TAG]}"
 host_port="${IMAGE_SMOKE_PORT:-18080}"
 container_name="meelo-image-smoke-$$"
+ocr_container_name="meelo-image-ocr-smoke-$$"
 base_url="http://127.0.0.1:${host_port}"
 
 cleanup() {
     docker rm --force "$container_name" >/dev/null 2>&1 || true
+    docker rm --force "$ocr_container_name" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT HUP INT TERM
@@ -52,3 +54,5 @@ case "$static_path" in
 esac
 
 curl --fail --silent --show-error "$base_url$static_path" >/dev/null
+
+python3 scripts/run_ocr_image_smoke.py "$image" "$ocr_container_name"
