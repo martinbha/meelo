@@ -194,7 +194,12 @@ def link_observations(
     left_id, right_id = _ordered(left_observation_id, right_observation_id)
     existing = (
         ReconciliationMatch.objects.select_for_update()
-        .filter(left_observation_id=left_id, right_observation_id=right_id, match_type=match_type)
+        .filter(
+            user_id=user.pk,
+            left_observation_id=left_id,
+            right_observation_id=right_id,
+            match_type=match_type,
+        )
         .first()
     )
     if existing is not None and existing.status != ReconciliationMatch.Status.REJECTED:
@@ -214,6 +219,10 @@ def link_observations(
         key_version=key_version,
     )
     if match.status == ReconciliationMatch.Status.REJECTED:
+        # A rejected relationship represents a completed review cycle. Only
+        # this explicit user action starts a new cycle and a new canonical
+        # event idempotency key; detection reruns never advance it.
+        match.resolution_revision += 1
         match.status = ReconciliationMatch.Status.PROPOSED
         match.match_score = MANUAL_LINK_SCORE
         match.reviewed_by = None
@@ -224,6 +233,7 @@ def link_observations(
         match.save(
             update_fields=[
                 "status",
+                "resolution_revision",
                 "match_score",
                 "match_features_json_encrypted",
                 "reviewed_by",
@@ -240,6 +250,7 @@ def link_observations(
                 "score": MANUAL_LINK_SCORE,
                 "features": list(features),
                 "reopened": True,
+                "resolution_revision": match.resolution_revision,
             },
         )
     return match
@@ -564,6 +575,32 @@ def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     return match
 
 
+def lock_related_matches(observation_ids: Sequence[Any], *, user: Any) -> list[ReconciliationMatch]:
+    """Lock matches for a set of observations in stable primary-key order.
+
+    Deletion and unlinking both use the order match rows → observation rows →
+    canonical transaction. Keeping the match lock first prevents deletion from
+    racing a confirmation into a stale relationship.
+    """
+
+    ids = tuple(observation_ids)
+    if not ids:
+        return []
+    match_ids = list(
+        ReconciliationMatch.objects.filter(user_id=user.pk)
+        .filter(Q(left_observation_id__in=ids) | Q(right_observation_id__in=ids))
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    if not match_ids:
+        return []
+    return list(
+        ReconciliationMatch.objects.select_for_update()
+        .filter(user_id=user.pk, pk__in=match_ids)
+        .order_by("pk")
+    )
+
+
 @db_transaction.atomic
 def unlink_match(
     match_id: Any,
@@ -574,26 +611,36 @@ def unlink_match(
 ) -> ReconciliationMatch:
     """Reverse a confirmed relationship while retaining its rejected history."""
 
-    match = lock_match(match_id, user)
+    candidate = (
+        ReconciliationMatch.objects.filter(pk=match_id, user_id=user.pk)
+        .only("pk", "left_observation_id", "right_observation_id")
+        .first()
+    )
+    if candidate is None:
+        raise ForbiddenError("This match belongs to another user.")
+    locked_matches = lock_related_matches(
+        (candidate.left_observation_id, candidate.right_observation_id), user=user
+    )
+    match = next((item for item in locked_matches if item.pk == candidate.pk), None)
+    if match is None:
+        raise ForbiddenError("This match belongs to another user.")
     if match.status != ReconciliationMatch.Status.CONFIRMED:
         raise ConflictError("Only a confirmed match can be unlinked.")
 
     observations = list(
-        ImportedObservation.objects.select_for_update().filter(
+        ImportedObservation.objects.select_for_update()
+        .filter(
             pk__in=(match.left_observation_id, match.right_observation_id),
             user_id=user.pk,
         )
+        .order_by("pk")
     )
     transaction_id = None
     if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
-        transaction_ids = {
-            row.canonical_transaction_id
-            for row in observations
-            if row.canonical_transaction_id is not None
-        }
-        if len(transaction_ids) != 1:
+        transaction_ids = [row.canonical_transaction_id for row in observations]
+        if len(observations) != 2 or None in transaction_ids or len(set(transaction_ids)) != 1:
             raise ConflictError("The transfer rows do not share one transaction.")
-        transaction_id = transaction_ids.pop()
+        transaction_id = transaction_ids[0]
     elif match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
         refund = next(
             (row for row in observations if row.direction == ImportedObservation.Direction.CREDIT),
@@ -602,6 +649,25 @@ def unlink_match(
         if refund is None or refund.canonical_transaction_id is None:
             raise ConflictError("The refund match has no refund transaction.")
         transaction_id = refund.canonical_transaction_id
+    elif match.match_type in {
+        ReconciliationMatch.MatchType.DEBIT_CARD_BANK_MATCH,
+        ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT,
+    }:
+        linked_transaction_ids = {
+            row.canonical_transaction_id
+            for row in observations
+            if row.canonical_transaction_id is not None
+        }
+        if len(linked_transaction_ids) > 1:
+            raise ConflictError(
+                "The matched rows point to different transactions; review each transaction first."
+            )
+        transaction_id = next(iter(linked_transaction_ids), None)
+        if transaction_id is not None and (
+            len(observations) != 2
+            or any(row.canonical_transaction_id != transaction_id for row in observations)
+        ):
+            raise ConflictError("The matched rows do not share one transaction.")
 
     if transaction_id is not None:
         from apps.transactions.deletion import delete_transaction
@@ -613,6 +679,7 @@ def unlink_match(
             confirmed=True,
             data_key=data_key,
             key_version=key_version,
+            _unlinking_match_id=match.pk,
         )
 
     for observation in observations:
@@ -642,7 +709,11 @@ def unlink_match(
         user=user,
         event_type="reconciliation_match_unlinked",
         obj=match,
-        metadata={"match_type": match.match_type, "match_id": str(match.pk)},
+        metadata={
+            "match_type": match.match_type,
+            "match_id": str(match.pk),
+            "canonical_transaction_id": str(transaction_id) if transaction_id else "",
+        },
     )
     return match
 

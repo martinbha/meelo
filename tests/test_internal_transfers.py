@@ -8,14 +8,18 @@ separately they look like a purchase and a payday.
 from __future__ import annotations
 
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.db import close_old_connections, connection
 
 from apps.core.errors import ConflictError, ForbiddenError
 from apps.core.models import AuditEvent
+from apps.ledger.balances import account_balances
 from apps.ledger.models import LedgerEntry
 from apps.ledger.posting import entry_amount
 from apps.ledger.rules import PostingRuleAccounts
@@ -39,12 +43,14 @@ from apps.reconciliation.models import ReconciliationMatch
 from apps.reconciliation.services import (
     ReconciliationError,
     confirm_match,
+    link_observations,
     record_match,
     reject_match,
     unlink_match,
 )
 from apps.reconciliation.transfers import confirm_internal_transfer, propose_internal_transfers
 from apps.transactions.classification import is_income, is_neutral, is_spending
+from apps.transactions.idempotency import TRANSFER_SOURCE, source_key
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import (
     make_account,
@@ -505,6 +511,127 @@ def test_unlinking_a_transfer_reverses_the_ledger_and_reopens_both_rows(owner: A
         row.refresh_from_db()
         assert row.canonical_transaction_id is None
         assert row.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    unlinked_events = AuditEvent.objects.filter(
+        user=owner,
+        event_type=AuditEvent.EventType.RECONCILIATION_MATCH_UNLINKED,
+        object_id=match.pk,
+    )
+    assert unlinked_events.count() == 1
+    assert unlinked_events.get().metadata["canonical_transaction_id"] == str(transfer.pk)
+
+    reopened = link_observations(
+        user=owner,
+        left_observation_id=outgoing.pk,
+        right_observation_id=incoming.pk,
+        match_type=ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        data_key=KEY,
+    )
+    assert reopened.status == ReconciliationMatch.Status.PROPOSED
+    assert reopened.resolution_revision == 1
+
+    assert transfer.source_idempotency_key == source_key(TRANSFER_SOURCE, match.pk)
+    replacement = confirm_internal_transfer(
+        reopened.pk,
+        user=owner,
+        data_key=KEY,
+        ledger_accounts=PostingRuleAccounts(account=source, transfer_account=destination),
+    )
+    retry = confirm_internal_transfer(
+        reopened.pk,
+        user=owner,
+        data_key=KEY,
+        ledger_accounts=PostingRuleAccounts(account=source, transfer_account=destination),
+    )
+    transfer.refresh_from_db()
+    reopened.refresh_from_db()
+    assert replacement.pk != transfer.pk
+    assert retry.pk == replacement.pk
+    assert transfer.status == CanonicalTransaction.Status.VOIDED
+    assert replacement.status == CanonicalTransaction.Status.CONFIRMED
+    assert replacement.source_idempotency_key != transfer.source_idempotency_key
+    assert reopened.status == ReconciliationMatch.Status.CONFIRMED
+    assert LedgerEntry.objects.filter(transaction=transfer).count() == 4
+    assert LedgerEntry.objects.filter(transaction=replacement).count() == 2
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 2
+    confirmation = AuditEvent.objects.filter(
+        user=owner,
+        event_type=AuditEvent.EventType.INTERNAL_TRANSFER_CONFIRMED,
+        object_id=reopened.pk,
+    ).latest("created_at")
+    assert confirmation.metadata["resolution_revision"] == 1
+    balances = {
+        item.account_id: item.amount_minor for item in account_balances(owner, data_key=KEY)
+    }
+    assert balances[source.pk] == -500_000
+    assert balances[destination.pk] == 500_000
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_reconfirmation_after_reopen_converges_on_new_event_on_postgres(
+    owner: Any,
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("The concurrent confirmation assertion requires PostgreSQL row locks.")
+
+    outgoing, incoming, checking, savings = seed_transfer(owner)
+    match = propose(owner, outgoing, incoming)
+    source = make_ledger_accounts(owner, checking, prefix="revision-source").account
+    destination = make_ledger_accounts(owner, savings, prefix="revision-destination").account
+    ledger_accounts = PostingRuleAccounts(account=source, transfer_account=destination)
+    original = confirm_internal_transfer(
+        match.pk, user=owner, data_key=KEY, ledger_accounts=ledger_accounts
+    )
+    unlink_match(match.pk, user=owner, data_key=KEY)
+    reopened = link_observations(
+        user=owner,
+        left_observation_id=outgoing.pk,
+        right_observation_id=incoming.pk,
+        match_type=ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        data_key=KEY,
+    )
+    assert reopened.resolution_revision == 1
+    barrier = threading.Barrier(2)
+
+    def confirm_again() -> str:
+        close_old_connections()
+        try:
+            thread_owner = type(owner).objects.get(pk=owner.pk)
+            barrier.wait(timeout=10)
+            transaction = confirm_internal_transfer(
+                reopened.pk,
+                user=thread_owner,
+                data_key=KEY,
+                ledger_accounts=ledger_accounts,
+            )
+            return str(transaction.pk)
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: confirm_again(), range(2)))
+
+    assert results[0] == results[1]
+    original.refresh_from_db()
+    reopened.refresh_from_db()
+    replacement = CanonicalTransaction.objects.get(pk=results[0])
+    outgoing.refresh_from_db()
+    incoming.refresh_from_db()
+    assert original.status == CanonicalTransaction.Status.VOIDED
+    assert replacement.status == CanonicalTransaction.Status.CONFIRMED
+    assert replacement.pk != original.pk
+    assert replacement.source_idempotency_key != original.source_idempotency_key
+    assert reopened.status == ReconciliationMatch.Status.CONFIRMED
+    assert reopened.resolution_revision == 1
+    assert outgoing.canonical_transaction_id == replacement.pk
+    assert incoming.canonical_transaction_id == replacement.pk
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 2
+    assert LedgerEntry.objects.filter(transaction=original).count() == 4
+    assert LedgerEntry.objects.filter(transaction=replacement).count() == 2
+    balances = {
+        item.account_id: item.amount_minor for item in account_balances(owner, data_key=KEY)
+    }
+    assert balances[source.pk] == -500_000
+    assert balances[destination.pk] == 500_000
 
 
 def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None:
@@ -517,4 +644,5 @@ def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None
     assert event is not None
     assert event.metadata["canonical_transaction_id"] == str(transfer.pk)
     assert event.metadata["outgoing_observation_id"] == str(outgoing.pk)
+    assert event.metadata["resolution_revision"] == 0
     assert "500000" not in str(event.metadata)

@@ -455,7 +455,10 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "updated_at",
         ),
         renamed={"reviewed_by": "reviewed_by_id"},
-        additional={"reviewed_at": "When the decision was made, alongside who made it."},
+        additional={
+            "reviewed_at": "When the decision was made, alongside who made it.",
+            "resolution_revision": "New event generation after the user reopens a rejected match.",
+        },
         enumerations={
             "MatchType": (
                 "duplicate_observation",

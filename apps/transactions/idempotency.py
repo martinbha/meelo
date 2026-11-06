@@ -10,9 +10,10 @@ So each origin carries a deterministic key, and the database refuses a second
 row for the same one. The lock makes the common case cheap; the constraint makes
 the uncommon case correct.
 
-Keys name their origin and its identifier and nothing else. A key is stored in
-clear, so it must never carry an amount, a merchant, or anything else a database
-reader should not learn.
+Keys name their origin, identifier, and—when a rejected relationship is
+explicitly reopened—its review-cycle revision. A key is stored in clear, so it
+must never carry an amount, a merchant, or anything else a database reader
+should not learn.
 """
 
 from __future__ import annotations
@@ -38,6 +39,21 @@ def source_key(source: str, identifier: Any) -> str:
     if not source:
         raise ValueError("An idempotency key needs a source.")
     return f"{source}:{identifier}"
+
+
+def source_key_for_revision(source: str, identifier: Any, revision: int) -> str:
+    """Keep first-generation keys stable and give an explicitly reopened match a new key.
+
+    The revision only advances when a reviewer reopens a rejected relationship.
+    A retry within one review cycle therefore still converges on the same event,
+    while a later confirmation cannot return an earlier voided transaction.
+    """
+
+    if revision < 0:
+        raise ValueError("An idempotency revision cannot be negative.")
+    if revision == 0:
+        return source_key(source, identifier)
+    return source_key(source, f"{identifier}:revision-{revision}")
 
 
 def save_once(canonical: CanonicalTransaction) -> tuple[CanonicalTransaction, bool]:

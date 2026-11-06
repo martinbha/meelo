@@ -679,3 +679,39 @@ def test_another_users_match_cannot_be_acted_on(owner: Any) -> None:
         confirm_duplicate_match(match.pk, user=intruder, winner_id=rows[0].pk)
     with pytest.raises(ForbiddenError):
         reject_match(match.pk, user=intruder)
+
+
+@pytest.mark.parametrize("rejected", [False, True])
+def test_manual_relink_cannot_read_or_reopen_another_owners_existing_match(
+    owner: Any, rejected: bool
+) -> None:
+    from apps.reconciliation.services import link_observations
+
+    _, rows = seed(owner, parsed(), parsed())
+    match = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        score=85,
+        data_key=KEY,
+    )
+    if rejected:
+        reject_match(match.pk, user=owner)
+    match.refresh_from_db()
+    original_status = match.status
+    stranger = make_user(email="manual-link-stranger@example.com")
+
+    with pytest.raises(ForbiddenError):
+        link_observations(
+            user=stranger,
+            left_observation_id=rows[0].pk,
+            right_observation_id=rows[1].pk,
+            match_type=match.match_type,
+            data_key=KEY,
+        )
+
+    match.refresh_from_db()
+    assert match.user_id == owner.pk
+    assert match.status == original_status
+    assert match.resolution_revision == 0
