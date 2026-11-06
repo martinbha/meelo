@@ -61,7 +61,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--entrypoint",
         "python",
         image,
-        "scripts/smoke_test_ocr.py",
+        "-m",
+        "scripts.smoke_test_ocr",
     ]
     try:
         result = subprocess.run(command, check=False, timeout=TIMEOUT_SECONDS)
