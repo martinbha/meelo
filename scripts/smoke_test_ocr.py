@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import traceback
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -11,8 +12,8 @@ from PIL import Image, ImageDraw, ImageFont
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ["PADDLE_PDX_CACHE_HOME"] = "/tmp/paddlex-cache"
 
-from apps.ocr.contracts import OcrConfiguration, OcrEngine
-from apps.ocr.execution import OcrResourceLimits, run_engine_bounded
+from apps.ocr.contracts import OcrConfiguration, OcrEngine, OcrRunResult
+from apps.ocr.execution import ClassifiedOcrError, OcrResourceLimits, run_engine_bounded
 from apps.ocr.paddle import PaddleOcrEngine
 from apps.ocr.tesseract import TesseractOcrEngine
 
@@ -22,6 +23,17 @@ RESOURCE_LIMITS = OcrResourceLimits(
     max_threads=2,
     memory_bytes=2 * 1024 * 1024 * 1024,
 )
+
+
+class SmokePaddleOcrEngine(PaddleOcrEngine):
+    def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+        try:
+            return super().run(image_path, configuration)
+        except Exception:
+            # This process handles only the synthetic marker created below.
+            # Keep library diagnostics here, never in the financial pipeline.
+            traceback.print_exc()
+            raise
 
 
 def create_synthetic_image(path: Path) -> None:
@@ -42,12 +54,15 @@ def create_synthetic_image(path: Path) -> None:
 def verify_engine(
     name: str, engine: OcrEngine, image_path: Path, languages: tuple[str, ...]
 ) -> None:
-    result = run_engine_bounded(
-        engine,
-        image_path,
-        OcrConfiguration(languages, {"device": "cpu"} if name == "paddleocr" else {"psm": 7}),
-        limits=RESOURCE_LIMITS,
-    )
+    try:
+        result = run_engine_bounded(
+            engine,
+            image_path,
+            OcrConfiguration(languages, {"device": "cpu"} if name == "paddleocr" else {"psm": 7}),
+            limits=RESOURCE_LIMITS,
+        )
+    except ClassifiedOcrError as error:
+        raise RuntimeError(f"{name} synthetic smoke failed with {error.code}") from error
     recognized = "".join(
         character for token in result.tokens for character in token.text if character.isalnum()
     )
@@ -61,7 +76,7 @@ def main() -> None:
         image_path = Path(temporary) / "synthetic-12345.png"
         create_synthetic_image(image_path)
         verify_engine("tesseract", TesseractOcrEngine(), image_path, ("en",))
-        verify_engine("paddleocr", PaddleOcrEngine(), image_path, ("en",))
+        verify_engine("paddleocr", SmokePaddleOcrEngine(), image_path, ("en",))
 
 
 if __name__ == "__main__":
