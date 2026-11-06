@@ -42,6 +42,7 @@ def selector_data(tmp_path: Path, settings: Any) -> dict[str, Any]:
     master_path.write_text(base64.urlsafe_b64encode(master_key).decode(), encoding="ascii")
     master_path.chmod(0o600)
     settings.FIELD_ENCRYPTION_MASTER_KEY_FILE = str(master_path)
+    settings.FIELD_ENCRYPTION_REQUIRED = True
     settings.DOCUMENT_TMP_ROOT = str(tmp_path / "documents")
 
     owner = make_user(email="selector-owner@example.com", password="password")
@@ -460,3 +461,28 @@ def test_unreadable_account_names_use_a_safe_contextual_label(
     assert "ending 4321" in html
     assert "v1." not in html
     assert PRIVATE_INDEXES[0] not in html
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_envelope_shaped_plaintext_names_are_distinguished_from_authenticated_nested_values(
+    selector_data: dict[str, Any], nested: bool
+) -> None:
+    data = selector_data
+    account = data["account"]
+    literal_name = "v1.1.release.plan.name"
+    value = account.name_encrypted if nested else literal_name
+    account.encrypt_fields({"name_encrypted": value}, key=data["owner_key"])
+    account.save(update_fields=["name_encrypted", "updated_at"])
+    client = Client()
+    client.force_login(data["owner"])
+
+    response = client.get(reverse("transaction-new"))
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    if nested:
+        assert "Account name unavailable" in html
+        assert value not in html
+    else:
+        assert literal_name in html
+        assert "Account name unavailable" not in html

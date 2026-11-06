@@ -27,7 +27,7 @@ def readable_encrypted_value(instance: Any, field: str, *, data_key: bytes) -> s
             try:
                 probe.read_field(field, key=data_key)
             except InvalidCiphertextError:
-                return None
+                return value.strip() or None
             return None
     return value.strip() or None
 
