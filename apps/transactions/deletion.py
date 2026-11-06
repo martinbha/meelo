@@ -12,10 +12,12 @@ there, and the one question worth asking afterwards — "what did I remove, and
 when" — would have no answer.
 
 Three things happen together or not at all: the reversal, the void, and the
-release of the observations. A reversal without the void leaves a transaction
-that reports still count against a ledger that says it never happened. A void
-without the release strands the observations forever — accepted, pointing at a
-transaction nobody can see, and out of the queue.
+release of the observations. A confirmed relationship that applied that event
+is also rejected and audited in the same transaction, so it cannot keep
+claiming the voided event is active. A reversal without the void leaves a
+transaction that reports still count against a ledger that says it never
+happened. A void without the release strands the observations forever —
+accepted, pointing at a transaction nobody can see, and out of the queue.
 """
 
 from __future__ import annotations
@@ -79,18 +81,45 @@ def delete_transaction(
     confirmed: bool = False,
     data_key: bytes | None = None,
     key_version: int = 1,
+    _unlinking_match_id: Any | None = None,
 ) -> DeletionResult:
     """Void a transaction, reverse its postings, and free its observations.
 
     ``confirmed`` is not ceremony. This is the one operation in the application
     that removes a confirmed financial event from every report at once, and it
     cannot be undone by repeating it — the reversal is already written. A caller
-    that has not said so explicitly is refused.
+    that has not said so explicitly is refused. Confirmed transfer, refund,
+    debit-card/bank, or settlement matches involving its source observations are
+    also marked unlinked in this same transaction.
     """
 
     if not confirmed:
         raise DeletionNotConfirmedError("Deleting a transaction requires explicit confirmation.")
 
+    # Reconciliation paths lock in match → observations → transaction order.
+    # Deletion follows the same order so a confirmed relationship cannot race
+    # the reversal and leave a match pointing at a voided event.
+    transaction_exists = CanonicalTransaction.objects.filter(
+        pk=transaction_id, user_id=user.pk
+    ).exists()
+    if not transaction_exists:
+        raise InvalidRequestError("Transaction not found.")
+
+    from apps.observations.models import ImportedObservation
+    from apps.reconciliation.models import ReconciliationMatch
+    from apps.reconciliation.services import lock_related_matches
+
+    linked_observation_ids = list(
+        ImportedObservation.objects.filter(canonical_transaction_id=transaction_id, user_id=user.pk)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    related_matches = lock_related_matches(linked_observation_ids, user=user)
+    linked_observations = list(
+        ImportedObservation.objects.select_for_update()
+        .filter(pk__in=linked_observation_ids, user_id=user.pk)
+        .order_by("pk")
+    )
     transaction = (
         CanonicalTransaction.objects.select_for_update()
         .filter(pk=transaction_id, user_id=user.pk)
@@ -114,6 +143,39 @@ def delete_transaction(
         status=CanonicalTransaction.Status.VOIDED,
         data_key=data_key,
     )
+
+    applied_match_types = {
+        ReconciliationMatch.MatchType.DEBIT_CARD_BANK_MATCH,
+        ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT,
+        ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        ReconciliationMatch.MatchType.REFUND_MATCH,
+    }
+    linked_ids = {
+        row.pk for row in linked_observations if row.canonical_transaction_id == transaction.pk
+    }
+    for match in related_matches:
+        if (
+            match.pk == _unlinking_match_id
+            or match.status != ReconciliationMatch.Status.CONFIRMED
+            or match.match_type not in applied_match_types
+            or not linked_ids.intersection((match.left_observation_id, match.right_observation_id))
+        ):
+            continue
+        match.status = ReconciliationMatch.Status.REJECTED
+        match.reviewed_by = user
+        match.reviewed_at = timezone.now()
+        match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        record_audit_event(
+            user=user,
+            event_type="reconciliation_match_unlinked",
+            obj=match,
+            metadata={
+                "match_type": match.match_type,
+                "match_id": str(match.pk),
+                "canonical_transaction_id": str(transaction.pk),
+                "cause": "transaction_deleted",
+            },
+        )
 
     record_audit_event(
         user=user,
