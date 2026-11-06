@@ -805,3 +805,56 @@ def test_another_users_match_cannot_be_acted_on(owner: Any) -> None:
         confirm_duplicate_match(match.pk, user=intruder, winner_id=rows[0].pk)
     with pytest.raises(ForbiddenError):
         reject_match(match.pk, user=intruder)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_candidate_committed_between_lookup_and_validation_converges(
+    owner: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("The insert race requires independent PostgreSQL connections.")
+    _, rows = seed(owner, parsed(), parsed())
+    original_clean = ReconciliationMatch.full_clean
+    race_started = False
+    winning_ids: list[Any] = []
+
+    def record_in_other_connection() -> Any:
+        close_old_connections()
+        try:
+            return record_match(
+                user=type(owner).objects.get(pk=owner.pk),
+                left_observation_id=rows[0].pk,
+                right_observation_id=rows[1].pk,
+                match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+                score=85,
+                data_key=KEY,
+            ).pk
+        finally:
+            close_old_connections()
+
+    def clean_after_competing_commit(
+        instance: ReconciliationMatch, *args: Any, **kwargs: Any
+    ) -> None:
+        nonlocal race_started
+        if not race_started:
+            race_started = True
+            # The first lookup has returned no row. Commit a competing insert
+            # before this worker reaches model validation, not just the insert.
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                winning_ids.append(executor.submit(record_in_other_connection).result(timeout=10))
+        original_clean(instance, *args, **kwargs)
+
+    monkeypatch.setattr(ReconciliationMatch, "full_clean", clean_after_competing_commit)
+    match = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        score=90,
+        data_key=KEY,
+    )
+
+    assert [match.pk] == winning_ids
+    assert ReconciliationMatch.objects.count() == 1
+    assert match.match_score == 90
+    assert AuditEvent.objects.filter(event_type="reconciliation_match_created").count() == 1

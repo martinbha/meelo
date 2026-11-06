@@ -116,7 +116,9 @@ def record_match(
         match_type=match_type,
         match_score=min(100, int(score)),
     )
-    match.full_clean()
+    # Pair uniqueness is arbitrated by the insert below. A preflight query can
+    # race with another committed candidate and raise before convergence runs.
+    match.full_clean(validate_constraints=False)
     match.match_features_json_encrypted = _encrypted_features(
         match, features, data_key=data_key, key_version=key_version
     )
