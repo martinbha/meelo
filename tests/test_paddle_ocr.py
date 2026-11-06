@@ -6,7 +6,13 @@ import pytest
 
 from apps.ocr.contracts import OcrConfiguration, OcrConfigurationError, OcrEngineError
 from apps.ocr.execution import ClassifiedOcrError, run_engine_bounded
-from apps.ocr.paddle import PaddleOcrEngine, _model_digest
+from apps.ocr.paddle import (
+    DEFAULT_OCR_CPU_THREADS,
+    DEFAULT_TEXT_DET_LIMIT_SIDE_LEN,
+    DEFAULT_TEXT_DET_LIMIT_TYPE,
+    PaddleOcrEngine,
+    _model_digest,
+)
 
 
 class FakePaddle:
@@ -50,6 +56,9 @@ def test_paddle_adapter_normalizes_korean_tokens_without_network(tmp_path: Path)
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
         "enable_mkldnn": False,
+        "cpu_threads": DEFAULT_OCR_CPU_THREADS,
+        "text_det_limit_side_len": DEFAULT_TEXT_DET_LIMIT_SIDE_LEN,
+        "text_det_limit_type": DEFAULT_TEXT_DET_LIMIT_TYPE,
     }
     assert paddle.calls == [(str(image), False)]
     assert "결제" in result.raw_output
@@ -96,9 +105,11 @@ def test_paddle_adapter_records_explicit_model_configuration(tmp_path: Path) -> 
 
     assert result.configuration == configuration
     assert captured["device"] == "cpu"
+    assert captured["cpu_threads"] == DEFAULT_OCR_CPU_THREADS
     assert captured["text_det_limit_side_len"] == 960
     assert result.metadata.engine == "paddleocr"
     assert "paddlepaddle" in result.metadata.model_versions
+    assert captured["text_det_limit_type"] == DEFAULT_TEXT_DET_LIMIT_TYPE
 
 
 def test_paddle_adapter_rejects_missing_input_and_multi_model_runs(tmp_path: Path) -> None:
@@ -124,6 +135,35 @@ def test_default_adapter_fails_with_stable_code_when_models_are_missing(
 
     assert failure.value.code == "PADDLEOCR_FAILED"
     assert failure.value.retryable is False
+
+
+def test_default_engine_plan_records_bounded_server_detector_configuration() -> None:
+    from apps.ocr.pipeline import default_engine_plans
+
+    configuration = default_engine_plans()[0].configuration
+
+    assert configuration.options["text_det_limit_side_len"] == DEFAULT_TEXT_DET_LIMIT_SIDE_LEN
+    assert configuration.options["text_det_limit_type"] == DEFAULT_TEXT_DET_LIMIT_TYPE
+    assert configuration.options["cpu_threads"] == DEFAULT_OCR_CPU_THREADS
+
+
+def test_paddle_memory_error_survives_adapter_for_resource_classification(
+    tmp_path: Path,
+) -> None:
+    class MemoryHungryPaddle:
+        def predict(self, path: str) -> None:
+            del path
+            raise MemoryError("detector allocation refused")
+
+    image = tmp_path / "fixture.png"
+    image.touch()
+    adapter = PaddleOcrEngine(factory=lambda **options: MemoryHungryPaddle())
+
+    with pytest.raises(ClassifiedOcrError) as failure:
+        run_engine_bounded(adapter, image, OcrConfiguration(("en",)), timeout_seconds=5)
+
+    assert failure.value.code == "OCR_RESOURCE_EXHAUSTED"
+    assert failure.value.retryable is True
 
 
 def test_paddle_reuses_a_model_and_rebuilds_it_after_failure(tmp_path: Path) -> None:

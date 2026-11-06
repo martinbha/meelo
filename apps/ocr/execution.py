@@ -46,10 +46,45 @@ def _apply_resource_limits(limits: OcrResourceLimits) -> None:
     try:
         import resource
 
-        resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
+        if _has_finite_cgroup_memory_limit() and hasattr(resource, "RLIMIT_DATA"):
+            # Paddle's initialized CPU runtime maps shared libraries and model
+            # files into the child before inference. An absolute RLIMIT_AS then
+            # leaves too little address space for tensors despite low RSS. In a
+            # memory-limited container, bound additional data-segment
+            # allocations to the configured byte ceiling while the cgroup
+            # enforces the hard total-memory limit.
+            resource.setrlimit(resource.RLIMIT_DATA, (limits.memory_bytes, limits.memory_bytes))
+        else:
+            # Outside a container memory limit, retain the conservative total
+            # address-space ceiling rather than granting an unbounded fallback.
+            resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
     except (ImportError, OSError, ValueError):
         # Windows and constrained runtimes rely on their container memory cap.
         pass
+
+
+def _has_finite_cgroup_memory_limit() -> bool:
+    """Whether a finite memory cgroup supplies the total process ceiling."""
+
+    cgroup_limits = (
+        Path("/sys/fs/cgroup/memory.max"),
+        Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+    )
+    for path in cgroup_limits:
+        try:
+            value = path.read_text(encoding="ascii").strip()
+        except OSError:
+            continue
+        if value == "max":
+            continue
+        try:
+            limit = int(value)
+        except ValueError:
+            continue
+        # cgroup v1 represents unlimited memory with a very large sentinel.
+        if 0 < limit < 1 << 60:
+            return True
+    return False
 
 
 def _result_payload(result: OcrRunResult) -> dict[str, Any]:

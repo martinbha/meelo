@@ -1,6 +1,8 @@
 import os
+import resource
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -163,10 +165,45 @@ def test_resource_limits_validate_and_classify_memory_exhaustion(
 
     applied: list[tuple[int, tuple[int, int]]] = []
     monkeypatch.setattr("resource.setrlimit", lambda kind, value: applied.append((kind, value)))
+    monkeypatch.setattr("apps.ocr.execution._has_finite_cgroup_memory_limit", lambda: False)
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         monkeypatch.setenv(name, "original")
     limits = OcrResourceLimits(timeout_seconds=3, max_threads=1, memory_bytes=1024)
     _apply_resource_limits(limits)
 
     assert os.environ["OMP_NUM_THREADS"] == "1"
+    assert applied[0][0] == resource.RLIMIT_AS
     assert applied[0][1] == (1024, 1024)
+
+
+def test_container_resource_limits_use_the_configured_data_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    applied: list[tuple[int, tuple[int, int]]] = []
+    monkeypatch.setattr("resource.setrlimit", lambda kind, value: applied.append((kind, value)))
+    monkeypatch.setattr("apps.ocr.execution._has_finite_cgroup_memory_limit", lambda: True)
+
+    _apply_resource_limits(OcrResourceLimits(memory_bytes=2 * 1024))
+
+    assert applied == [(resource.RLIMIT_DATA, (2 * 1024, 2 * 1024))]
+
+
+def test_container_memory_limit_detection_requires_a_finite_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.ocr.execution import _has_finite_cgroup_memory_limit
+
+    original_read_text = Path.read_text
+    limit = str(2 * 1024 * 1024 * 1024)
+
+    def read_text(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == Path("/sys/fs/cgroup/memory.max"):
+            return limit
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert _has_finite_cgroup_memory_limit() is True
+
+    limit = "max"
+    assert _has_finite_cgroup_memory_limit() is False
