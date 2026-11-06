@@ -305,6 +305,12 @@ class ApplicationError(Exception):
     def public_recovery_hint(self) -> str:
         return recovery_hint(self.code)
 
+    @property
+    def public_details(self) -> dict[str, Any]:
+        """Only explicitly approved structured data may leave the error boundary."""
+
+        return {}
+
 
 class InvalidRequestError(ApplicationError):
     code = "INVALID_REQUEST"
