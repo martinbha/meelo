@@ -25,6 +25,14 @@ PADDLE_LANGUAGES = frozenset({"en", "ko"})
 LANGUAGE_MODEL_NAMES = {"en": "en", "ko": "korean"}
 MODEL_MANIFEST_NAME = "manifest.json"
 MODEL_ROOT_ENV = "PADDLE_OCR_MODEL_ROOT"
+# Server detector's upstream `min` default can turn a short-side screenshot
+# into an enormous image (for example, 900x240 becomes 2760x736). Cap the
+# longest detector side instead; a 1080x1920 source doubled by preprocessing
+# is bounded to 450x800. The offline release smoke exercises both geometries
+# under the 2 GiB budget; the image-backed parser gate measures field accuracy.
+DEFAULT_TEXT_DET_LIMIT_SIDE_LEN = 800
+DEFAULT_TEXT_DET_LIMIT_TYPE = "max"
+DEFAULT_OCR_CPU_THREADS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +123,8 @@ def _default_factory(**options: Any) -> Any:
         ) from exc
     try:
         return PaddleOCR(**options)
+    except MemoryError:
+        raise
     except Exception as exc:
         raise OcrEngineError(
             "PaddleOCR model initialization failed.",
@@ -219,6 +229,9 @@ class PaddleOcrEngine(OcrEngine):
         options.setdefault("use_doc_unwarping", False)
         options.setdefault("use_textline_orientation", False)
         options.setdefault("enable_mkldnn", False)
+        options.setdefault("cpu_threads", DEFAULT_OCR_CPU_THREADS)
+        options.setdefault("text_det_limit_side_len", DEFAULT_TEXT_DET_LIMIT_SIDE_LEN)
+        options.setdefault("text_det_limit_type", DEFAULT_TEXT_DET_LIMIT_TYPE)
         assets = _local_assets(language) if self._requires_local_assets else None
         if assets is not None:
             options["ocr_version"] = assets.ocr_version
@@ -267,6 +280,10 @@ class PaddleOcrEngine(OcrEngine):
                 if callable(predict)
                 else engine.ocr(str(image_path), cls=False)
             )
+        except MemoryError:
+            self._engines.pop(cache_key, None)
+            # Let the bounded runner preserve its resource-exhaustion code.
+            raise
         except Exception as exc:
             self._engines.pop(cache_key, None)
             raise OcrEngineError(
