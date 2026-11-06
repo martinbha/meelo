@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.db import transaction as db_transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -24,7 +25,13 @@ from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
 from apps.processing.models import SourceDocument
 
-from .duplicates import LIKELY_MERGE_SCORE, DuplicateCandidate, ObservationFacts
+from .duplicates import (
+    LIKELY_MERGE_SCORE,
+    DuplicateCandidate,
+    ObservationFacts,
+    safe_for_automatic_merge,
+    score_pair,
+)
 from .images import SimilarPair, near_duplicate_detection_enabled, sorted_pair
 from .matching import MatchProposal
 from .models import NearDuplicateDocument, ReconciliationMatch
@@ -113,7 +120,31 @@ def record_match(
     match.match_features_json_encrypted = _encrypted_features(
         match, features, data_key=data_key, key_version=key_version
     )
-    match.save()
+    try:
+        # A missing row cannot be locked. The unique pair constraint is the
+        # final arbiter when two workers propose the same pair concurrently;
+        # isolate the insert in a savepoint so the losing worker can converge
+        # on the winner's row instead of aborting its whole reconciliation run.
+        with db_transaction.atomic():
+            match.save()
+    except IntegrityError:
+        existing = (
+            ReconciliationMatch.objects.select_for_update()
+            .filter(
+                left_observation_id=left_id, right_observation_id=right_id, match_type=match_type
+            )
+            .first()
+        )
+        if existing is None:
+            raise
+        if existing.status != ReconciliationMatch.Status.PROPOSED:
+            return existing
+        existing.match_score = min(100, int(score))
+        existing.match_features_json_encrypted = _encrypted_features(
+            existing, features, data_key=data_key, key_version=key_version
+        )
+        existing.save(update_fields=["match_score", "match_features_json_encrypted", "updated_at"])
+        return existing
     record_audit_event(
         user=user,
         event_type="reconciliation_match_created",
@@ -266,47 +297,128 @@ def record_duplicate_candidates(
             data_key=data_key,
             key_version=key_version,
         )
-        if automatic_merge_enabled() and match.match_score >= LIKELY_MERGE_SCORE:
-            _automatically_merge_duplicate(match=match, user=user, features=candidate.features)
+        if (
+            automatic_merge_enabled()
+            and match.match_score >= LIKELY_MERGE_SCORE
+            and data_key is not None
+        ):
+            _automatically_merge_duplicate(
+                match=match,
+                user=user,
+                data_key=data_key,
+                key_version=key_version,
+            )
+            match.refresh_from_db()
         stored.append(match)
     return tuple(stored)
 
 
 @db_transaction.atomic
 def _automatically_merge_duplicate(
-    *, match: ReconciliationMatch, user: Any, features: Sequence[str]
+    *, match: ReconciliationMatch, user: Any, data_key: bytes, key_version: int
 ) -> None:
-    """Merge one eligible pair and retain the policy evidence in its audit."""
+    """Merge a still-safe pair and retain the policy evidence in its audit.
 
-    if match.status != ReconciliationMatch.Status.PROPOSED:
+    The current rows are re-read while locked because the caller's scores may
+    have been computed before a reviewer corrected a date, amount, direction,
+    currency, or mapping. Automatic merging requires the authenticated data key
+    for that re-check; without it, the candidate stays in the review queue.
+    """
+
+    # Lock the match before its observations, the same order used by the
+    # reviewer-driven merge path. Repeated concurrent detection then waits for
+    # the winner and sees the confirmed status instead of merging twice.
+    locked_match = (
+        ReconciliationMatch.objects.select_for_update().filter(pk=match.pk, user_id=user.pk).first()
+    )
+    if locked_match is None or locked_match.status != ReconciliationMatch.Status.PROPOSED:
         return
+
     observations = list(
         ImportedObservation.objects.select_for_update()
         .filter(
-            pk__in=(match.left_observation_id, match.right_observation_id),
+            pk__in=(locked_match.left_observation_id, locked_match.right_observation_id),
             user_id=user.pk,
             merged_into__isnull=True,
+            review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
         )
-        .order_by("created_at", "pk")
+        .select_related("source_document")
+        .order_by("pk")
     )
     if len(observations) != 2:
         return
+
+    from apps.observations.review import decrypt_observation
+
+    current_facts: list[ObservationFacts] = []
+    for observation in observations:
+        values = decrypt_observation(observation, user=user, data_key=data_key)
+        amount_minor = (
+            values.amount.amount_minor
+            if values.amount is not None
+            and values.amount.resolved_currency.code == observation.currency.strip().upper()
+            else None
+        )
+        current_facts.append(
+            facts_from(
+                observation,
+                merchant=values.merchant,
+                amount_minor=amount_minor,
+                approval_code=values.approval_code,
+                balance_after_minor=(
+                    values.balance_after.amount_minor if values.balance_after is not None else None
+                ),
+                source_type=observation.source_document.effective_source_type,
+            )
+        )
+    current_score = score_pair(*current_facts)
+    features = current_score.features
+    if current_score.score < LIKELY_MERGE_SCORE or not safe_for_automatic_merge(*current_facts):
+        # Keep the candidate reviewable, but do not leave a stale high score on
+        # a pair whose facts changed after candidate generation.
+        if locked_match.match_score != current_score.score:
+            locked_match.match_score = current_score.score
+            locked_match.match_features_json_encrypted = _encrypted_features(
+                locked_match,
+                features,
+                data_key=data_key,
+                key_version=key_version,
+            )
+            locked_match.save(
+                update_fields=["match_score", "match_features_json_encrypted", "updated_at"]
+            )
+        return
+
+    if locked_match.match_score != current_score.score or decrypt_match_features(
+        locked_match, data_key=data_key
+    ) != tuple(sorted(features)):
+        locked_match.match_score = current_score.score
+        locked_match.match_features_json_encrypted = _encrypted_features(
+            locked_match,
+            features,
+            data_key=data_key,
+            key_version=key_version,
+        )
+        locked_match.save(
+            update_fields=["match_score", "match_features_json_encrypted", "updated_at"]
+        )
+
     winner, loser = observations
     merge_observations(user=user, winner_id=winner.pk, duplicate_ids=[loser.pk])
-    match.status = ReconciliationMatch.Status.CONFIRMED
-    match.reviewed_by = None
-    match.reviewed_at = timezone.now()
-    match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+    locked_match.status = ReconciliationMatch.Status.CONFIRMED
+    locked_match.reviewed_by = None
+    locked_match.reviewed_at = timezone.now()
+    locked_match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
     record_audit_event(
         user=user,
         event_type="duplicate_merged",
-        obj=match,
+        obj=locked_match,
         metadata={
             "automatic": True,
             "policy_enabled": True,
             "winner_observation_id": str(winner.pk),
             "merged_observation_id": str(loser.pk),
-            "score": match.match_score,
+            "score": locked_match.match_score,
             "features": sorted(features),
         },
     )
