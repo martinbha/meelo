@@ -86,6 +86,56 @@ def test_manual_entry_scales_encrypted_amount_using_currency_exponent(
 
 
 @pytest.mark.parametrize(
+    ("currency", "entered", "expected_minor"),
+    [
+        ("KRW", "42900", 42_900),
+        ("USD", "10.25", 1_025),
+        ("JPY", "100", 100),
+        ("VND", "100", 100),
+    ],
+)
+def test_encrypted_create_edit_unchanged_post_preserves_each_currency_amount(
+    owner: Any,
+    account: FinancialAccount,
+    master_key: bytes,
+    currency: str,
+    entered: str,
+    expected_minor: int,
+) -> None:
+    client = Client()
+    client.force_login(owner)
+    payload = {
+        "occurred_at": "2026-08-15",
+        "amount": entered,
+        "currency": currency,
+        "transaction_type": CanonicalTransaction.TransactionType.PURCHASE,
+        "financial_account": str(account.pk),
+        "merchant": "Synthetic currency test",
+        "counterparty": "",
+        "notes": "",
+    }
+
+    created = client.post(reverse("transaction-new"), data=payload)
+    assert created.status_code == 302
+    transaction = CanonicalTransaction.objects.get(user=owner)
+    edit_url = reverse("transaction-edit", kwargs={"pk": transaction.pk})
+
+    edit_page = client.get(edit_url)
+    assert edit_page.status_code == 200
+    html = edit_page.content.decode()
+    assert f'value="{entered}"' in html
+    assert "v1." not in html
+
+    saved = client.post(edit_url, data=payload)
+    assert saved.status_code == 302
+    transaction.refresh_from_db()
+    data_key = get_user_data_key(user=owner, actor=owner, master_key=master_key)
+    actual_minor = read_money(transaction, "amount_encrypted", data_key=data_key).amount_minor
+    assert actual_minor == expected_minor
+    assert transaction.currency == currency
+
+
+@pytest.mark.parametrize(
     ("currency", "entered"),
     [
         ("XYZ", "100"),
