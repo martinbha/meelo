@@ -6,6 +6,10 @@
 
 - Run offline OCR within the worker memory budget using patched runtime dependencies ([#415](https://github.com/martinbha/meelo/pull/415)).
 
+### Fixed
+
+- Preserve decrypted values and search indexes when editing transaction drafts ([#414](https://github.com/martinbha/meelo/pull/414)).
+
 ## 0.1.0 — 2026-08-20
 
 Initial MVP release candidate.

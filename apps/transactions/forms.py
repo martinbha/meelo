@@ -1,21 +1,30 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from copy import copy
+from decimal import Decimal
 from typing import Any
 
 from django import forms
+from django.core.exceptions import NON_FIELD_ERRORS
 
 from apps.categorization.models import Category
 from apps.core.blind_index import SearchKey
-from apps.core.crypto import is_encrypted_value
+from apps.core.crypto import InvalidCiphertextError, is_encrypted_value
+from apps.core.encrypted_values import MalformedPayloadError
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
 from .models import CanonicalTransaction
+from .money import read_money
 from .services import create_manual_transaction, update_manual_transaction
 
 
 class ManualTransactionForm(forms.Form):
+    UNREADABLE_SOURCE_MESSAGE = (
+        "One or more saved values could not be read. This transaction was not changed. "
+        "Follow the transaction recovery instructions before editing it."
+    )
+
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     amount = forms.DecimalField(min_value=Decimal("0.01"), max_digits=18, decimal_places=2)
     currency = forms.CharField(max_length=3, initial="KRW")
@@ -30,10 +39,17 @@ class ManualTransactionForm(forms.Form):
     notes = forms.CharField(widget=forms.Textarea, required=False)
 
     def __init__(
-        self, *, user: Any, instance: CanonicalTransaction | None = None, **kwargs: Any
+        self,
+        *,
+        user: Any,
+        instance: CanonicalTransaction | None = None,
+        data_key: bytes | None = None,
+        **kwargs: Any,
     ) -> None:
         self.user = user
         self.instance = instance
+        self.data_key = data_key
+        self._source_values_unreadable = False
         super().__init__(**kwargs)
         self.fields["financial_account"].queryset = FinancialAccount.objects.filter(  # type: ignore[attr-defined]
             user=user, is_active=True
@@ -42,34 +58,57 @@ class ManualTransactionForm(forms.Form):
             user=user, is_active=True
         )
         self.fields["category"].queryset = Category.objects.filter(user=user)  # type: ignore[attr-defined]
-        if instance is not None and not kwargs.get("data"):
-            self.initial.update(
-                occurred_at=instance.occurred_at,
-                amount=self._initial_amount(instance),
-                currency=instance.currency,
-                transaction_type=instance.transaction_type,
-                financial_account=instance.financial_account_id,
-                payment_instrument=instance.payment_instrument_id,
-                category=instance.category_id,
-                merchant=instance.merchant_encrypted,
-                counterparty=instance.counterparty_encrypted,
-                notes=instance.notes_encrypted,
-            )
-
-    @staticmethod
-    def _initial_amount(instance: CanonicalTransaction) -> Decimal | None:
-        """The amount to show in the edit form, if it can be read without a key.
-
-        An encrypted amount is left blank rather than shown as ciphertext. The
-        user re-enters it, which is the honest outcome: this form has no key.
-        """
-
-        if is_encrypted_value(instance.amount_encrypted or ""):
-            return None
         try:
-            return Decimal(instance.amount_encrypted.split(":", 1)[0]) / Decimal("100")
-        except (InvalidOperation, ValueError):
-            return None
+            initial = self._read_initial_values(instance) if instance is not None else None
+        except (ValueError, MalformedPayloadError):
+            # Never put an envelope or an unreadable value into a form field.
+            # The non-field error also blocks a bound POST from saving blanks
+            # over the original data.
+            self._source_values_unreadable = True
+        else:
+            if instance is not None and not self.is_bound and initial is not None:
+                self.initial.update(initial)
+
+    def _read_initial_values(self, instance: CanonicalTransaction) -> dict[str, Any]:
+        amount = read_money(instance, "amount_encrypted", data_key=self.data_key)
+        merchant = self._read_editable_text(instance, "merchant_encrypted")
+        counterparty = self._read_editable_text(instance, "counterparty_encrypted")
+        notes = self._read_editable_text(instance, "notes_encrypted")
+        return {
+            "occurred_at": instance.occurred_at,
+            "amount": amount.decimal_amount,
+            "currency": str(amount.resolved_currency),
+            "transaction_type": instance.transaction_type,
+            "financial_account": instance.financial_account_id,
+            "payment_instrument": instance.payment_instrument_id,
+            "category": instance.category_id,
+            "merchant": merchant,
+            "counterparty": counterparty,
+            "notes": notes,
+        }
+
+    def _read_editable_text(self, instance: CanonicalTransaction, field: str) -> str:
+        value = instance.read_field(field, key=self.data_key)
+        if is_encrypted_value(value):
+            # A prefix alone is not proof: ordinary user text can start with
+            # "v1.". Check whether the string authenticates as another value
+            # for this exact field/record. A genuine historical nested
+            # envelope is blocked, never displayed or automatically rewritten.
+            probe = copy(instance)
+            setattr(probe, field, value)
+            try:
+                probe.read_field(field, key=self.data_key)
+            except InvalidCiphertextError:
+                return value
+            raise ValueError("A saved transaction value needs explicit recovery.")
+        return value
+
+    def full_clean(self) -> None:
+        super().full_clean()
+        if self._source_values_unreadable:
+            errors = self.errors.setdefault(NON_FIELD_ERRORS, self.error_class())
+            if self.UNREADABLE_SOURCE_MESSAGE not in errors:
+                errors.append(self.UNREADABLE_SOURCE_MESSAGE)
 
     def save(
         self,
