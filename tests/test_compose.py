@@ -1,4 +1,9 @@
+import subprocess
 from pathlib import Path
+
+import pytest
+
+from scripts import run_ocr_image_smoke
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -215,3 +220,56 @@ def test_security_ci_smoke_tests_the_built_application_image() -> None:
 
     assert "docker build --tag finance-ocr:ci ." in security
     assert "./scripts/smoke_test_image.sh finance-ocr:ci" in security
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_returncode"),
+    [("timeout", 124), ("docker_start", 1), ("container_exit", 125)],
+)
+def test_image_smoke_failure_removes_only_its_named_container(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    expected_returncode: int,
+) -> None:
+    container_name = "meelo-image-ocr-smoke-test"
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        if command[:2] == ["docker", "run"]:
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, run_ocr_image_smoke.TIMEOUT_SECONDS)
+            if failure == "docker_start":
+                raise OSError("Docker could not start")
+            return subprocess.CompletedProcess(command, 125)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(run_ocr_image_smoke.subprocess, "run", fake_run)
+
+    result = run_ocr_image_smoke.main(["finance-ocr:ci", container_name])
+
+    assert result == expected_returncode
+    run_command, cleanup_command = calls
+    assert run_command[:4] == ["docker", "run", "--rm", "--name"]
+    assert run_command[4] == container_name
+    assert cleanup_command == ["docker", "rm", "--force", container_name]
+
+
+def test_image_smoke_does_not_remove_a_successful_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(run_ocr_image_smoke.subprocess, "run", fake_run)
+
+    result = run_ocr_image_smoke.main(["finance-ocr:ci", "meelo-image-ocr-smoke-test"])
+
+    assert result == 0
+    assert len(calls) == 1
+    assert calls[0][:2] == ["docker", "run"]

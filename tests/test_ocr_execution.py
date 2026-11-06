@@ -1,6 +1,8 @@
 import os
+import resource
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +18,8 @@ from apps.ocr.execution import (
     ClassifiedOcrError,
     OcrResourceLimits,
     _apply_resource_limits,
+    _cgroup_memory_limit_bytes,
+    _current_vm_data_bytes,
     _failure_details,
     run_engine_bounded,
 )
@@ -163,10 +167,124 @@ def test_resource_limits_validate_and_classify_memory_exhaustion(
 
     applied: list[tuple[int, tuple[int, int]]] = []
     monkeypatch.setattr("resource.setrlimit", lambda kind, value: applied.append((kind, value)))
+    monkeypatch.setattr("apps.ocr.execution._cgroup_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr("apps.ocr.execution._current_vm_data_bytes", lambda: 4096)
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         monkeypatch.setenv(name, "original")
     limits = OcrResourceLimits(timeout_seconds=3, max_threads=1, memory_bytes=1024)
     _apply_resource_limits(limits)
 
     assert os.environ["OMP_NUM_THREADS"] == "1"
+    assert applied[0][0] == resource.RLIMIT_AS
     assert applied[0][1] == (1024, 1024)
+
+
+@pytest.mark.parametrize(
+    ("cgroup_limit", "baseline", "expected_resource", "expected_value"),
+    [
+        (2048, 4096, resource.RLIMIT_DATA, 4096 + 2048),
+        (2049, 4096, resource.RLIMIT_AS, 2048),
+        (None, 4096, resource.RLIMIT_AS, 2048),
+        (2048, None, resource.RLIMIT_AS, 2048),
+    ],
+)
+def test_data_allowance_requires_a_trusted_baseline_and_cgroup_within_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    cgroup_limit: int | None,
+    baseline: int | None,
+    expected_resource: int,
+    expected_value: int,
+) -> None:
+    applied: list[tuple[int, tuple[int, int]]] = []
+    monkeypatch.setattr("resource.setrlimit", lambda kind, value: applied.append((kind, value)))
+    monkeypatch.setattr("apps.ocr.execution._cgroup_memory_limit_bytes", lambda: cgroup_limit)
+    monkeypatch.setattr("apps.ocr.execution._current_vm_data_bytes", lambda: baseline)
+
+    _apply_resource_limits(OcrResourceLimits(memory_bytes=2048))
+
+    assert applied == [(expected_resource, (expected_value, expected_value))]
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ({"/sys/fs/cgroup/memory.max": str(2 * 1024**3)}, 2 * 1024**3),
+        ({"/sys/fs/cgroup/memory.max": "max"}, None),
+        ({"/sys/fs/cgroup/memory.max": "invalid"}, None),
+        ({}, None),
+        (
+            {
+                "/sys/fs/cgroup/memory.max": "max",
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes": str(1 << 63),
+            },
+            None,
+        ),
+    ],
+)
+def test_cgroup_memory_limit_detection_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    values: dict[str, str],
+    expected: int | None,
+) -> None:
+    def read_text(path: Path, *args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        try:
+            return values[str(path)]
+        except KeyError as exc:
+            raise FileNotFoundError(path) from exc
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert _cgroup_memory_limit_bytes() == expected
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("Name: worker\nVmData: 1234 kB\n", 1234 * 1024),
+        ("Name: worker\nVmData: invalid kB\n", None),
+        ("Name: worker\n", None),
+    ],
+)
+def test_vm_data_baseline_parsing_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    expected: int | None,
+) -> None:
+    def read_text(path: Path, *args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        if path == Path("/proc/self/status"):
+            return status
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert _current_vm_data_bytes() == expected
+
+
+def test_data_allowance_refuses_oversized_allocation_under_kernel_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if not hasattr(resource, "RLIMIT_DATA"):
+        pytest.skip("RLIMIT_DATA is unavailable")
+    if _current_vm_data_bytes() is None:
+        pytest.skip("A Linux /proc VmData baseline is unavailable")
+
+    budget = 8 * 1024 * 1024
+    monkeypatch.setattr("apps.ocr.execution._cgroup_memory_limit_bytes", lambda: budget)
+
+    class AllocationEngine(SlowEngine):
+        def run(self, image_path: Path, configuration: OcrConfiguration) -> OcrRunResult:
+            del image_path
+            bytearray(32 * 1024 * 1024)
+            return OcrRunResult((), self.metadata, configuration, 10)
+
+    with pytest.raises(ClassifiedOcrError) as failure:
+        run_engine_bounded(
+            AllocationEngine(),
+            Path("fixture.png"),
+            OcrConfiguration(("en",)),
+            limits=OcrResourceLimits(timeout_seconds=5, memory_bytes=budget),
+        )
+
+    assert failure.value.code == "OCR_RESOURCE_EXHAUSTED"

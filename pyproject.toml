@@ -15,7 +15,7 @@ dependencies = [
     "opencv-contrib-python>=4.10,<5",
     "paddlepaddle>=3.1,<4",
     "paddleocr>=2.10,<4",
-    "pillow>=11,<13",
+    "pillow>=11,<14",
     "psycopg[binary]>=3.2,<4",
     "pytesseract>=0.3.13,<1",
     "rapidfuzz>=3.10,<4",
@@ -31,7 +31,7 @@ dev = [
     "mypy>=1.13,<2",
     "pre-commit>=4,<5",
     "pytest-django>=4.9,<5",
-    "pytest>=8.3,<9",
+    "pytest>=8.3,<10",
     "ruff>=0.9,<1",
     "types-qrcode>=8,<9",
 ]

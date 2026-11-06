@@ -21,7 +21,12 @@ from .contracts import BoundingBox, EngineMetadata, OcrConfiguration, OcrEngine,
 from .execution import ClassifiedOcrError, OcrResourceLimits, run_engine_bounded
 from .matching import MatchStatus, TokenCandidate, match_engine_tokens
 from .models import OcrRun, OcrToken
-from .paddle import PaddleOcrEngine
+from .paddle import (
+    DEFAULT_OCR_CPU_THREADS,
+    DEFAULT_TEXT_DET_LIMIT_SIDE_LEN,
+    DEFAULT_TEXT_DET_LIMIT_TYPE,
+    PaddleOcrEngine,
+)
 from .preprocessing import PreprocessingSettings, preprocess_image, select_variant
 from .services import record_failed_run, record_successful_run
 from .tesseract import TesseractOcrEngine
@@ -239,7 +244,18 @@ def default_engine_plans(
     selected_psm = default_psm(source_type) if tesseract_psm is None else tesseract_psm
     paddle, tesseract = _default_engines()
     return (
-        EnginePlan(paddle, OcrConfiguration(("ko",), {"device": "cpu"})),
+        EnginePlan(
+            paddle,
+            OcrConfiguration(
+                ("ko",),
+                {
+                    "device": "cpu",
+                    "cpu_threads": DEFAULT_OCR_CPU_THREADS,
+                    "text_det_limit_side_len": DEFAULT_TEXT_DET_LIMIT_SIDE_LEN,
+                    "text_det_limit_type": DEFAULT_TEXT_DET_LIMIT_TYPE,
+                },
+            ),
+        ),
         EnginePlan(tesseract, OcrConfiguration(("ko", "en"), {"psm": selected_psm})),
     )
 

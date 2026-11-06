@@ -141,6 +141,12 @@ ERROR_CATALOGUE: Final[Mapping[str, ErrorDefinition]] = MappingProxyType(
             "Try processing the screenshot again.",
             retryable=True,
         ),
+        "OCR_RESOURCE_EXHAUSTED": _definition(
+            "Text recognition exceeded the worker's memory limit.",
+            "Try a smaller or less-detailed screenshot, or ask an operator to "
+            "review worker capacity.",
+            retryable=True,
+        ),
         "OCR_ALL_ENGINES_FAILED": _definition(
             "Text recognition could not read the screenshot.",
             "Try processing the screenshot again.",
