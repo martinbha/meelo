@@ -2,13 +2,15 @@
 
 Two mechanisms, deliberately separate:
 
-* A **deterministic key** — same user, instrument, amount, date, direction, or
-  an identical approval code — finds the certain cases cheaply.
+* A **deterministic key** — same user, mapped instrument or account, amount,
+  date, currency, and direction — finds the strongest cases cheaply. Approval
+  codes support a score but never stand in for the row identity.
 * A **score** (specification 16.3) ranks the uncertain ones so a reviewer sees
   the most likely pairs first.
 
-Neither ever deletes or merges anything on its own. Silent automatic merging is
-disabled for the initial release, so both paths only ever produce candidates.
+Candidate generation never merges on its own. The optional automatic merge
+policy lives in the persistence service, where it rechecks locked observations
+against hard safety rules before changing either row.
 """
 
 from __future__ import annotations
@@ -43,8 +45,8 @@ NEARBY_DATE_WINDOW = timedelta(days=1)
 #: Merchant strings at or above this similarity count as the same merchant.
 MERCHANT_SIMILARITY_THRESHOLD = 85.0
 
-#: Candidate generation bounds. Exact blind-index pairs bypass the date window,
-#: but still compete by score for the finite reviewer-facing candidate set.
+#: Candidate generation bounds. A complete row-key match is prioritized, while
+#: all candidate pairs remain inside the date window.
 CANDIDATE_SEARCH_WINDOW = timedelta(days=31)
 MAX_CANDIDATES_PER_OBSERVATION = 25
 
@@ -107,34 +109,38 @@ class DuplicateScore:
 def deterministic_key(facts: ObservationFacts, *, search_key: SearchKey | bytes) -> str:
     """A stable key for the rows that can be matched without judgement.
 
-    An approval code identifies one authorisation exactly, so it takes
-    precedence. Otherwise the key is the tuple a bank statement would use to
-    identify a line: instrument, date, signed amount.
+    Approval codes are only supporting evidence: issuers can reuse them, and a
+    code alone is not unique across dates or cards. The key uses the complete
+    row identity instead: one user's mapped instrument or account, date, amount,
+    currency, and direction. An approval code still contributes to the score
+    for candidates whose other facts agree.
 
-    The search key is required, not optional. Everything this covers is low
-    entropy — a six-digit approval code, a date, an amount a coffee might cost —
-    so an unkeyed digest of it is a lookup table an attacker can build in
-    seconds. Leaving an unkeyed path available would mean one caller could reach
-    it, and the value would then be indistinguishable from a keyed one at the
-    point where it mattered (specification 22.4).
+    The search key is required, not optional. Dates, amounts, and account
+    identifiers are low entropy, so an unkeyed digest would be a lookup table an
+    attacker could build in seconds. Leaving an unkeyed path available would
+    mean one caller could reach it, and the value would then be indistinguishable
+    from a keyed one at the point where it mattered (specification 22.4).
     """
 
-    if facts.approval_code:
-        payload = f"approval|{facts.user_id}|{facts.approval_code.strip().casefold()}"
+    if facts.amount_minor is None or facts.occurred_at is None or not facts.currency:
+        return ""
+    if facts.instrument_id is not None:
+        mapping = f"instrument:{facts.instrument_id}"
+    elif facts.account_id is not None:
+        mapping = f"account:{facts.account_id}"
     else:
-        if facts.amount_minor is None or facts.occurred_at is None:
-            return ""
-        payload = "|".join(
-            (
-                "row",
-                str(facts.user_id),
-                str(facts.instrument_id or facts.account_id or "unmapped"),
-                facts.occurred_at.isoformat(),
-                str(facts.amount_minor),
-                facts.currency,
-                facts.direction,
-            )
+        mapping = "unmapped"
+    payload = "|".join(
+        (
+            "row",
+            str(facts.user_id),
+            mapping,
+            facts.occurred_at.isoformat(),
+            str(facts.amount_minor),
+            facts.currency.strip().upper(),
+            facts.direction,
         )
+    )
     return blind_index("observation_row", payload, user_id=facts.user_id, key=search_key)
 
 
@@ -158,14 +164,109 @@ def _merchant_similarity(left: str, right: str) -> float:
     return float(ratio(left.casefold(), right.casefold()))
 
 
+def _mapping_conflict(left: ObservationFacts, right: ObservationFacts) -> str:
+    """Whether both rows explicitly map to different cards or accounts."""
+
+    if (
+        left.instrument_id is not None
+        and right.instrument_id is not None
+        and left.instrument_id != right.instrument_id
+    ):
+        return "different payment instruments"
+    if (
+        left.account_id is not None
+        and right.account_id is not None
+        and left.account_id != right.account_id
+    ):
+        return "different financial accounts"
+    return ""
+
+
+def _pair_conflict(left: ObservationFacts, right: ObservationFacts) -> str:
+    """Hard incompatibilities that weighted evidence cannot override."""
+
+    if left.user_id != right.user_id:
+        return "different users"
+    if left.observation_id == right.observation_id:
+        return "same observation"
+
+    left_currency = left.currency.strip().upper()
+    right_currency = right.currency.strip().upper()
+    if left_currency and right_currency and left_currency != right_currency:
+        return "different currencies"
+    if (
+        left.amount_minor is not None
+        and right.amount_minor is not None
+        and left.amount_minor != right.amount_minor
+    ):
+        return "different amounts"
+    if (
+        left.direction != ImportedObservation.Direction.UNKNOWN
+        and right.direction != ImportedObservation.Direction.UNKNOWN
+        and left.direction != right.direction
+    ):
+        return "different directions"
+    return _mapping_conflict(left, right)
+
+
+def automatic_merge_blocking_reason(left: ObservationFacts, right: ObservationFacts) -> str:
+    """Why a pair may not be merged automatically, regardless of its score.
+
+    A strong score is not a substitute for a dated, mapped, same-currency event
+    with a known direction. Two distinct source documents are required as well:
+    two identical lines in one screenshot can be two real repeated purchases.
+    """
+
+    conflict = _pair_conflict(left, right)
+    if conflict:
+        return conflict
+    if left.amount_minor is None or right.amount_minor is None:
+        return "amount is missing"
+    if not left.currency.strip() or not right.currency.strip():
+        return "currency is missing"
+    if left.occurred_at is None or right.occurred_at is None:
+        return "date is missing"
+    if abs(left.occurred_at - right.occurred_at) > NEARBY_DATE_WINDOW:
+        return "dates are more than one day apart"
+    if (
+        left.direction == ImportedObservation.Direction.UNKNOWN
+        or right.direction == ImportedObservation.Direction.UNKNOWN
+    ):
+        return "direction is unknown"
+    if not (
+        left.instrument_id is not None
+        and left.instrument_id == right.instrument_id
+        or left.account_id is not None
+        and left.account_id == right.account_id
+    ):
+        return "no matching card or account mapping"
+    if (
+        left.approval_code
+        and right.approval_code
+        and left.approval_code.strip().casefold() != right.approval_code.strip().casefold()
+    ):
+        return "approval codes differ"
+    if (
+        left.source_document_id is None
+        or right.source_document_id is None
+        or left.source_document_id == right.source_document_id
+    ):
+        return "rows do not come from distinct source documents"
+    return ""
+
+
+def safe_for_automatic_merge(left: ObservationFacts, right: ObservationFacts) -> bool:
+    """Whether the pair has every hard fact required for automatic merging."""
+
+    return not automatic_merge_blocking_reason(left, right)
+
+
 def score_pair(left: ObservationFacts, right: ObservationFacts) -> DuplicateScore:
     """Score how likely two observations are to be the same transaction."""
 
-    if left.user_id != right.user_id:
-        # Same user is a hard requirement, not a weighted feature.
-        return DuplicateScore(0, (), "different users")
-    if left.observation_id == right.observation_id:
-        return DuplicateScore(0, (), "same observation")
+    blocking_reason = _pair_conflict(left, right)
+    if blocking_reason:
+        return DuplicateScore(0, (), blocking_reason)
 
     score = 0
     features: list[str] = []
@@ -173,14 +274,14 @@ def score_pair(left: ObservationFacts, right: ObservationFacts) -> DuplicateScor
     if (
         left.amount_minor is not None
         and left.amount_minor == right.amount_minor
-        and left.currency == right.currency
+        and left.currency.strip().upper() == right.currency.strip().upper()
     ):
         score += EXACT_AMOUNT_POINTS
         features.append("exact_amount")
 
-    left_instrument = left.instrument_id or left.account_id
-    right_instrument = right.instrument_id or right.account_id
-    if left_instrument is not None and left_instrument == right_instrument:
+    same_instrument = left.instrument_id is not None and left.instrument_id == right.instrument_id
+    same_account = left.account_id is not None and left.account_id == right.account_id
+    if same_instrument or same_account:
         score += SAME_INSTRUMENT_POINTS
         features.append("same_mapped_instrument")
 
@@ -203,7 +304,13 @@ def score_pair(left: ObservationFacts, right: ObservationFacts) -> DuplicateScor
         score += MERCHANT_SIMILARITY_POINTS
         features.append("merchant_similarity")
 
-    if left.approval_code and left.approval_code == right.approval_code:
+    if (
+        left.approval_code
+        and left.approval_code.strip().casefold() == right.approval_code.strip().casefold()
+        and left.occurred_at is not None
+        and right.occurred_at is not None
+        and abs(left.occurred_at - right.occurred_at) <= NEARBY_DATE_WINDOW
+    ):
         score += SAME_APPROVAL_CODE_POINTS
         features.append("same_approval_code")
 
@@ -242,9 +349,9 @@ def find_duplicate_candidates(
 ) -> tuple[DuplicateCandidate, ...]:
     """Pair up observations that may be the same transaction.
 
-    A pair reached through a deterministic key is always returned, whatever it
-    scores: an identical approval code is evidence no weighting should be able
-    to talk us out of.
+    A pair reached through the complete row key is returned even when a caller
+    raises the minimum score: each identity component already agrees. Approval
+    codes alone do not bypass either the score threshold or the date window.
     """
 
     if search_window < timedelta(0):
@@ -262,6 +369,8 @@ def find_duplicate_candidates(
     for index, left in enumerate(facts):
         for right in facts[index + 1 :]:
             score = score_pair(left, right)
+            if score.blocking_reason:
+                continue
             deterministic = (left.observation_id, right.observation_id) in keyed_pairs
             if (
                 not deterministic

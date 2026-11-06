@@ -9,9 +9,11 @@ from apps.reconciliation.duplicates import (
     LIKELY_MERGE_SCORE,
     REVIEW_CANDIDATE_SCORE,
     ObservationFacts,
+    automatic_merge_blocking_reason,
     deterministic_key,
     find_duplicate_candidates,
     group_by_key,
+    safe_for_automatic_merge,
     score_pair,
 )
 
@@ -48,17 +50,20 @@ def facts(**overrides: Any) -> ObservationFacts:
 # ---------------------------------------------------------------------------
 
 
-def test_an_identical_approval_code_produces_one_key() -> None:
+def test_approval_code_is_not_enough_to_produce_a_deterministic_key() -> None:
     left = facts(approval_code="12345678")
     right = facts(
         observation_id="row-2",
         approval_code="12345678",
-        merchant="완전히 다른 이름",
-        amount_minor=9999,
+        occurred_at=date(2026, 4, 1),
         source_document_id="doc-2",
     )
 
-    assert deterministic_key(left, search_key=SEARCH_KEY) == deterministic_key(
+    assert (
+        deterministic_key(facts(amount_minor=None, approval_code="12345678"), search_key=SEARCH_KEY)
+        == ""
+    )
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
         right, search_key=SEARCH_KEY
     )
 
@@ -74,6 +79,15 @@ def test_the_row_key_uses_instrument_date_amount_and_direction() -> None:
     assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
         different_amount, search_key=SEARCH_KEY
     )
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
+        facts(observation_id="row-4", currency="USD"), search_key=SEARCH_KEY
+    )
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
+        facts(observation_id="row-5", direction=CREDIT), search_key=SEARCH_KEY
+    )
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
+        facts(observation_id="row-6", instrument_id="card-2"), search_key=SEARCH_KEY
+    )
 
 
 def test_keys_never_collide_across_users() -> None:
@@ -88,9 +102,9 @@ def test_keys_never_collide_across_users() -> None:
 def test_a_row_without_an_amount_or_date_has_no_key() -> None:
     assert deterministic_key(facts(amount_minor=None), search_key=SEARCH_KEY) == ""
     assert deterministic_key(facts(occurred_at=None), search_key=SEARCH_KEY) == ""
-    # An approval code still identifies the row even without the rest.
+    # An approval code supports a score but never substitutes for row identity.
     assert (
-        deterministic_key(facts(amount_minor=None, approval_code="99"), search_key=SEARCH_KEY) != ""
+        deterministic_key(facts(amount_minor=None, approval_code="99"), search_key=SEARCH_KEY) == ""
     )
 
 
@@ -208,24 +222,16 @@ def test_duplicates_across_overlapping_screenshots_stay_traceable() -> None:
 
 
 def test_a_deterministic_pair_is_always_returned_whatever_it_scores() -> None:
-    # The approval code matches but nothing else does, so the weighted score
-    # alone would fall under the review threshold.
-    left = facts(approval_code="12345678")
-    right = facts(
-        observation_id="row-2",
-        approval_code="12345678",
-        amount_minor=99_999,
-        occurred_at=date(2025, 1, 1),
-        merchant="다른 가게",
-        instrument_id="card-9",
-        account_id="account-9",
-        source_type="bank_transaction_list",
-    )
+    # Same mapped row identity is found even when a stricter score threshold
+    # asks for stronger evidence than the usual review-candidate threshold.
+    left = facts(merchant="", source_type="", approval_code="")
+    right = facts(observation_id="row-2", merchant="", source_type="", approval_code="")
 
-    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY)
+    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY, minimum_score=90)
 
     assert len(candidates) == 1
     assert candidates[0].from_deterministic_key is True
+    assert candidates[0].score.score < 90
 
 
 def test_weak_pairs_are_not_proposed() -> None:
@@ -299,17 +305,15 @@ def test_candidate_cap_keeps_the_best_pairs_and_emits_a_safe_metric(
     ]
 
 
-def test_exact_blind_index_pair_wins_the_candidate_cap() -> None:
-    base = facts(observation_id="base", approval_code="exact-code")
-    exact = facts(
-        observation_id="exact",
-        approval_code="exact-code",
-        occurred_at=date(2025, 1, 1),
-        amount_minor=1,
-        merchant="different",
-        instrument_id="different",
+def test_exact_row_key_pair_wins_the_candidate_cap() -> None:
+    base = facts(observation_id="base", approval_code="code-a", source_document_id="doc-base")
+    exact = facts(observation_id="exact", approval_code="code-b", source_document_id="doc-exact")
+    high_score = facts(
+        observation_id="weighted",
+        occurred_at=date(2026, 8, 16),
+        approval_code="",
+        source_document_id="doc-weighted",
     )
-    high_score = facts(observation_id="weighted", approval_code="")
 
     candidates = find_duplicate_candidates(
         [base, high_score, exact],
@@ -323,3 +327,78 @@ def test_exact_blind_index_pair_wins_the_candidate_cap() -> None:
     }
     assert selected_ids == {"base", "exact"}
     assert candidates[0].from_deterministic_key is True
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"currency": "USD"}, "different currencies"),
+        ({"amount_minor": 4300}, "different amounts"),
+        ({"direction": CREDIT}, "different directions"),
+        ({"instrument_id": "card-2"}, "different payment instruments"),
+        ({"account_id": "account-2"}, "different financial accounts"),
+    ],
+)
+def test_conflicting_facts_are_hard_blocked(changes: dict[str, Any], reason: str) -> None:
+    left = facts(approval_code="reused-code")
+    right = facts(observation_id="row-2", approval_code="reused-code", **changes)
+
+    score = score_pair(left, right)
+    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY)
+
+    assert score.score == 0
+    assert score.blocking_reason == reason
+    assert candidates == ()
+
+
+def test_reused_code_across_distant_dates_is_not_deterministic_or_proposed() -> None:
+    left = facts(approval_code="ABC123", occurred_at=date(2026, 1, 1))
+    right = facts(
+        observation_id="row-2",
+        approval_code="ABC123",
+        occurred_at=date(2026, 4, 1),
+        source_document_id="doc-2",
+    )
+
+    assert deterministic_key(left, search_key=SEARCH_KEY) != deterministic_key(
+        right, search_key=SEARCH_KEY
+    )
+    assert find_duplicate_candidates([left, right], search_key=SEARCH_KEY) == ()
+
+
+def test_reused_code_within_search_window_stays_reviewable_but_not_auto_merge_safe() -> None:
+    left = facts(approval_code="ABC123", occurred_at=date(2026, 1, 1))
+    right = facts(
+        observation_id="row-2",
+        approval_code="ABC123",
+        occurred_at=date(2026, 1, 11),
+        source_document_id="doc-2",
+    )
+
+    candidates = find_duplicate_candidates([left, right], search_key=SEARCH_KEY)
+
+    assert len(candidates) == 1
+    assert candidates[0].from_deterministic_key is False
+    assert "same_approval_code" not in candidates[0].features
+    assert candidates[0].score.score < LIKELY_MERGE_SCORE
+    assert automatic_merge_blocking_reason(left, right) == "dates are more than one day apart"
+    assert safe_for_automatic_merge(left, right) is False
+
+
+def test_automatic_merge_requires_distinct_documents_and_matching_mapping() -> None:
+    left = facts(approval_code="A123", source_document_id="doc-1")
+    overlapping = facts(observation_id="row-2", approval_code="A123", source_document_id="doc-2")
+    repeated_in_one_document = facts(
+        observation_id="row-3", approval_code="A123", source_document_id="doc-1"
+    )
+    other_card = facts(
+        observation_id="row-4",
+        approval_code="A123",
+        instrument_id="card-2",
+        account_id="account-2",
+        source_document_id="doc-3",
+    )
+
+    assert safe_for_automatic_merge(left, overlapping) is True
+    assert safe_for_automatic_merge(left, repeated_in_one_document) is False
+    assert safe_for_automatic_merge(left, other_card) is False
