@@ -246,10 +246,13 @@ class TwoFactorVerifyView(LoginRequiredMixin, View):
         # requests from separate web workers for the same user and IP, while
         # django-otp independently locks the device row to prevent TOTP replay.
         with transaction.atomic():
+            # Acquire the lock in the same query as the lookup. A separate
+            # unlocked get_or_create followed by select_for_update lets another
+            # request delete an expired row between those two operations.
+            attempt, _ = TwoFactorAttempt.objects.select_for_update().get_or_create(
+                user=user, ip_hash=ip_hash
+            )
             now = timezone.now()
-            TwoFactorAttempt.objects.filter(expires_at__lte=now).delete()
-            attempt, _ = TwoFactorAttempt.objects.get_or_create(user=user, ip_hash=ip_hash)
-            attempt = TwoFactorAttempt.objects.select_for_update().get(pk=attempt.pk)
             if attempt.expires_at is not None and attempt.expires_at <= now:
                 attempt.failure_count = 0
                 attempt.expires_at = None

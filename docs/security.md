@@ -29,9 +29,11 @@ OCR service.
   recovery code before reaching authenticated pages, including the admin.
   Accounts without a confirmed device keep the existing password-only flow.
   Failed-code attempts use a database-backed per-user/IP budget shared by web
-  workers, and django-otp serializes TOTP verification so one time step cannot
-  be accepted twice concurrently. Device seeds are excluded from administration
-  and logs; recovery codes are stored only as password hashes.
+  workers. Its failure count expires five minutes after the last failure; the
+  row retains only the hashed address and is reused if that address returns.
+  django-otp serializes TOTP verification so one time step cannot be accepted
+  twice concurrently. Device seeds are excluded from administration and logs;
+  recovery codes are stored only as password hashes.
 
 ## Encryption and searchable fields
 

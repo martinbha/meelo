@@ -48,11 +48,12 @@ recovery code succeeds. Accounts without a confirmed device keep the existing
 password-only behavior.
 
 Failed second-factor attempts are counted in a database row keyed by user and a
-hash of the remote address. The five-attempt, five-minute budget is shared by
-web workers and expires automatically. TOTP verification uses django-otp's
-transactional device lock, so two concurrent submissions of the same time-step
-code cannot both succeed. django-otp's persisted per-device throttle remains in
-place as a separate control.
+hash of the remote address. The five-attempt budget is shared by web workers;
+its count expires five minutes after the last failure. The row keeps only the
+hashed address and is reused if that address returns. TOTP verification uses
+django-otp's transactional device lock, so two concurrent submissions of the
+same time-step code cannot both succeed. django-otp's persisted per-device
+throttle remains in place as a separate control.
 
 Both plugin tables are installed together, including the static devices that
 hold #172's recovery codes, so the tables are created by one migration pass

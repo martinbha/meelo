@@ -148,7 +148,6 @@ class TwoFactorAttempt(models.Model):
                 fields=("user", "ip_hash"), name="twofactor_attempt_user_ip_unique"
             ),
         ]
-        indexes = [models.Index(fields=("expires_at",), name="twofactor_attempt_expiry_idx")]
 
     def __str__(self) -> str:
         return "two-factor attempt budget"

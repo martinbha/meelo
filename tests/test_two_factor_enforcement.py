@@ -7,12 +7,13 @@ import sys
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from threading import Barrier
+from threading import Barrier, Event, local
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.db import close_old_connections, connection
+from django.db.models import QuerySet
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -162,6 +163,115 @@ def test_concurrent_clients_accept_a_totp_only_once(owner: Any) -> None:
     failures = AuditEvent.objects.filter(user=owner, event_type="two_factor_failure")
     assert failures.count() == 1
     assert failures.get().metadata == {"method": "otp"}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_invalid_codes_cannot_spend_the_last_attempt_twice(owner: Any) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL exercises shared attempt-row locks")
+
+    TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
+    TwoFactorAttempt.objects.create(
+        user=owner,
+        ip_hash=hashed_ip(REMOTE_IP),
+        failure_count=4,
+        expires_at=timezone.now() + timedelta(minutes=1),
+    )
+    clients = [Client(REMOTE_ADDR=REMOTE_IP), Client(REMOTE_ADDR=REMOTE_IP)]
+    for client in clients:
+        client.force_login(owner)
+    barrier = Barrier(2)
+
+    def submit(client: Client) -> int:
+        close_old_connections()
+        try:
+            barrier.wait(timeout=10)
+            return client.post(reverse("two-factor-verify"), {"token": "invalid-token"}).status_code
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(submit, clients))
+
+    assert sorted(statuses) == [400, 429]
+    attempt = TwoFactorAttempt.objects.get(user=owner, ip_hash=hashed_ip(REMOTE_IP))
+    assert attempt.failure_count == 5
+    assert AuditEvent.objects.filter(user=owner, event_type="two_factor_failure").count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_expiring_counter_cannot_be_deleted_between_lookup_and_lock(
+    owner: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL exercises the counter-expiry locking race")
+
+    TOTPDevice.objects.create(user=owner, name="phone", confirmed=True)
+    real_now = timezone.now
+    first_time = real_now() + timedelta(seconds=30)
+    second_time = first_time + timedelta(seconds=2)
+    TwoFactorAttempt.objects.create(
+        user=owner,
+        ip_hash=hashed_ip(REMOTE_IP),
+        failure_count=4,
+        expires_at=first_time + timedelta(seconds=1),
+    )
+
+    first_client = Client(REMOTE_ADDR=REMOTE_IP)
+    second_client = Client(REMOTE_ADDR=REMOTE_IP)
+    first_client.force_login(owner)
+    second_client.force_login(owner)
+
+    request_state = local()
+    first_selected = Event()
+    second_started = Event()
+    release_first = Event()
+    original_get_or_create = QuerySet.get_or_create
+
+    def controlled_now() -> Any:
+        return getattr(request_state, "now", None) or real_now()
+
+    def delay_first_lookup(queryset: Any, *args: Any, **kwargs: Any) -> Any:
+        if queryset.model is TwoFactorAttempt and getattr(request_state, "first", False):
+            result = original_get_or_create(queryset, *args, **kwargs)
+            first_selected.set()
+            if not release_first.wait(timeout=10):
+                raise TimeoutError("First OTP request did not resume.")
+            return result
+        if queryset.model is TwoFactorAttempt and getattr(request_state, "second", False):
+            second_started.set()
+        return original_get_or_create(queryset, *args, **kwargs)
+
+    monkeypatch.setattr(timezone, "now", controlled_now)
+    monkeypatch.setattr(QuerySet, "get_or_create", delay_first_lookup)
+
+    def submit(client: Client, request_time: Any, *, first: bool) -> int:
+        close_old_connections()
+        request_state.now = request_time
+        request_state.first = first
+        request_state.second = not first
+        try:
+            return client.post(reverse("two-factor-verify"), {"token": "invalid-token"}).status_code
+        finally:
+            request_state.now = None
+            request_state.first = False
+            request_state.second = False
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_result = pool.submit(submit, first_client, first_time, first=True)
+        assert first_selected.wait(timeout=5)
+        second_result = pool.submit(submit, second_client, second_time, first=False)
+        try:
+            assert second_started.wait(timeout=5)
+        finally:
+            release_first.set()
+        statuses = [first_result.result(timeout=10), second_result.result(timeout=10)]
+
+    assert sorted(statuses) == [400, 429]
+    attempt = TwoFactorAttempt.objects.get(user=owner, ip_hash=hashed_ip(REMOTE_IP))
+    assert attempt.failure_count == 5
+    assert AuditEvent.objects.filter(user=owner, event_type="two_factor_failure").count() == 1
 
 
 @pytest.mark.django_db(transaction=True)
