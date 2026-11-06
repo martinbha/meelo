@@ -11,7 +11,9 @@ from typing import Any
 
 from django import forms
 
+from apps.core.form_fields import ReadableModelChoiceField
 from apps.core.ownership import owned_queryset
+from apps.core.selection_labels import category_label
 
 from .models import Category
 from .rule_creation import SCOPE_LABELS, RuleScope
@@ -20,7 +22,7 @@ from .rule_creation import SCOPE_LABELS, RuleScope
 class CategoryCorrectionForm(forms.Form):
     """A category, how widely it should apply, and whether to look backwards."""
 
-    category = forms.ModelChoiceField(queryset=Category.objects.none(), label="Category")
+    category = ReadableModelChoiceField(queryset=Category.objects.none(), label="Category")
     scope = forms.ChoiceField(
         choices=[(scope.value, SCOPE_LABELS[scope]) for scope in RuleScope],
         widget=forms.RadioSelect,
@@ -33,6 +35,10 @@ class CategoryCorrectionForm(forms.Form):
         help_text="Confirmed history is never changed.",
     )
 
-    def __init__(self, *args: Any, user: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, user: Any, data_key: bytes | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.fields["category"].queryset = owned_queryset(Category, user)  # type: ignore[attr-defined]
+        if data_key is not None:
+            self.fields["category"].set_label_builder(  # type: ignore[attr-defined]
+                lambda category: category_label(category, user=user, data_key=data_key)
+            )

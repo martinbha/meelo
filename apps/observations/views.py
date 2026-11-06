@@ -19,6 +19,11 @@ from apps.core.encrypted_values import MalformedPayloadError, decode_json
 from apps.core.errors import ApplicationError
 from apps.core.key_scope import request_data_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
+from apps.core.selection_labels import (
+    category_label,
+    financial_account_label,
+    payment_instrument_label,
+)
 from apps.processing.forms import DocumentOverrideForm
 from apps.processing.models import SourceDocument
 from apps.processing.overrides import set_document_overrides
@@ -113,6 +118,7 @@ class ObservationReviewView(LoginRequiredMixin, View):
         for observation in (
             owned_queryset(ImportedObservation, request.user)
             .filter(source_document=document)
+            .select_related("financial_account_guess", "payment_instrument_guess", "category_guess")
             .order_by("row_index", "created_at")
         ):
             decrypted = decrypt_observation(observation, user=request.user, data_key=data_key)
@@ -121,8 +127,36 @@ class ObservationReviewView(LoginRequiredMixin, View):
                     "observation": observation,
                     "values": decrypted,
                     "region": _region(decrypted.source_region),
+                    "financial_account_label": (
+                        financial_account_label(
+                            observation.financial_account_guess,
+                            user=request.user,
+                            data_key=data_key,
+                        )
+                        if observation.financial_account_guess_id
+                        else None
+                    ),
+                    "payment_instrument_label": (
+                        payment_instrument_label(
+                            observation.payment_instrument_guess,
+                            user=request.user,
+                            data_key=data_key,
+                        )
+                        if observation.payment_instrument_guess_id
+                        else None
+                    ),
+                    "category_label": (
+                        category_label(
+                            observation.category_guess,
+                            user=request.user,
+                            data_key=data_key,
+                        )
+                        if observation.category_guess_id
+                        else None
+                    ),
                     "form": ObservationCorrectionForm(
                         user=request.user,
+                        data_key=data_key,
                         initial={
                             "occurred_at": observation.occurred_at,
                             "posted_at": observation.posted_at,
@@ -146,7 +180,7 @@ class ObservationReviewView(LoginRequiredMixin, View):
                 "document": document,
                 "rows": rows,
                 "latest_run": latest_run(document),
-                "action_form": ReviewActionForm(user=request.user),
+                "action_form": ReviewActionForm(user=request.user, data_key=data_key),
                 "override_form": DocumentOverrideForm(
                     initial={
                         "source_type": document.source_type_override,

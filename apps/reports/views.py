@@ -24,6 +24,11 @@ from apps.categorization.models import Category
 from apps.core.errors import ApplicationError
 from apps.core.key_scope import request_data_key
 from apps.core.ownership import owned_queryset
+from apps.core.selection_labels import (
+    category_label,
+    financial_account_label,
+    payment_instrument_label,
+)
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.reconciliation.services import queue_match_ids
@@ -113,6 +118,13 @@ class SpendingReportView(LoginRequiredMixin, View):
             request.user, year=year, month=month, data_key=data_key
         ).totals(currency)
         whole_month = (start, end) == month_bounds(year, month) and category_id is None
+        category_options = [
+            {
+                "id": category.pk,
+                "label": category_label(category, user=request.user, data_key=data_key),
+            }
+            for category in owned_queryset(Category, request.user).select_related("parent")
+        ]
         return render(
             request,
             self.template_name,
@@ -129,7 +141,7 @@ class SpendingReportView(LoginRequiredMixin, View):
                 "end": end,
                 "currency": currency,
                 "selected_category": category_id,
-                "categories": owned_queryset(Category, request.user),
+                "category_options": category_options,
             },
         )
 
@@ -164,6 +176,22 @@ class AccountReportView(LoginRequiredMixin, View):
             account_id=account_id,
             instrument_id=instrument_id,
         )
+        account_options = [
+            {
+                "id": account.pk,
+                "label": financial_account_label(account, user=request.user, data_key=data_key),
+            }
+            for account in owned_queryset(FinancialAccount, request.user)
+        ]
+        instrument_options = [
+            {
+                "id": instrument.pk,
+                "label": payment_instrument_label(instrument, user=request.user, data_key=data_key),
+            }
+            for instrument in owned_queryset(PaymentInstrument, request.user).select_related(
+                "financial_account"
+            )
+        ]
         return render(
             request,
             self.template_name,
@@ -177,8 +205,8 @@ class AccountReportView(LoginRequiredMixin, View):
                 "currency": currency,
                 "selected_account": account_id,
                 "selected_instrument": instrument_id,
-                "accounts": owned_queryset(FinancialAccount, request.user),
-                "instruments": owned_queryset(PaymentInstrument, request.user),
+                "account_options": account_options,
+                "instrument_options": instrument_options,
             },
         )
 

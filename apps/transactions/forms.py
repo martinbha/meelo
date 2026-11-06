@@ -8,6 +8,12 @@ from django import forms
 from apps.categorization.models import Category
 from apps.core.blind_index import SearchKey
 from apps.core.crypto import is_encrypted_value
+from apps.core.form_fields import ReadableModelChoiceField
+from apps.core.selection_labels import (
+    category_label,
+    financial_account_label,
+    payment_instrument_label,
+)
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
@@ -20,19 +26,25 @@ class ManualTransactionForm(forms.Form):
     amount = forms.DecimalField(min_value=Decimal("0.01"), max_digits=18, decimal_places=2)
     currency = forms.CharField(max_length=3, initial="KRW")
     transaction_type = forms.ChoiceField(choices=CanonicalTransaction.TransactionType.choices)
-    financial_account = forms.ModelChoiceField(queryset=FinancialAccount.objects.none())
-    payment_instrument = forms.ModelChoiceField(
+    financial_account = ReadableModelChoiceField(queryset=FinancialAccount.objects.none())
+    payment_instrument = ReadableModelChoiceField(
         queryset=PaymentInstrument.objects.none(), required=False
     )
-    category = forms.ModelChoiceField(queryset=Category.objects.none(), required=False)
+    category = ReadableModelChoiceField(queryset=Category.objects.none(), required=False)
     merchant = forms.CharField(max_length=500, required=False)
     counterparty = forms.CharField(max_length=500, required=False)
     notes = forms.CharField(widget=forms.Textarea, required=False)
 
     def __init__(
-        self, *, user: Any, instance: CanonicalTransaction | None = None, **kwargs: Any
+        self,
+        *,
+        user: Any,
+        data_key: bytes | None = None,
+        instance: CanonicalTransaction | None = None,
+        **kwargs: Any,
     ) -> None:
         self.user = user
+        self.data_key = data_key
         self.instance = instance
         super().__init__(**kwargs)
         self.fields["financial_account"].queryset = FinancialAccount.objects.filter(  # type: ignore[attr-defined]
@@ -42,6 +54,18 @@ class ManualTransactionForm(forms.Form):
             user=user, is_active=True
         )
         self.fields["category"].queryset = Category.objects.filter(user=user)  # type: ignore[attr-defined]
+        if data_key is not None:
+            self.fields["financial_account"].set_label_builder(  # type: ignore[attr-defined]
+                lambda account: financial_account_label(account, user=user, data_key=data_key)
+            )
+            self.fields["payment_instrument"].set_label_builder(  # type: ignore[attr-defined]
+                lambda instrument: payment_instrument_label(
+                    instrument, user=user, data_key=data_key
+                )
+            )
+            self.fields["category"].set_label_builder(  # type: ignore[attr-defined]
+                lambda category: category_label(category, user=user, data_key=data_key)
+            )
         if instance is not None and not kwargs.get("data"):
             self.initial.update(
                 occurred_at=instance.occurred_at,

@@ -11,7 +11,7 @@
           {% for row in rows %}
             <tr>
               <td>{{ row.name }}</td>
-              <td>{{ row.parent.name_blind_index|default:"—" }}</td>
+              <td>{{ row.parent_name|default:"—" }}</td>
               <td>{{ row.category.get_category_type_display }}</td>
               <td>{% if row.category.is_system %}System{% else %}Yours{% endif %}</td>
             </tr>

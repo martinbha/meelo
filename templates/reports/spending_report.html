@@ -24,10 +24,10 @@
     <label>Category
       <select name="category">
         <option value="">All categories</option>
-        {% for category in categories %}
-          <option value="{{ category.pk }}"
-            {% if selected_category == category.pk %}selected{% endif %}>
-            {{ category.name_blind_index }}
+        {% for category in category_options %}
+          <option value="{{ category.id }}"
+            {% if selected_category == category.id %}selected{% endif %}>
+            {{ category.label }}
           </option>
         {% endfor %}
       </select>

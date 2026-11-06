@@ -4,6 +4,8 @@ from typing import Any
 
 from django import forms
 
+from apps.core.form_fields import ReadableModelChoiceField
+from apps.core.selection_labels import financial_account_label
 from apps.financial_accounts.models import FinancialAccount
 
 from .models import PaymentInstrument
@@ -11,16 +13,28 @@ from .services import update_instrument_mapping
 
 
 class PaymentInstrumentMappingForm(forms.ModelForm):  # type: ignore[type-arg]
+    financial_account = ReadableModelChoiceField(queryset=FinancialAccount.objects.none())
+    settlement_account = ReadableModelChoiceField(
+        queryset=FinancialAccount.objects.none(), required=False
+    )
+
     class Meta:
         model = PaymentInstrument
         fields = ("financial_account", "settlement_account", "is_active")
 
-    def __init__(self, *, user: Any, **kwargs: Any) -> None:
+    def __init__(self, *, user: Any, data_key: bytes | None = None, **kwargs: Any) -> None:
         self.user = user
         super().__init__(**kwargs)
         accounts = FinancialAccount.objects.filter(user=user, is_active=True)
         self.fields["financial_account"].queryset = accounts  # type: ignore[attr-defined]
         self.fields["settlement_account"].queryset = accounts  # type: ignore[attr-defined]
+        if data_key is not None:
+            self.fields["financial_account"].set_label_builder(  # type: ignore[attr-defined]
+                lambda account: financial_account_label(account, user=user, data_key=data_key)
+            )
+            self.fields["settlement_account"].set_label_builder(  # type: ignore[attr-defined]
+                lambda account: financial_account_label(account, user=user, data_key=data_key)
+            )
 
     def clean(self) -> dict[str, Any] | None:
         cleaned = super().clean()
