@@ -505,6 +505,13 @@ def test_unlinking_a_transfer_reverses_the_ledger_and_reopens_both_rows(owner: A
         row.refresh_from_db()
         assert row.canonical_transaction_id is None
         assert row.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    unlinked_events = AuditEvent.objects.filter(
+        user=owner,
+        event_type=AuditEvent.EventType.RECONCILIATION_MATCH_UNLINKED,
+        object_id=match.pk,
+    )
+    assert unlinked_events.count() == 1
+    assert unlinked_events.get().metadata["canonical_transaction_id"] == str(transfer.pk)
 
 
 def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None:
