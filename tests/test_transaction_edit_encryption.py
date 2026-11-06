@@ -38,6 +38,7 @@ def owner_keys(tmp_path: Path, settings: Any) -> tuple[Any, bytes, Any]:
     path.write_text(base64.urlsafe_b64encode(master_key).decode(), encoding="ascii")
     path.chmod(0o600)
     settings.FIELD_ENCRYPTION_MASTER_KEY_FILE = str(path)
+    settings.FIELD_ENCRYPTION_REQUIRED = True
     owner = make_user(email="encrypted-edit-owner@example.com", password="password")
     provision_user_data_key(user=owner, actor=owner, master_key=master_key)
     return owner, master_key, path
@@ -262,3 +263,23 @@ def test_edit_form_recomputes_indexes_from_decrypted_values_not_envelopes(
     assert transaction.counterparty_blind_index == counterparty_index(
         COUNTERPARTY, user_id=owner.pk, key=search_key
     )
+
+
+def test_authenticated_but_malformed_amount_is_reported_without_overwriting_history(
+    owner_keys: tuple[Any, bytes, Path],
+) -> None:
+    owner, master_key, _ = owner_keys
+    account, transaction, data_key, _ = encrypted_draft(owner, master_key=master_key)
+    transaction.encrypt_fields({"amount_encrypted": "invalid-money-payload"}, key=data_key)
+    transaction.save(update_fields=["amount_encrypted", "updated_at"])
+    stored_value = transaction.amount_encrypted
+    client = Client()
+    client.force_login(owner)
+    url = reverse("transaction-edit", kwargs={"pk": transaction.pk})
+
+    for response in (client.get(url), client.post(url, edit_payload(account))):
+        assert response.status_code == 200
+        assert "One or more saved values could not be read." in response.content.decode()
+        assert "invalid-money-payload" not in response.content.decode()
+    transaction.refresh_from_db()
+    assert transaction.amount_encrypted == stored_value

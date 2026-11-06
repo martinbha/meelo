@@ -10,6 +10,7 @@ from django.core.exceptions import NON_FIELD_ERRORS
 from apps.categorization.models import Category
 from apps.core.blind_index import SearchKey
 from apps.core.crypto import InvalidCiphertextError, is_encrypted_value
+from apps.core.encrypted_values import MalformedPayloadError
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 
@@ -59,7 +60,7 @@ class ManualTransactionForm(forms.Form):
         self.fields["category"].queryset = Category.objects.filter(user=user)  # type: ignore[attr-defined]
         try:
             initial = self._read_initial_values(instance) if instance is not None else None
-        except ValueError:
+        except (ValueError, MalformedPayloadError):
             # Never put an envelope or an unreadable value into a form field.
             # The non-field error also blocks a bound POST from saving blanks
             # over the original data.
