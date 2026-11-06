@@ -96,6 +96,7 @@ schema rather than the part that happens to be tabulated.
 | Model | Section |
 | --- | --- |
 | `users.UserDataKey` | 22.2, per-user wrapped data keys and their versions |
+| `users.TwoFactorAttempt` | 20.2, expiring second-factor failure budget shared by web workers using a hashed client address |
 | `core.AuditEvent` | 23, the hash-chained audit log |
 | `processing.ProcessingJob` | 3.3, the database-backed work queue |
 | `core.WorkerHeartbeat` | Operational worker liveness timestamps used by health checks |

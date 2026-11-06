@@ -25,11 +25,13 @@ OCR service.
 - `django-axes` throttles failed login attempts by username and IP address.
   Successful authentication resets the failure counter, and a cool-off period
   prevents an indefinite lockout.
-- Two-factor device and recovery-code tables are installed and device secrets
-  are excluded from administration and logs. The current release records and
-  reports enrollment state; enforcing a second factor at login remains a
-  separate deployment decision until the enrollment and recovery flows are
-  complete.
+- Accounts with a confirmed TOTP device must verify a code or use a single-use
+  recovery code before reaching authenticated pages, including the admin.
+  Accounts without a confirmed device keep the existing password-only flow.
+  Failed-code attempts use a database-backed per-user/IP budget shared by web
+  workers, and django-otp serializes TOTP verification so one time step cannot
+  be accepted twice concurrently. Device seeds are excluded from administration
+  and logs; recovery codes are stored only as password hashes.
 
 ## Encryption and searchable fields
 
