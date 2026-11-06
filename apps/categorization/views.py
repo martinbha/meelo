@@ -18,6 +18,7 @@ from django.views.generic import View
 from apps.core.errors import ApplicationError
 from apps.core.key_scope import request_data_key, request_search_key
 from apps.core.ownership import get_owned_object_or_404, owned_queryset
+from apps.core.selection_labels import category_label
 from apps.transactions.models import CanonicalTransaction
 
 from .forms import CategoryCorrectionForm
@@ -50,12 +51,16 @@ class CategoryCorrectionView(LoginRequiredMixin, View):
         return render(
             request,
             "categorization/category_correction.html",
-            self._context(request, transaction, CategoryCorrectionForm(user=request.user)),
+            self._context(
+                request,
+                transaction,
+                CategoryCorrectionForm(user=request.user, data_key=_keys(request)),
+            ),
         )
 
     def post(self, request: HttpRequest, pk: Any) -> HttpResponse:
         transaction = get_owned_object_or_404(CanonicalTransaction, request.user, pk=pk)
-        form = CategoryCorrectionForm(request.POST, user=request.user)
+        form = CategoryCorrectionForm(request.POST, user=request.user, data_key=_keys(request))
         if not form.is_valid():
             return render(
                 request,
@@ -130,6 +135,11 @@ class CategoryListView(LoginRequiredMixin, View):
                 "category": category,
                 "name": category.read_field("name_encrypted", key=data_key),
                 "parent": category.parent,
+                "parent_name": (
+                    category_label(category.parent, user=request.user, data_key=data_key)
+                    if category.parent_id
+                    else None
+                ),
             }
             for category in owned_queryset(Category, request.user).select_related("parent")
         ]

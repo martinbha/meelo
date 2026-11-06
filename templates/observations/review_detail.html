@@ -90,14 +90,17 @@
             <dt>Direction</dt><dd>{{ row.observation.get_direction_display }}</dd>
             <dt>Account / card</dt>
             <dd>
-              {% if row.observation.financial_account_guess_id or row.observation.payment_instrument_guess_id %}
-                mapped
-              {% else %}
+              {% if row.financial_account_label %}{{ row.financial_account_label }}{% endif %}
+              {% if row.payment_instrument_label %}
+                {% if row.financial_account_label %}<br>{% endif %}
+                {{ row.payment_instrument_label }}
+              {% endif %}
+              {% if not row.financial_account_label and not row.payment_instrument_label %}
                 <span class="flag flag-warning">unmapped</span>
               {% endif %}
             </dd>
             <dt>Category</dt>
-            <dd>{% if row.observation.category_guess_id %}selected{% else %}—{% endif %}</dd>
+            <dd>{{ row.category_label|default:"—" }}</dd>
             <dt>Type</dt><dd>{{ row.observation.get_transaction_type_guess_display }}</dd>
             {% if row.values.balance_after %}
               <dt>Balance after</dt><dd>{{ row.values.balance_after }}</dd>
