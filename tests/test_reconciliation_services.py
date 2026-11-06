@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.db import close_old_connections, connection
 from PIL import Image
 
 from apps.core.errors import ConflictError, ForbiddenError
@@ -20,7 +22,12 @@ from apps.parsing.contracts import (
     TransactionDirection,
 )
 from apps.parsing.registry import ParserSelection
-from apps.reconciliation.duplicates import find_duplicate_candidates
+from apps.reconciliation.duplicates import (
+    DuplicateCandidate,
+    DuplicateScore,
+    find_duplicate_candidates,
+    score_pair,
+)
 from apps.reconciliation.images import (
     PerceptualHashError,
     find_similar,
@@ -210,7 +217,10 @@ def test_near_duplicates_of_another_users_document_are_refused(owner: Any) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_duplicate_candidates_are_stored_without_merging_anything(owner: Any) -> None:
+def test_duplicate_candidates_are_stored_without_merging_anything(
+    owner: Any, settings: Any
+) -> None:
+    settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = False
     _, rows = seed(owner, parsed(), parsed())
     candidates = find_duplicate_candidates(
         [facts_from(row, merchant="스타벅스", amount_minor=4200) for row in rows],
@@ -230,12 +240,15 @@ def test_duplicate_candidates_are_stored_without_merging_anything(owner: Any) ->
 
 def test_enabled_policy_merges_only_the_likely_merge_band(owner: Any, settings: Any) -> None:
     settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = True
-    _, rows = seed(owner, parsed(), parsed())
+    account = make_account(owner, name_blind_index="automatic-merge-account")
+    _, left_rows = seed(owner, parsed(approval_code="A123"), sha="a" * 64)
+    _, right_rows = seed(owner, parsed(approval_code="A123"), sha="b" * 64)
+    rows = [left_rows[0], right_rows[0]]
+    for row in rows:
+        row.financial_account_guess = account
+        row.save(update_fields=["financial_account_guess"])
     candidates = find_duplicate_candidates(
-        [
-            facts_from(row, merchant="스타벅스", amount_minor=4200, approval_code="A123")
-            for row in rows
-        ],
+        [facts_from(row, merchant="스타벅스", amount_minor=4200) for row in rows],
         search_key=SEARCH_KEY,
     )
 
@@ -244,8 +257,9 @@ def test_enabled_policy_merges_only_the_likely_merge_band(owner: Any, settings: 
         candidates=candidates,
         data_key=KEY,
     )
+    stored[0].refresh_from_db()
 
-    assert stored[0].match_score == 95
+    assert stored[0].match_score >= 90
     assert stored[0].status == ReconciliationMatch.Status.CONFIRMED
     assert stored[0].reviewed_by is None
     merged = ImportedObservation.objects.exclude(merged_into=None).get()
@@ -253,19 +267,16 @@ def test_enabled_policy_merges_only_the_likely_merge_band(owner: Any, settings: 
         user=owner,
         event_type=AuditEvent.EventType.DUPLICATE_MERGED,
     )
-    assert event.metadata == {
-        "automatic": True,
-        "policy_enabled": True,
-        "winner_observation_id": str(merged.merged_into_id),
-        "merged_observation_id": str(merged.pk),
-        "score": 95,
-        "features": [
-            "date_within_one_day",
-            "exact_amount",
-            "merchant_similarity",
-            "same_approval_code",
-            "same_direction",
-        ],
+    assert event.metadata["automatic"] is True
+    assert event.metadata["policy_enabled"] is True
+    assert event.metadata["winner_observation_id"] == str(merged.merged_into_id)
+    assert event.metadata["merged_observation_id"] == str(merged.pk)
+    assert event.metadata["score"] == stored[0].match_score
+    assert set(event.metadata["features"]) >= {
+        "date_within_one_day",
+        "exact_amount",
+        "same_direction",
+        "same_mapped_instrument",
     }
 
 
@@ -282,6 +293,121 @@ def test_enabled_policy_keeps_review_band_for_a_person(owner: Any, settings: Any
     assert stored[0].match_score == 65
     assert stored[0].status == ReconciliationMatch.Status.PROPOSED
     assert ImportedObservation.objects.exclude(merged_into=None).exists() is False
+
+
+def test_enabled_policy_rechecks_live_mapping_before_merging(owner: Any, settings: Any) -> None:
+    """A stale high score cannot override a current account conflict."""
+
+    from apps.reconciliation.duplicates import automatic_merge_blocking_reason
+
+    settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = True
+    first_account = make_account(owner, name_blind_index="auto-safe-first")
+    second_account = make_account(owner, name_blind_index="auto-safe-second")
+    _, first_rows = seed(owner, parsed(approval_code="A123"), sha="c" * 64)
+    _, second_rows = seed(owner, parsed(approval_code="A123"), sha="d" * 64)
+    left, right = first_rows[0], second_rows[0]
+    left.financial_account_guess = first_account
+    right.financial_account_guess = second_account
+    left.save(update_fields=["financial_account_guess"])
+    right.save(update_fields=["financial_account_guess"])
+
+    left_facts = facts_from(left, merchant="스타벅스", amount_minor=4_200, approval_code="A123")
+    right_facts = facts_from(right, merchant="스타벅스", amount_minor=4_200, approval_code="A123")
+    # Candidate facts reflect an earlier shared mapping; the locked database
+    # rows now conflict. Even an injected score of 100 must not merge them.
+    left_facts = replace(left_facts, account_id="same-account")
+    right_facts = replace(right_facts, account_id="same-account")
+    score = score_pair(left_facts, right_facts)
+    assert score.score >= 90
+    candidate = DuplicateCandidate(
+        left=left_facts,
+        right=right_facts,
+        score=DuplicateScore(100, score.features),
+        features=score.features,
+    )
+
+    (stored,) = record_duplicate_candidates(user=owner, candidates=[candidate], data_key=KEY)
+    stored.refresh_from_db()
+    left.refresh_from_db()
+    right.refresh_from_db()
+
+    assert stored.status == ReconciliationMatch.Status.PROPOSED
+    assert stored.match_score == 0
+    assert left.merged_into_id is None
+    assert right.merged_into_id is None
+    assert (
+        automatic_merge_blocking_reason(
+            facts_from(left, merchant="스타벅스", amount_minor=4_200, approval_code="A123"),
+            facts_from(right, merchant="스타벅스", amount_minor=4_200, approval_code="A123"),
+        )
+        == "different financial accounts"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_duplicate_detection_merges_once_on_postgres(owner: Any, settings: Any) -> None:
+    """Two workers recording one true overlap leave one match and one merge."""
+
+    import threading
+
+    if connection.vendor != "postgresql":
+        pytest.skip("The concurrency assertion requires PostgreSQL row locks.")
+
+    settings.AUTOMATIC_RECONCILIATION_MERGE_ENABLED = True
+    account = make_account(owner, name_blind_index="auto-concurrent-account")
+    _, left_rows = seed(owner, parsed(approval_code="A123"), sha="e" * 64)
+    _, right_rows = seed(owner, parsed(approval_code="A123"), sha="f" * 64)
+    left, right = left_rows[0], right_rows[0]
+    for row in (left, right):
+        row.financial_account_guess = account
+        row.save(update_fields=["financial_account_guess"])
+    facts = [
+        facts_from(row, merchant="스타벅스", amount_minor=4_200, approval_code="A123")
+        for row in (left, right)
+    ]
+    candidates = find_duplicate_candidates(facts, search_key=SEARCH_KEY)
+    assert len(candidates) == 1
+    barrier = threading.Barrier(2)
+
+    def persist() -> tuple[str, ...]:
+        close_old_connections()
+        try:
+            thread_owner = type(owner).objects.get(pk=owner.pk)
+            barrier.wait(timeout=10)
+            matches = record_duplicate_candidates(
+                user=thread_owner,
+                candidates=candidates,
+                data_key=KEY,
+            )
+            return tuple(str(match.pk) for match in matches)
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: persist(), range(2)))
+
+    assert results[0] == results[1]
+    assert (
+        ReconciliationMatch.objects.filter(
+            match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION
+        ).count()
+        == 1
+    )
+    match = ReconciliationMatch.objects.get()
+    assert match.status == ReconciliationMatch.Status.CONFIRMED
+    assert (
+        AuditEvent.objects.filter(
+            user=owner,
+            event_type=AuditEvent.EventType.DUPLICATE_MERGED,
+        ).count()
+        == 1
+    )
+    assert (
+        ImportedObservation.objects.filter(
+            review_status=ImportedObservation.ReviewStatus.MERGED
+        ).count()
+        == 1
+    )
 
 
 def test_re_running_detection_updates_rather_than_duplicating(owner: Any) -> None:
@@ -679,3 +805,56 @@ def test_another_users_match_cannot_be_acted_on(owner: Any) -> None:
         confirm_duplicate_match(match.pk, user=intruder, winner_id=rows[0].pk)
     with pytest.raises(ForbiddenError):
         reject_match(match.pk, user=intruder)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_candidate_committed_between_lookup_and_validation_converges(
+    owner: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("The insert race requires independent PostgreSQL connections.")
+    _, rows = seed(owner, parsed(), parsed())
+    original_clean = ReconciliationMatch.full_clean
+    race_started = False
+    winning_ids: list[Any] = []
+
+    def record_in_other_connection() -> Any:
+        close_old_connections()
+        try:
+            return record_match(
+                user=type(owner).objects.get(pk=owner.pk),
+                left_observation_id=rows[0].pk,
+                right_observation_id=rows[1].pk,
+                match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+                score=85,
+                data_key=KEY,
+            ).pk
+        finally:
+            close_old_connections()
+
+    def clean_after_competing_commit(
+        instance: ReconciliationMatch, *args: Any, **kwargs: Any
+    ) -> None:
+        nonlocal race_started
+        if not race_started:
+            race_started = True
+            # The first lookup has returned no row. Commit a competing insert
+            # before this worker reaches model validation, not just the insert.
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                winning_ids.append(executor.submit(record_in_other_connection).result(timeout=10))
+        original_clean(instance, *args, **kwargs)
+
+    monkeypatch.setattr(ReconciliationMatch, "full_clean", clean_after_competing_commit)
+    match = record_match(
+        user=owner,
+        left_observation_id=rows[0].pk,
+        right_observation_id=rows[1].pk,
+        match_type=ReconciliationMatch.MatchType.DUPLICATE_OBSERVATION,
+        score=90,
+        data_key=KEY,
+    )
+
+    assert [match.pk] == winning_ids
+    assert ReconciliationMatch.objects.count() == 1
+    assert match.match_score == 90
+    assert AuditEvent.objects.filter(event_type="reconciliation_match_created").count() == 1

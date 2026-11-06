@@ -232,11 +232,14 @@ def test_keyed_grouping_still_finds_the_same_pairs() -> None:
     assert len(next(iter(grouped.values()))) == 2
 
 
-def test_keyed_grouping_keeps_unrelated_rows_apart() -> None:
+def test_approval_code_does_not_change_the_deterministic_row_key() -> None:
     left = facts(observation_id="left", approval_code="300142")
     right = facts(observation_id="right", approval_code="999999")
 
-    assert group_by_key([left, right], search_key=KEY) == {}
+    grouped = group_by_key([left, right], search_key=KEY)
+
+    assert len(grouped) == 1
+    assert len(next(iter(grouped.values()))) == 2
 
 
 def test_two_users_rows_never_group_together_under_one_key() -> None:
