@@ -466,8 +466,26 @@ def test_deleting_a_transfer_through_the_browser_releases_and_relinks_its_source
     assert relinked.status_code == 302
     match.refresh_from_db()
     assert match.status == ReconciliationMatch.Status.PROPOSED
+    assert match.resolution_revision == 1
     open_queue = client.get(reverse("match-queue"))
     assert any(row["match"].pk == match.pk for row in open_queue.context["rows"])
+
+    reconfirmed = client.post(reverse("match-accept", kwargs={"pk": match.pk}))
+    assert reconfirmed.status_code == 302
+    match.refresh_from_db()
+    outgoing.refresh_from_db()
+    incoming.refresh_from_db()
+    replacement = CanonicalTransaction.objects.get(pk=outgoing.canonical_transaction_id)
+    assert match.status == ReconciliationMatch.Status.CONFIRMED
+    assert replacement.pk != transfer.pk
+    assert replacement.status == CanonicalTransaction.Status.DRAFT
+    assert replacement.source_idempotency_key != transfer.source_idempotency_key
+    assert incoming.canonical_transaction_id == replacement.pk
+
+    # A retry of this review cycle returns the replacement and creates no third row.
+    retry = client.post(reverse("match-accept", kwargs={"pk": match.pk}))
+    assert retry.status_code == 302
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 2
 
 
 @pytest.mark.parametrize(

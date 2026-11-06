@@ -41,6 +41,7 @@ from apps.reconciliation.refunds import (
 from apps.reconciliation.services import (
     ReconciliationError,
     confirm_match,
+    link_observations,
     queue_match_ids,
     reject_match,
     unlink_match,
@@ -52,6 +53,7 @@ from apps.transactions.classification import (
     is_spending_reduction,
 )
 from apps.transactions.deletion import delete_transaction
+from apps.transactions.idempotency import REFUND_SOURCE, source_key
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import (
     make_account,
@@ -383,12 +385,13 @@ def test_confirmation_is_audited_without_recording_any_value(owner: Any) -> None
     assert record.metadata["canonical_transaction_id"] == str(event.pk)
     assert record.metadata["refund_observation_id"] == str(refund.pk)
     assert record.metadata["purchase_observation_id"] == str(purchase.pk)
+    assert record.metadata["resolution_revision"] == 0
     assert "200000" not in str(record.metadata)
     assert MERCHANT not in str(record.metadata)
 
 
 def test_ordinary_deletion_reconciles_a_confirmed_refund_match(owner: Any) -> None:
-    _, refund, account = seed_refund(owner)
+    purchase, refund, account = seed_refund(owner)
     match = propose_refund_matches(user=owner, data_key=KEY)[0]
     context = make_ledger_accounts(owner, account, prefix="refund-delete")
     event = confirm_refund_match(
@@ -421,6 +424,44 @@ def test_ordinary_deletion_reconciles_a_confirmed_refund_match(owner: Any) -> No
     )
     assert event_record.metadata["canonical_transaction_id"] == str(event.pk)
     assert event_record.metadata["cause"] == "transaction_deleted"
+
+    reopened = link_observations(
+        user=owner,
+        left_observation_id=purchase.pk,
+        right_observation_id=refund.pk,
+        match_type=ReconciliationMatch.MatchType.REFUND_MATCH,
+        data_key=KEY,
+    )
+    assert reopened.status == ReconciliationMatch.Status.PROPOSED
+    assert reopened.resolution_revision == 1
+
+    assert event.source_idempotency_key == source_key(REFUND_SOURCE, match.pk)
+    replacement = confirm_refund_match(
+        reopened.pk,
+        user=owner,
+        data_key=KEY,
+        ledger_accounts=PostingRuleAccounts(account=context.account, offset=context.offset),
+    )
+    event.refresh_from_db()
+    reopened.refresh_from_db()
+    refund.refresh_from_db()
+    assert event.status == CanonicalTransaction.Status.VOIDED
+    assert replacement.pk != event.pk
+    assert replacement.status == CanonicalTransaction.Status.CONFIRMED
+    assert replacement.source_idempotency_key != event.source_idempotency_key
+    assert reopened.status == ReconciliationMatch.Status.CONFIRMED
+    assert refund.canonical_transaction_id == replacement.pk
+    assert LedgerEntry.objects.filter(transaction=event).count() == 4
+    assert LedgerEntry.objects.filter(transaction=replacement).count() == 2
+    assert transaction_net_minor(event, data_key=KEY) == 0
+    assert transaction_net_minor(replacement, data_key=KEY) == 0
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 2
+    confirmation = AuditEvent.objects.filter(
+        user=owner,
+        event_type=AuditEvent.EventType.REFUND_MATCHED,
+        object_id=reopened.pk,
+    ).latest("created_at")
+    assert confirmation.metadata["resolution_revision"] == 1
 
 
 def test_unlinking_a_refund_reverses_once_and_records_its_source_event(owner: Any) -> None:
