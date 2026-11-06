@@ -55,6 +55,8 @@ DOCUMENTS_PREFIX = "documents/"
 #: out: they are not history, and restoring a session would restore a login.
 BACKED_UP_APPS: tuple[str, ...] = (
     "users",
+    "otp_totp",
+    "otp_static",
     "core",
     "categorization",
     "financial_accounts",
@@ -67,6 +69,15 @@ BACKED_UP_APPS: tuple[str, ...] = (
     "reports",
     "transactions",
 )
+
+# OTP state controls whether an account requires a second factor. Older backup
+# code could record that the OTP schema was installed while omitting these
+# tables, so their absence from the manifest is safe only when the backup predates
+# the corresponding migrations entirely.
+AUTHENTICATION_MODEL_COUNTS: dict[str, tuple[str, ...]] = {
+    "otp_totp": ("otp_totp.totpdevice",),
+    "otp_static": ("otp_static.staticdevice", "otp_static.statictoken"),
+}
 
 
 class BackupError(ExportError):
@@ -315,14 +326,85 @@ def _unpack_body(body: bytes, *, destination: Path) -> RestoreReport:
         if (destination / "documents").exists()
         else [],
     )
+    report.problems.extend(_authentication_model_coverage_problems(manifest))
     if not report.database_path.exists():
         report.problems.append("The archive contains no database export.")
+    else:
+        report.problems.extend(
+            _authentication_model_payload_problems(report.database_path, manifest)
+        )
     files = [path for path in report.document_paths if path.is_file()]
     if len(files) != manifest.document_count:
         report.problems.append(
             f"Expected {manifest.document_count} document(s), found {len(files)}."
         )
     return report
+
+
+def _authentication_model_coverage_problems(manifest: BackupManifest) -> list[str]:
+    """Reject archives that had OTP migrations but omitted their persisted state.
+
+    Before OTP models were included in application backups, their migrations
+    were still recorded in the manifest. Such an archive cannot prove whether
+    it contains an enrolled second factor, so restoring it would silently turn
+    an MFA-protected account into a password-only account. Archives from before
+    those migrations remain compatible because MFA could not yet have been set
+    up in that database.
+    """
+
+    missing = [
+        model_label
+        for app_label, model_labels in AUTHENTICATION_MODEL_COUNTS.items()
+        if app_label in manifest.latest_migrations
+        for model_label in model_labels
+        if model_label not in manifest.row_counts
+    ]
+    if not missing:
+        return []
+    labels = ", ".join(sorted(missing))
+    return [
+        "The archive's schema includes two-factor authentication but its manifest "
+        f"does not account for required authentication model(s): {labels}. "
+        "Refusing restore because it could disable enrolled second factors. "
+        "Use an archive created with MFA state included; do not restore this "
+        "archive into an active account."
+    ]
+
+
+def _authentication_model_payload_problems(
+    database_path: Path, manifest: BackupManifest
+) -> list[str]:
+    """Ensure declared OTP row counts match the serialized authentication state."""
+
+    required_labels = {
+        model_label
+        for model_labels in AUTHENTICATION_MODEL_COUNTS.values()
+        for model_label in model_labels
+        if model_label in manifest.row_counts
+    }
+    if not required_labels:
+        return []
+    try:
+        rows = json.loads(database_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # The general backup verifier reports an unreadable database export.
+        return []
+    actual: dict[str, int] = {}
+    for row in rows:
+        label = row.get("model")
+        if label in required_labels:
+            actual[label] = actual.get(label, 0) + 1
+
+    problems = []
+    for label in sorted(required_labels):
+        expected = manifest.row_counts[label]
+        found = actual.get(label, 0)
+        if found != expected:
+            problems.append(
+                f"Authentication model row count mismatch for {label}: "
+                f"manifest expects {expected}, database contains {found}."
+            )
+    return problems
 
 
 def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = None) -> list[str]:

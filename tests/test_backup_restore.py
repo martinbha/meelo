@@ -12,17 +12,27 @@ import base64
 import json
 import os
 import tarfile
-from datetime import date
-from io import StringIO
+from datetime import date, timedelta
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db.migrations.recorder import MigrationRecorder
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
+from django_otp.oath import TOTP
+from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
+from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from apps.core.backup import (
     BACKUP_FORMAT,
+    DATABASE_NAME,
+    MANIFEST_NAME,
     BackupError,
     assert_master_key_separate,
     create_backup,
@@ -33,9 +43,11 @@ from apps.core.backup import (
 from apps.core.crypto import encrypt_model_field, read_model_field
 from apps.core.key_management import get_user_data_key, provision_user_data_key
 from apps.core.management.commands.create_backup import PASSPHRASE_ENV
-from apps.reports.exports import open_archive
+from apps.reports.exports import open_archive, seal_archive
 from apps.transactions.models import CanonicalTransaction
 from apps.transactions.money import read_money, store_money
+from apps.users.models import RecoveryCode, User
+from apps.users.recovery import consume_recovery_code, regenerate_recovery_codes
 from tests.factories import make_account, make_user
 
 pytestmark = pytest.mark.django_db
@@ -111,6 +123,9 @@ def test_a_backup_round_trips(owner: Any, data_key: bytes, tmp_path: Path) -> No
     report = unpack_backup(archive, passphrase=PASSPHRASE, destination=tmp_path / "out")
 
     assert manifest.format == BACKUP_FORMAT
+    assert manifest.row_counts["otp_totp.totpdevice"] == 0
+    assert manifest.row_counts["otp_static.staticdevice"] == 0
+    assert manifest.row_counts["otp_static.statictoken"] == 0
     assert report.is_clean
     assert report.database_path.exists()
     assert verify_backup(archive, passphrase=PASSPHRASE) == []
@@ -381,6 +396,201 @@ def run(command: str, *args: Any, **options: Any) -> str:
     out = StringIO()
     call_command(command, *args, stdout=out, stderr=StringIO(), **options)
     return out.getvalue()
+
+
+def legacy_archive_without_otp_state(
+    source: Path, destination: Path, *, pre_mfa_schema: bool
+) -> Path:
+    """Rewrite a synthetic archive as one emitted before OTP rows were backed up."""
+
+    body = open_archive(source.read_bytes(), passphrase=PASSPHRASE)
+    with tarfile.open(fileobj=BytesIO(body), mode="r:gz") as archive:
+        manifest_file = archive.extractfile(MANIFEST_NAME)
+        database_file = archive.extractfile(DATABASE_NAME)
+        assert manifest_file is not None
+        assert database_file is not None
+        manifest = json.load(manifest_file)
+        rows = json.load(database_file)
+
+    otp_models = {
+        "otp_totp.totpdevice",
+        "otp_static.staticdevice",
+        "otp_static.statictoken",
+    }
+    manifest["row_counts"] = {
+        model: count for model, count in manifest["row_counts"].items() if model not in otp_models
+    }
+    rows = [row for row in rows if row.get("model") not in otp_models]
+    if pre_mfa_schema:
+        otp_migrations = [
+            app for app in ("otp_totp", "otp_static") if app in manifest["latest_migrations"]
+        ]
+        manifest["migration_count"] -= sum(
+            1 for migration in MigrationRecorder.Migration.objects.filter(app__in=otp_migrations)
+        )
+        for app in otp_migrations:
+            manifest["latest_migrations"].pop(app)
+
+    legacy_payload = BytesIO()
+    with tarfile.open(fileobj=legacy_payload, mode="w:gz") as archive:
+        for name, value in ((MANIFEST_NAME, manifest), (DATABASE_NAME, rows)):
+            encoded = json.dumps(value, ensure_ascii=False, indent=2).encode()
+            member = tarfile.TarInfo(name)
+            member.size = len(encoded)
+            member.mode = 0o600
+            archive.addfile(member, BytesIO(encoded))
+    destination.write_bytes(seal_archive(legacy_payload.getvalue(), passphrase=PASSPHRASE))
+    return destination
+
+
+def test_enrolled_mfa_and_recovery_state_survive_encrypted_restore(
+    owner: Any,
+    master_key: bytes,
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Restore the actual logical archive, then authenticate with saved MFA state."""
+
+    totp_key = "0123456789abcdef0123456789abcdef01234567"
+    fixed_time = 1_800_000_005
+    current_counter = fixed_time // 30
+    device = TOTPDevice.objects.create(
+        user=owner,
+        name="synthetic-authenticator",
+        key=totp_key,
+        confirmed=True,
+        last_t=current_counter - 1,
+        tolerance=0,
+        throttling_failure_count=1,
+        throttling_failure_timestamp=timezone.now() - timedelta(minutes=10),
+    )
+    device_id = device.pk
+    recovery_codes = regenerate_recovery_codes(owner)
+    consumed_code, remaining_code = recovery_codes[:2]
+    assert consume_recovery_code(owner, consumed_code)
+    static_device = StaticDevice.objects.create(user=owner, name="synthetic-static", confirmed=True)
+    StaticToken.objects.create(device=static_device, token="SYNTHETIC")
+
+    archive = tmp_path / "mfa-backup.enc"
+    manifest = create_backup(archive, passphrase=PASSPHRASE, master_key=master_key)
+    assert manifest.row_counts["otp_totp.totpdevice"] == 1
+    assert manifest.row_counts["otp_static.staticdevice"] == 1
+    assert manifest.row_counts["otp_static.statictoken"] == 1
+    assert manifest.row_counts["users.recoverycode"] == 10
+    assert verify_backup(archive, passphrase=PASSPHRASE, master_key=master_key) == []
+
+    # The file itself stays sealed even though the TOTP seed and static token
+    # must be present in the decrypted logical database export.
+    sealed = archive.read_bytes()
+    assert totp_key.encode() not in sealed
+    assert b"SYNTHETIC" not in sealed
+
+    monkeypatch.setenv(PASSPHRASE_ENV, PASSPHRASE)
+    owner_id = owner.pk
+    owner.delete()
+    assert not User.objects.filter(pk=owner_id).exists()
+
+    restore_output = run(
+        "restore_backup",
+        str(archive),
+        str(tmp_path / "restored-mfa"),
+        load=True,
+    )
+    assert "Loaded" in restore_output
+
+    restored_user = User.objects.get(pk=owner_id)
+    restored_device = TOTPDevice.objects.get(pk=device_id, user=restored_user)
+    assert restored_device.key == totp_key
+    assert restored_device.confirmed is True
+    assert restored_device.last_t == current_counter - 1
+    assert restored_device.throttling_failure_count == 1
+    assert StaticDevice.objects.filter(user=restored_user, confirmed=True).count() == 1
+    assert StaticToken.objects.filter(device__user=restored_user, token="SYNTHETIC").count() == 1
+    assert RecoveryCode.objects.filter(user=restored_user, used_at__isnull=True).count() == 9
+    assert RecoveryCode.objects.filter(user=restored_user, used_at__isnull=False).count() == 1
+
+    client = Client()
+    login = client.post(
+        reverse("login"),
+        {"username": restored_user.email, "password": "password"},
+    )
+    assert login["Location"] == reverse("two-factor-verify")
+    clock = TOTP(
+        restored_device.bin_key,
+        restored_device.step,
+        restored_device.t0,
+        restored_device.digits,
+        restored_device.drift,
+    )
+    clock.time = fixed_time
+    token = str(clock.token()).zfill(restored_device.digits)
+    with patch("django_otp.plugins.otp_totp.models.time.time", return_value=fixed_time):
+        assert client.post(reverse("two-factor-verify"), {"token": token}).status_code == 302
+    assert client.get(reverse("transaction-list")).status_code == 200
+
+    restored_device.refresh_from_db()
+    assert restored_device.last_t == current_counter
+    assert restored_device.throttling_failure_count == 0
+    assert consume_recovery_code(restored_user, consumed_code) is False
+    assert consume_recovery_code(restored_user, remaining_code) is True
+    assert consume_recovery_code(restored_user, remaining_code) is False
+
+    replay_client = Client()
+    replay_client.force_login(restored_user)
+    with patch("django_otp.plugins.otp_totp.models.time.time", return_value=fixed_time):
+        replay = replay_client.post(reverse("two-factor-verify"), {"token": token})
+    assert replay.status_code == 400
+    restored_device.refresh_from_db()
+    assert restored_device.last_t == current_counter
+
+
+def test_legacy_archive_with_otp_migrations_but_no_state_fails_closed(
+    owner: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    """An old post-MFA archive cannot silently make an account password-only."""
+
+    device = TOTPDevice.objects.create(user=owner, name="synthetic-authenticator", confirmed=True)
+    source = tmp_path / "current-backup.enc"
+    create_backup(source, passphrase=PASSPHRASE)
+    legacy = legacy_archive_without_otp_state(
+        source, tmp_path / "legacy-after-mfa-schema.enc", pre_mfa_schema=False
+    )
+
+    problems = verify_backup(legacy, passphrase=PASSPHRASE)
+    assert len(problems) == 1
+    assert "otp_totp.totpdevice" in problems[0]
+    assert "otp_static.staticdevice" in problems[0]
+    assert "otp_static.statictoken" in problems[0]
+    assert device.key not in problems[0]
+
+    report = unpack_backup(legacy, passphrase=PASSPHRASE, destination=tmp_path / "legacy-out")
+    assert not report.is_clean
+
+    monkeypatch.setenv(PASSPHRASE_ENV, PASSPHRASE)
+    with pytest.raises(CommandError, match="does not match its manifest"):
+        run(
+            "restore_backup",
+            str(legacy),
+            str(tmp_path / "legacy-restore"),
+            load=True,
+        )
+    assert User.objects.filter(pk=owner.pk).exists()
+    assert TOTPDevice.objects.filter(pk=device.pk).exists()
+
+
+def test_pre_mfa_archive_without_otp_migrations_remains_verifiable(
+    owner: Any, tmp_path: Path
+) -> None:
+    """Archives made before OTP tables existed remain readable and verifiable."""
+
+    TOTPDevice.objects.create(user=owner, name="synthetic-authenticator", confirmed=True)
+    source = tmp_path / "current-backup.enc"
+    create_backup(source, passphrase=PASSPHRASE)
+    legacy = legacy_archive_without_otp_state(
+        source, tmp_path / "legacy-before-mfa-schema.enc", pre_mfa_schema=True
+    )
+
+    assert verify_backup(legacy, passphrase=PASSPHRASE) == []
 
 
 def test_the_create_command_requires_a_passphrase_from_the_environment(
