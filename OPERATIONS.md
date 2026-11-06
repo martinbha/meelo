@@ -341,3 +341,50 @@ more:
 
 Until such an integration exists, the structured logs are the record, and they
 stay on the machine that produced them.
+
+## Reviewing legacy manual currency amounts
+
+Before currency-aware manual entry is deployed, the form multiplied every
+amount by 100. For a zero-decimal currency such as KRW, JPY, or VND, entering
+`100` stored `10000` minor units. The stored value alone cannot prove what the
+person intended, so review each candidate and do not modify records
+automatically.
+
+Set a cutoff to the deployment time of the corrected form. In a private
+operator session, find `transaction_created` audit events with
+`metadata.source == "manual"` before that cutoff, then follow their `object_id`
+to canonical transactions. Review only currencies whose registry exponent is
+zero. Treat these as candidates; some rows may have been created through other
+services or corrected from a source that did not use the old form.
+
+The audit event records the transaction ID, source, type, and timestamp, but not
+the entered amount. Read each candidate through the owner's authenticated
+transaction page or a private owner-scoped review session so the amount is
+decrypted only for its owner.
+
+Review and correct one transaction at a time:
+
+1. Compare the candidate with its receipt, statement, or the user's own entry
+   record. The current stored amount divided by 100 is only a clue; it is not
+   proof of the intended amount.
+2. If the source confirms the intended amount, use the manual transaction form
+   to enter that amount in major currency units. The corrected form converts it
+   using the currency registry.
+3. For a draft, save the corrected amount through the edit form and confirm the
+   result through the owner's transaction page.
+4. For a confirmed or posted transaction, do not update the database amount
+   directly. Use the normal delete/reversal flow and create a replacement from
+   the verified amount, or leave the row unchanged until a supported correction
+   flow is available. Keep the original and replacement transaction IDs in a
+   private review record.
+5. If no source verifies the intended amount, leave the transaction unchanged
+   and mark the review unresolved. Do not apply a blanket divide-by-100
+   operation.
+
+The audit trail retains the original voided event and any ledger reversals when
+a confirmed transaction is replaced. Keep review notes in an access-controlled
+operator record; do not put merchant names or amounts into audit metadata.
+Record the cutoff, candidate count, reviewed count, corrected count, unresolved
+count, and affected transaction IDs in the restricted release or operations
+record. Do not include plaintext transaction values in shared logs or routine
+command output.
