@@ -21,10 +21,9 @@ class ManualTransactionForm(forms.Form):
     amount = forms.DecimalField(
         min_value=Decimal("0"),
         max_digits=18,
-        # The currency is another form field, so its exponent cannot be used by
-        # DecimalField's static validator. Permit the registry's widest
-        # supported exponent here and validate the actual currency in clean().
-        decimal_places=6,
+        # The currency is another form field. Validate its exponent in clean()
+        # without reserving decimal places and reducing the whole-digit limit.
+        decimal_places=None,
         help_text="Enter the amount in the selected currency's units.",
         widget=forms.NumberInput(attrs={"step": "any"}),
     )

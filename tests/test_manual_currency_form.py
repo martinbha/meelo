@@ -49,6 +49,8 @@ def account(owner: Any) -> FinancialAccount:
         ("USD", "10.25", 1_025),
         ("JPY", "100", 100),
         ("VND", "100", 100),
+        ("KRW", "123456789012345678", 123_456_789_012_345_678),
+        ("USD", "1234567890123456.78", 123_456_789_012_345_678),
     ],
 )
 def test_manual_entry_scales_encrypted_amount_using_currency_exponent(
