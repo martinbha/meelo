@@ -29,7 +29,7 @@ from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
 from apps.observations.review import decrypt_observation
-from apps.transactions.idempotency import REFUND_SOURCE, save_once, source_key
+from apps.transactions.idempotency import REFUND_SOURCE, save_once, source_key_for_revision
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
 from apps.transactions.money import store_money
@@ -269,7 +269,9 @@ def confirm_refund_match(
         payment_instrument=instrument,
         category=_purchase_category(purchase),
         status=CanonicalTransaction.Status.DRAFT,
-        source_idempotency_key=source_key(REFUND_SOURCE, match.pk),
+        source_idempotency_key=source_key_for_revision(
+            REFUND_SOURCE, match.pk, match.resolution_revision
+        ),
     )
     # Encrypted under this row's identity before anything is written: the
     # observations these came from held their values encrypted, and copying them
@@ -327,6 +329,7 @@ def confirm_refund_match(
             "canonical_transaction_id": str(canonical.pk),
             "refund_observation_id": str(refund.pk),
             "purchase_observation_id": str(purchase.pk),
+            "resolution_revision": match.resolution_revision,
             "category_inherited": canonical.category_id is not None,
             "superseded_candidates": len(superseded),
             "score": match.match_score,

@@ -25,7 +25,7 @@ The schema is split into three data layers:
 
 | App | Models | Role |
 | --- | --- | --- |
-| `users` | `User`, `UserDataKey`, `UserSearchKey` | Account identity and wrapped per-user keys |
+| `users` | `User`, `UserDataKey`, `UserSearchKey`, `RecoveryCode`, `UserSession`, `TwoFactorAttempt` | Account identity, wrapped keys, recovery state, hashed session metadata, and shared second-factor attempt budgets |
 | `core` | `AuditEvent`, `RotationCheckpoint` | Hash-chained audit trail and resumable rotation |
 | `processing` | `SourceDocument`, `ProcessingJob` | Upload metadata, retention, and queue state |
 | `ocr` | `OcrRun`, `OcrToken` | Engine configuration, output, and token coordinates |

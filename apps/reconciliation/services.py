@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.db import transaction as db_transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -24,7 +25,13 @@ from apps.observations.models import ImportedObservation
 from apps.observations.review import merge_observations
 from apps.processing.models import SourceDocument
 
-from .duplicates import LIKELY_MERGE_SCORE, DuplicateCandidate, ObservationFacts
+from .duplicates import (
+    LIKELY_MERGE_SCORE,
+    DuplicateCandidate,
+    ObservationFacts,
+    safe_for_automatic_merge,
+    score_pair,
+)
 from .images import SimilarPair, near_duplicate_detection_enabled, sorted_pair
 from .matching import MatchProposal
 from .models import NearDuplicateDocument, ReconciliationMatch
@@ -109,11 +116,37 @@ def record_match(
         match_type=match_type,
         match_score=min(100, int(score)),
     )
-    match.full_clean()
+    # Pair uniqueness is arbitrated by the insert below. A preflight query can
+    # race with another committed candidate and raise before convergence runs.
+    match.full_clean(validate_constraints=False)
     match.match_features_json_encrypted = _encrypted_features(
         match, features, data_key=data_key, key_version=key_version
     )
-    match.save()
+    try:
+        # A missing row cannot be locked. The unique pair constraint is the
+        # final arbiter when two workers propose the same pair concurrently;
+        # isolate the insert in a savepoint so the losing worker can converge
+        # on the winner's row instead of aborting its whole reconciliation run.
+        with db_transaction.atomic():
+            match.save()
+    except IntegrityError:
+        existing = (
+            ReconciliationMatch.objects.select_for_update()
+            .filter(
+                left_observation_id=left_id, right_observation_id=right_id, match_type=match_type
+            )
+            .first()
+        )
+        if existing is None:
+            raise
+        if existing.status != ReconciliationMatch.Status.PROPOSED:
+            return existing
+        existing.match_score = min(100, int(score))
+        existing.match_features_json_encrypted = _encrypted_features(
+            existing, features, data_key=data_key, key_version=key_version
+        )
+        existing.save(update_fields=["match_score", "match_features_json_encrypted", "updated_at"])
+        return existing
     record_audit_event(
         user=user,
         event_type="reconciliation_match_created",
@@ -194,7 +227,12 @@ def link_observations(
     left_id, right_id = _ordered(left_observation_id, right_observation_id)
     existing = (
         ReconciliationMatch.objects.select_for_update()
-        .filter(left_observation_id=left_id, right_observation_id=right_id, match_type=match_type)
+        .filter(
+            user_id=user.pk,
+            left_observation_id=left_id,
+            right_observation_id=right_id,
+            match_type=match_type,
+        )
         .first()
     )
     if existing is not None and existing.status != ReconciliationMatch.Status.REJECTED:
@@ -214,6 +252,10 @@ def link_observations(
         key_version=key_version,
     )
     if match.status == ReconciliationMatch.Status.REJECTED:
+        # A rejected relationship represents a completed review cycle. Only
+        # this explicit user action starts a new cycle and a new canonical
+        # event idempotency key; detection reruns never advance it.
+        match.resolution_revision += 1
         match.status = ReconciliationMatch.Status.PROPOSED
         match.match_score = MANUAL_LINK_SCORE
         match.reviewed_by = None
@@ -224,6 +266,7 @@ def link_observations(
         match.save(
             update_fields=[
                 "status",
+                "resolution_revision",
                 "match_score",
                 "match_features_json_encrypted",
                 "reviewed_by",
@@ -240,6 +283,7 @@ def link_observations(
                 "score": MANUAL_LINK_SCORE,
                 "features": list(features),
                 "reopened": True,
+                "resolution_revision": match.resolution_revision,
             },
         )
     return match
@@ -266,47 +310,128 @@ def record_duplicate_candidates(
             data_key=data_key,
             key_version=key_version,
         )
-        if automatic_merge_enabled() and match.match_score >= LIKELY_MERGE_SCORE:
-            _automatically_merge_duplicate(match=match, user=user, features=candidate.features)
+        if (
+            automatic_merge_enabled()
+            and match.match_score >= LIKELY_MERGE_SCORE
+            and data_key is not None
+        ):
+            _automatically_merge_duplicate(
+                match=match,
+                user=user,
+                data_key=data_key,
+                key_version=key_version,
+            )
+            match.refresh_from_db()
         stored.append(match)
     return tuple(stored)
 
 
 @db_transaction.atomic
 def _automatically_merge_duplicate(
-    *, match: ReconciliationMatch, user: Any, features: Sequence[str]
+    *, match: ReconciliationMatch, user: Any, data_key: bytes, key_version: int
 ) -> None:
-    """Merge one eligible pair and retain the policy evidence in its audit."""
+    """Merge a still-safe pair and retain the policy evidence in its audit.
 
-    if match.status != ReconciliationMatch.Status.PROPOSED:
+    The current rows are re-read while locked because the caller's scores may
+    have been computed before a reviewer corrected a date, amount, direction,
+    currency, or mapping. Automatic merging requires the authenticated data key
+    for that re-check; without it, the candidate stays in the review queue.
+    """
+
+    # Lock the match before its observations, the same order used by the
+    # reviewer-driven merge path. Repeated concurrent detection then waits for
+    # the winner and sees the confirmed status instead of merging twice.
+    locked_match = (
+        ReconciliationMatch.objects.select_for_update().filter(pk=match.pk, user_id=user.pk).first()
+    )
+    if locked_match is None or locked_match.status != ReconciliationMatch.Status.PROPOSED:
         return
+
     observations = list(
         ImportedObservation.objects.select_for_update()
         .filter(
-            pk__in=(match.left_observation_id, match.right_observation_id),
+            pk__in=(locked_match.left_observation_id, locked_match.right_observation_id),
             user_id=user.pk,
             merged_into__isnull=True,
+            review_status=ImportedObservation.ReviewStatus.UNREVIEWED,
         )
-        .order_by("created_at", "pk")
+        .select_related("source_document")
+        .order_by("pk")
     )
     if len(observations) != 2:
         return
+
+    from apps.observations.review import decrypt_observation
+
+    current_facts: list[ObservationFacts] = []
+    for observation in observations:
+        values = decrypt_observation(observation, user=user, data_key=data_key)
+        amount_minor = (
+            values.amount.amount_minor
+            if values.amount is not None
+            and values.amount.resolved_currency.code == observation.currency.strip().upper()
+            else None
+        )
+        current_facts.append(
+            facts_from(
+                observation,
+                merchant=values.merchant,
+                amount_minor=amount_minor,
+                approval_code=values.approval_code,
+                balance_after_minor=(
+                    values.balance_after.amount_minor if values.balance_after is not None else None
+                ),
+                source_type=observation.source_document.effective_source_type,
+            )
+        )
+    current_score = score_pair(*current_facts)
+    features = current_score.features
+    if current_score.score < LIKELY_MERGE_SCORE or not safe_for_automatic_merge(*current_facts):
+        # Keep the candidate reviewable, but do not leave a stale high score on
+        # a pair whose facts changed after candidate generation.
+        if locked_match.match_score != current_score.score:
+            locked_match.match_score = current_score.score
+            locked_match.match_features_json_encrypted = _encrypted_features(
+                locked_match,
+                features,
+                data_key=data_key,
+                key_version=key_version,
+            )
+            locked_match.save(
+                update_fields=["match_score", "match_features_json_encrypted", "updated_at"]
+            )
+        return
+
+    if locked_match.match_score != current_score.score or decrypt_match_features(
+        locked_match, data_key=data_key
+    ) != tuple(sorted(features)):
+        locked_match.match_score = current_score.score
+        locked_match.match_features_json_encrypted = _encrypted_features(
+            locked_match,
+            features,
+            data_key=data_key,
+            key_version=key_version,
+        )
+        locked_match.save(
+            update_fields=["match_score", "match_features_json_encrypted", "updated_at"]
+        )
+
     winner, loser = observations
     merge_observations(user=user, winner_id=winner.pk, duplicate_ids=[loser.pk])
-    match.status = ReconciliationMatch.Status.CONFIRMED
-    match.reviewed_by = None
-    match.reviewed_at = timezone.now()
-    match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+    locked_match.status = ReconciliationMatch.Status.CONFIRMED
+    locked_match.reviewed_by = None
+    locked_match.reviewed_at = timezone.now()
+    locked_match.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
     record_audit_event(
         user=user,
         event_type="duplicate_merged",
-        obj=match,
+        obj=locked_match,
         metadata={
             "automatic": True,
             "policy_enabled": True,
             "winner_observation_id": str(winner.pk),
             "merged_observation_id": str(loser.pk),
-            "score": match.match_score,
+            "score": locked_match.match_score,
             "features": sorted(features),
         },
     )
@@ -564,6 +689,32 @@ def reject_match(match_id: Any, *, user: Any) -> ReconciliationMatch:
     return match
 
 
+def lock_related_matches(observation_ids: Sequence[Any], *, user: Any) -> list[ReconciliationMatch]:
+    """Lock matches for a set of observations in stable primary-key order.
+
+    Deletion and unlinking both use the order match rows → observation rows →
+    canonical transaction. Keeping the match lock first prevents deletion from
+    racing a confirmation into a stale relationship.
+    """
+
+    ids = tuple(observation_ids)
+    if not ids:
+        return []
+    match_ids = list(
+        ReconciliationMatch.objects.filter(user_id=user.pk)
+        .filter(Q(left_observation_id__in=ids) | Q(right_observation_id__in=ids))
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    if not match_ids:
+        return []
+    return list(
+        ReconciliationMatch.objects.select_for_update()
+        .filter(user_id=user.pk, pk__in=match_ids)
+        .order_by("pk")
+    )
+
+
 @db_transaction.atomic
 def unlink_match(
     match_id: Any,
@@ -574,26 +725,36 @@ def unlink_match(
 ) -> ReconciliationMatch:
     """Reverse a confirmed relationship while retaining its rejected history."""
 
-    match = lock_match(match_id, user)
+    candidate = (
+        ReconciliationMatch.objects.filter(pk=match_id, user_id=user.pk)
+        .only("pk", "left_observation_id", "right_observation_id")
+        .first()
+    )
+    if candidate is None:
+        raise ForbiddenError("This match belongs to another user.")
+    locked_matches = lock_related_matches(
+        (candidate.left_observation_id, candidate.right_observation_id), user=user
+    )
+    match = next((item for item in locked_matches if item.pk == candidate.pk), None)
+    if match is None:
+        raise ForbiddenError("This match belongs to another user.")
     if match.status != ReconciliationMatch.Status.CONFIRMED:
         raise ConflictError("Only a confirmed match can be unlinked.")
 
     observations = list(
-        ImportedObservation.objects.select_for_update().filter(
+        ImportedObservation.objects.select_for_update()
+        .filter(
             pk__in=(match.left_observation_id, match.right_observation_id),
             user_id=user.pk,
         )
+        .order_by("pk")
     )
     transaction_id = None
     if match.match_type == ReconciliationMatch.MatchType.INTERNAL_TRANSFER:
-        transaction_ids = {
-            row.canonical_transaction_id
-            for row in observations
-            if row.canonical_transaction_id is not None
-        }
-        if len(transaction_ids) != 1:
+        transaction_ids = [row.canonical_transaction_id for row in observations]
+        if len(observations) != 2 or None in transaction_ids or len(set(transaction_ids)) != 1:
             raise ConflictError("The transfer rows do not share one transaction.")
-        transaction_id = transaction_ids.pop()
+        transaction_id = transaction_ids[0]
     elif match.match_type == ReconciliationMatch.MatchType.REFUND_MATCH:
         refund = next(
             (row for row in observations if row.direction == ImportedObservation.Direction.CREDIT),
@@ -602,6 +763,25 @@ def unlink_match(
         if refund is None or refund.canonical_transaction_id is None:
             raise ConflictError("The refund match has no refund transaction.")
         transaction_id = refund.canonical_transaction_id
+    elif match.match_type in {
+        ReconciliationMatch.MatchType.DEBIT_CARD_BANK_MATCH,
+        ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT,
+    }:
+        linked_transaction_ids = {
+            row.canonical_transaction_id
+            for row in observations
+            if row.canonical_transaction_id is not None
+        }
+        if len(linked_transaction_ids) > 1:
+            raise ConflictError(
+                "The matched rows point to different transactions; review each transaction first."
+            )
+        transaction_id = next(iter(linked_transaction_ids), None)
+        if transaction_id is not None and (
+            len(observations) != 2
+            or any(row.canonical_transaction_id != transaction_id for row in observations)
+        ):
+            raise ConflictError("The matched rows do not share one transaction.")
 
     if transaction_id is not None:
         from apps.transactions.deletion import delete_transaction
@@ -613,6 +793,7 @@ def unlink_match(
             confirmed=True,
             data_key=data_key,
             key_version=key_version,
+            _unlinking_match_id=match.pk,
         )
 
     for observation in observations:
@@ -642,7 +823,11 @@ def unlink_match(
         user=user,
         event_type="reconciliation_match_unlinked",
         obj=match,
-        metadata={"match_type": match.match_type, "match_id": str(match.pk)},
+        metadata={
+            "match_type": match.match_type,
+            "match_id": str(match.pk),
+            "canonical_transaction_id": str(transaction_id) if transaction_id else "",
+        },
     )
     return match
 

@@ -41,10 +41,19 @@ page describes the state and links to what exists.
 runs immediately after authentication so every request carries
 `request.user.is_verified()`.
 
-**Nothing enforces it yet.** Enrolment is #171 and enforcement is #173, and the
-order is deliberate: a login wall that arrives before the enrolment flow does is
-a locked account, not a hardened one. Until then a device can be stored and is
-not consulted.
+**Enrolled accounts must verify it.** A confirmed TOTP device sends the user to
+`/account/security/two-factor/` after password login and keeps every authenticated
+route, including admin, behind verification until the code or a single-use
+recovery code succeeds. Accounts without a confirmed device keep the existing
+password-only behavior.
+
+Failed second-factor attempts are counted in a database row keyed by user and a
+hash of the remote address. The five-attempt budget is shared by web workers;
+its count expires five minutes after the last failure. The row keeps only the
+hashed address and is reused if that address returns. TOTP verification uses
+django-otp's transactional device lock, so two concurrent submissions of the
+same time-step code cannot both succeed. django-otp's persisted per-device
+throttle remains in place as a separate control.
 
 Both plugin tables are installed together, including the static devices that
 hold #172's recovery codes, so the tables are created by one migration pass

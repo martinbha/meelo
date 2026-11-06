@@ -130,3 +130,24 @@ class UserSession(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=("user", "revoked_at"), name="session_user_active_idx")]
+
+
+class TwoFactorAttempt(models.Model):
+    """Shared, privacy-safe failure budget for one user's OTP challenge IP."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="two_factor_attempts")
+    ip_hash = models.CharField(max_length=64)
+    failure_count = models.PositiveSmallIntegerField(default=0)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "ip_hash"), name="twofactor_attempt_user_ip_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "two-factor attempt budget"

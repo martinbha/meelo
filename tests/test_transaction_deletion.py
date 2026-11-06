@@ -11,17 +11,21 @@ from __future__ import annotations
 
 import base64
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
+from django.db import close_old_connections, connection
 from django.test import Client
 from django.urls import reverse
 
 from apps.core.errors import ConflictError, InvalidRequestError
-from apps.core.key_management import provision_user_data_key
+from apps.core.key_management import get_user_data_key, provision_user_data_key
+from apps.core.models import AuditEvent
 from apps.core.value_objects import Money
 from apps.ledger.models import LedgerEntry
 from apps.ledger.posting import (
@@ -31,6 +35,7 @@ from apps.ledger.posting import (
     reverse_transaction_postings,
     transaction_net_minor,
 )
+from apps.ledger.rules import PostingRuleAccounts
 from apps.observations.models import ImportedObservation
 from apps.observations.review import accept_observation
 from apps.observations.services import import_parser_selection
@@ -41,7 +46,10 @@ from apps.parsing.contracts import (
     TransactionDirection,
 )
 from apps.parsing.registry import ParserSelection
-from apps.reports.spending import reportable_transactions
+from apps.reconciliation.models import ReconciliationMatch
+from apps.reconciliation.services import confirm_match, record_match, unlink_match
+from apps.reconciliation.transfers import confirm_internal_transfer
+from apps.reports.spending import monthly_spending, reportable_transactions
 from apps.transactions.deletion import DeletionNotConfirmedError, delete_transaction
 from apps.transactions.lifecycle import transition_transaction_status
 from apps.transactions.models import CanonicalTransaction
@@ -99,14 +107,61 @@ def posted_transaction(owner: Any, account: Any, *, minor: int = 4200) -> Any:
     return transaction, accounts
 
 
-def account_position(ledger_account: Any) -> int:
+def account_position(ledger_account: Any, *, data_key: bytes | None = None) -> int:
     """Debits minus credits against one ledger account."""
 
     total = 0
     for entry in LedgerEntry.objects.filter(account=ledger_account):
-        amount = entry_amount(entry).amount_minor
+        amount = entry_amount(entry, data_key=data_key).amount_minor
         total += amount if entry.entry_type == LedgerEntry.EntryType.DEBIT else -amount
     return total
+
+
+def transfer_rows(user: Any, data_key: bytes) -> tuple[Any, Any, Any, Any]:
+    source_account = make_account(user, name_blind_index="deletion-transfer-source")
+    destination_account = make_account(user, name_blind_index="deletion-transfer-destination")
+    document = make_document(user, file_sha256="8" * 64)
+    run = make_ocr_run(user, document)
+    rows = import_parser_selection(
+        document=document,
+        ocr_run=run,
+        selection=ParserSelection(
+            ParserMetadata("toss_bank", "1.0"),
+            ParserSupport(0.95, "bank_transaction_list", ()),
+            (
+                ParsedObservation(
+                    occurred_on=date(2026, 8, 15),
+                    amount=Decimal("500000"),
+                    currency="KRW",
+                    direction=TransactionDirection.DEBIT,
+                    merchant="정기이체",
+                    confidence_factors={"token_confidence": 0.95, "amount_confidence": 0.95},
+                    parser_name="toss_bank",
+                    parser_version="1.0",
+                    parser_support_score=0.95,
+                ),
+                ParsedObservation(
+                    occurred_on=date(2026, 8, 15),
+                    amount=Decimal("500000"),
+                    currency="KRW",
+                    direction=TransactionDirection.CREDIT,
+                    merchant="정기이체",
+                    confidence_factors={"token_confidence": 0.95, "amount_confidence": 0.95},
+                    parser_name="toss_bank",
+                    parser_version="1.0",
+                    parser_support_score=0.95,
+                ),
+            ),
+        ),
+        data_key=data_key,
+        key_version=user.encryption_key_version,
+    ).observations
+    outgoing, incoming = rows
+    outgoing.financial_account_guess = source_account
+    incoming.financial_account_guess = destination_account
+    outgoing.save(update_fields=["financial_account_guess"])
+    incoming.save(update_fields=["financial_account_guess"])
+    return outgoing, incoming, source_account, destination_account
 
 
 # ----------------------------------------------------------------------
@@ -331,3 +386,234 @@ def test_the_delete_page_is_a_404_for_another_users_transaction(owner: Any, acco
     assert client.post(url, {"confirm": "yes"}).status_code == 404
     transaction.refresh_from_db()
     assert transaction.status == CanonicalTransaction.Status.CONFIRMED
+
+
+def test_deleting_a_transfer_through_the_browser_releases_and_relinks_its_sources(
+    owner: Any, master_key: bytes
+) -> None:
+    data_key = get_user_data_key(user=owner, actor=owner, master_key=master_key)
+    outgoing, incoming, source_account, destination_account = transfer_rows(owner, data_key)
+    match = record_match(
+        user=owner,
+        left_observation_id=outgoing.pk,
+        right_observation_id=incoming.pk,
+        match_type=ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        score=85,
+        features=("exact_amount", "same_date"),
+        data_key=data_key,
+    )
+    source_ledger = make_ledger_accounts(
+        owner, source_account, prefix="delete-transfer-src"
+    ).account
+    destination_ledger = make_ledger_accounts(
+        owner, destination_account, prefix="delete-transfer-dst"
+    ).account
+    transfer = confirm_internal_transfer(
+        match.pk,
+        user=owner,
+        data_key=data_key,
+        ledger_accounts=PostingRuleAccounts(
+            account=source_ledger,
+            transfer_account=destination_ledger,
+        ),
+    )
+    assert LedgerEntry.objects.filter(transaction=transfer).count() == 2
+
+    client = Client()
+    client.force_login(owner)
+    delete_url = reverse("transaction-delete", kwargs={"pk": transfer.pk})
+    assert client.get(delete_url).status_code == 200
+    response = client.post(delete_url, {"confirm": "yes", "reason": "Corrected transfer."})
+
+    assert response.status_code == 302
+    transfer.refresh_from_db()
+    match.refresh_from_db()
+    for row in (outgoing, incoming):
+        row.refresh_from_db()
+        assert row.canonical_transaction_id is None
+        assert row.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+        assert row.source_document_id is not None
+
+    assert transfer.status == CanonicalTransaction.Status.VOIDED
+    assert match.status == ReconciliationMatch.Status.REJECTED
+    assert LedgerEntry.objects.filter(transaction=transfer).count() == 4
+    assert transaction_net_minor(transfer, data_key=data_key) == 0
+    assert account_position(source_ledger, data_key=data_key) == 0
+    assert account_position(destination_ledger, data_key=data_key) == 0
+    totals = monthly_spending(owner, year=2026, month=8, data_key=data_key).totals("KRW")
+    assert totals.transaction_count == 0
+    assert totals.neutral_minor == 0
+
+    unlinked = AuditEvent.objects.get(
+        user=owner,
+        event_type=AuditEvent.EventType.RECONCILIATION_MATCH_UNLINKED,
+        object_id=match.pk,
+    )
+    assert unlinked.metadata["cause"] == "transaction_deleted"
+    assert unlinked.metadata["canonical_transaction_id"] == str(transfer.pk)
+    rejected_queue = client.get(reverse("match-queue"))
+    assert all(row["match"].pk != match.pk for row in rejected_queue.context["rows"])
+
+    # The released source rows can be linked again through the browser form.
+    relinked = client.post(
+        reverse("match-link"),
+        data={
+            "left_observation": str(outgoing.pk),
+            "right_observation": str(incoming.pk),
+            "match_type": ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        },
+    )
+    assert relinked.status_code == 302
+    match.refresh_from_db()
+    assert match.status == ReconciliationMatch.Status.PROPOSED
+    assert match.resolution_revision == 1
+    open_queue = client.get(reverse("match-queue"))
+    assert any(row["match"].pk == match.pk for row in open_queue.context["rows"])
+
+    reconfirmed = client.post(reverse("match-accept", kwargs={"pk": match.pk}))
+    assert reconfirmed.status_code == 302
+    match.refresh_from_db()
+    outgoing.refresh_from_db()
+    incoming.refresh_from_db()
+    replacement = CanonicalTransaction.objects.get(pk=outgoing.canonical_transaction_id)
+    assert match.status == ReconciliationMatch.Status.CONFIRMED
+    assert replacement.pk != transfer.pk
+    assert replacement.status == CanonicalTransaction.Status.DRAFT
+    assert replacement.source_idempotency_key != transfer.source_idempotency_key
+    assert incoming.canonical_transaction_id == replacement.pk
+
+    # A retry of this review cycle returns the replacement and creates no third row.
+    retry = client.post(reverse("match-accept", kwargs={"pk": match.pk}))
+    assert retry.status_code == 302
+    assert CanonicalTransaction.objects.filter(user=owner).count() == 2
+
+
+@pytest.mark.parametrize(
+    "match_type",
+    [
+        ReconciliationMatch.MatchType.DEBIT_CARD_BANK_MATCH,
+        ReconciliationMatch.MatchType.CREDIT_CARD_PAYMENT,
+    ],
+)
+def test_deleting_a_canonical_event_rejects_confirmed_future_match_types(
+    owner: Any, master_key: bytes, match_type: str
+) -> None:
+    data_key = get_user_data_key(user=owner, actor=owner, master_key=master_key)
+    outgoing, incoming, source_account, _ = transfer_rows(owner, data_key)
+    transaction = accept_observation(
+        outgoing.pk,
+        user=owner,
+        data_key=data_key,
+        financial_account=source_account,
+        transaction_type=CanonicalTransaction.TransactionType.PURCHASE,
+    )
+    match = record_match(
+        user=owner,
+        left_observation_id=outgoing.pk,
+        right_observation_id=incoming.pk,
+        match_type=match_type,
+        score=70,
+        features=("exact_amount",),
+        data_key=data_key,
+    )
+    confirm_match(match.pk, user=owner)
+
+    delete_transaction(transaction.pk, user=owner, confirmed=True, data_key=data_key)
+
+    transaction.refresh_from_db()
+    match.refresh_from_db()
+    outgoing.refresh_from_db()
+    incoming.refresh_from_db()
+    assert transaction.status == CanonicalTransaction.Status.VOIDED
+    assert match.status == ReconciliationMatch.Status.REJECTED
+    assert outgoing.canonical_transaction_id is None
+    assert outgoing.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    assert incoming.canonical_transaction_id is None
+    assert incoming.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_delete_and_unlink_reverse_a_transfer_once_on_postgres(
+    owner: Any, master_key: bytes
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("The concurrent deletion/unlink assertion requires PostgreSQL row locks.")
+
+    data_key = get_user_data_key(user=owner, actor=owner, master_key=master_key)
+    outgoing, incoming, source_account, destination_account = transfer_rows(owner, data_key)
+    match = record_match(
+        user=owner,
+        left_observation_id=outgoing.pk,
+        right_observation_id=incoming.pk,
+        match_type=ReconciliationMatch.MatchType.INTERNAL_TRANSFER,
+        score=85,
+        features=("exact_amount", "same_date"),
+        data_key=data_key,
+    )
+    source_ledger = make_ledger_accounts(owner, source_account, prefix="race-delete-src").account
+    destination_ledger = make_ledger_accounts(
+        owner, destination_account, prefix="race-delete-dst"
+    ).account
+    transaction = confirm_internal_transfer(
+        match.pk,
+        user=owner,
+        data_key=data_key,
+        ledger_accounts=PostingRuleAccounts(
+            account=source_ledger,
+            transfer_account=destination_ledger,
+        ),
+    )
+    barrier = threading.Barrier(2)
+
+    def delete_directly() -> str:
+        close_old_connections()
+        try:
+            worker_user = type(owner).objects.get(pk=owner.pk)
+            barrier.wait(timeout=10)
+            try:
+                delete_transaction(
+                    transaction.pk,
+                    user=worker_user,
+                    confirmed=True,
+                    data_key=data_key,
+                )
+            except ConflictError:
+                return "already handled"
+            return "deleted"
+        finally:
+            close_old_connections()
+
+    def unlink_relationship() -> str:
+        close_old_connections()
+        try:
+            worker_user = type(owner).objects.get(pk=owner.pk)
+            barrier.wait(timeout=10)
+            try:
+                unlink_match(match.pk, user=worker_user, data_key=data_key)
+            except ConflictError:
+                return "already handled"
+            return "unlinked"
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(lambda action: action(), (delete_directly, unlink_relationship))
+        )
+
+    transaction.refresh_from_db()
+    match.refresh_from_db()
+    outgoing.refresh_from_db()
+    incoming.refresh_from_db()
+    assert sorted(results) == ["already handled", "deleted"] or sorted(results) == [
+        "already handled",
+        "unlinked",
+    ]
+    assert transaction.status == CanonicalTransaction.Status.VOIDED
+    assert match.status == ReconciliationMatch.Status.REJECTED
+    assert LedgerEntry.objects.filter(transaction=transaction).count() == 4
+    assert transaction_net_minor(transaction, data_key=data_key) == 0
+    assert outgoing.canonical_transaction_id is None
+    assert incoming.canonical_transaction_id is None
+    assert outgoing.review_status == ImportedObservation.ReviewStatus.UNREVIEWED
+    assert incoming.review_status == ImportedObservation.ReviewStatus.UNREVIEWED

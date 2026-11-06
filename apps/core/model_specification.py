@@ -455,7 +455,10 @@ CORE_MODELS: tuple[ModelSpecification, ...] = (
             "updated_at",
         ),
         renamed={"reviewed_by": "reviewed_by_id"},
-        additional={"reviewed_at": "When the decision was made, alongside who made it."},
+        additional={
+            "reviewed_at": "When the decision was made, alongside who made it.",
+            "resolution_revision": "New event generation after the user reopens a rejected match.",
+        },
         enumerations={
             "MatchType": (
                 "duplicate_observation",
@@ -480,6 +483,9 @@ SUPPORTING_MODELS: Mapping[str, str] = {
     "(specification 20.2).",
     "users.UserSession": "Hashed client and session metadata used for revocation "
     "(specifications 20.2 and 21.4).",
+    "users.TwoFactorAttempt": "Per-user, IP-hash-scoped second-factor failure counters with "
+    "expiry, serialized in the database so every web worker enforces one attempt budget "
+    "(specification 20.2).",
     "core.AuditEvent": "The hash-chained audit log (specification 23).",
     "core.RotationCheckpoint": "How far a key rotation got, so a resumed run does not re-read "
     "the whole history to find where it stopped (specification 22.6).",

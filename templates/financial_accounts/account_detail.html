@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load finance_money %}
 {% block title %}{{ name }} · Finance workspace{% endblock %}
 
 {% block content %}
@@ -12,7 +13,7 @@
     <h2>Balance</h2>
     <ul>
       {% for currency, minor in balances.items %}
-        <li>{{ minor }} {{ currency }}</li>
+        <li>{{ minor|money:currency }} {{ currency }}</li>
       {% empty %}
         <li>Nothing posted to the ledger yet.</li>
       {% endfor %}

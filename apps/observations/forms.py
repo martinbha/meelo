@@ -12,7 +12,13 @@ from typing import Any
 from django import forms
 
 from apps.categorization.models import Category
+from apps.core.form_fields import ReadableModelChoiceField
 from apps.core.ownership import owned_queryset
+from apps.core.selection_labels import (
+    category_label,
+    financial_account_label,
+    payment_instrument_label,
+)
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
 from apps.transactions.models import CanonicalTransaction
@@ -33,15 +39,15 @@ class ObservationCorrectionForm(forms.Form):
         required=False, choices=CanonicalTransaction.TransactionType.choices
     )
     installment_months = forms.IntegerField(required=False, min_value=1)
-    financial_account_guess = forms.ModelChoiceField(
+    financial_account_guess = ReadableModelChoiceField(
         required=False, queryset=FinancialAccount.objects.none()
     )
-    payment_instrument_guess = forms.ModelChoiceField(
+    payment_instrument_guess = ReadableModelChoiceField(
         required=False, queryset=PaymentInstrument.objects.none()
     )
-    category_guess = forms.ModelChoiceField(required=False, queryset=Category.objects.none())
+    category_guess = ReadableModelChoiceField(required=False, queryset=Category.objects.none())
 
-    def __init__(self, *args: Any, user: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, user: Any, data_key: bytes | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # Choices are scoped to the reviewer so a crafted form cannot attach
         # another user's account, card, or category to an observation.
@@ -52,6 +58,18 @@ class ObservationCorrectionForm(forms.Form):
             PaymentInstrument, user
         )
         self.fields["category_guess"].queryset = owned_queryset(Category, user)  # type: ignore[attr-defined]
+        if data_key is not None:
+            self.fields["financial_account_guess"].set_label_builder(  # type: ignore[attr-defined]
+                lambda account: financial_account_label(account, user=user, data_key=data_key)
+            )
+            self.fields["payment_instrument_guess"].set_label_builder(  # type: ignore[attr-defined]
+                lambda instrument: payment_instrument_label(
+                    instrument, user=user, data_key=data_key
+                )
+            )
+            self.fields["category_guess"].set_label_builder(  # type: ignore[attr-defined]
+                lambda category: category_label(category, user=user, data_key=data_key)
+            )
 
     def clean_currency(self) -> str:
         value = (self.cleaned_data.get("currency") or "").strip().upper()
@@ -83,15 +101,19 @@ class ReviewActionForm(forms.Form):
     transaction_type = forms.ChoiceField(
         required=False, choices=CanonicalTransaction.TransactionType.choices
     )
-    financial_account = forms.ModelChoiceField(
+    financial_account = ReadableModelChoiceField(
         required=False, queryset=FinancialAccount.objects.none()
     )
 
-    def __init__(self, *args: Any, user: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, user: Any, data_key: bytes | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.fields["financial_account"].queryset = owned_queryset(  # type: ignore[attr-defined]
             FinancialAccount, user
         )
+        if data_key is not None:
+            self.fields["financial_account"].set_label_builder(  # type: ignore[attr-defined]
+                lambda account: financial_account_label(account, user=user, data_key=data_key)
+            )
 
 
 class MergeForm(forms.Form):

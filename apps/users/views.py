@@ -1,4 +1,6 @@
 import base64
+from datetime import timedelta
+from hashlib import sha256
 from typing import cast
 
 from django.conf import settings
@@ -11,13 +13,15 @@ from django.contrib.auth.views import (
     PasswordChangeView,
     PasswordResetConfirmView,
 )
-from django.core.cache import cache
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 from django_otp import login as otp_login
+from django_otp import verify_token as otp_verify_token
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from qrcode import QRCode
 from qrcode.image.svg import SvgPathImage
@@ -30,7 +34,7 @@ from .forms import (
     TOTPDisableForm,
     TwoFactorVerificationForm,
 )
-from .models import User
+from .models import TwoFactorAttempt, User
 from .recovery import consume_recovery_code, regenerate_recovery_codes
 from .security import security_overview
 from .sessions import revoke_all_sessions, revoke_other_sessions, revoke_session
@@ -232,9 +236,61 @@ class TwoFactorVerifyView(LoginRequiredMixin, View):
     def post(self, request: HttpRequest) -> HttpResponse:
         user = cast(User, request.user)
         ip = request.META.get("REMOTE_ADDR", "unknown")
-        key = f"two-factor-failures:{user.pk}:{ip}"
-        failures = int(cache.get(key, 0))
-        if failures >= self.failure_limit:
+        ip_hash = sha256(ip.encode()).hexdigest()
+        form = TwoFactorVerificationForm(request.POST)
+        token = form.cleaned_data["token"].strip() if form.is_valid() else ""
+        authenticated_device: TOTPDevice | None = None
+        throttled = False
+
+        # Keep the shared budget locked across verification. This serializes
+        # requests from separate web workers for the same user and IP, while
+        # django-otp independently locks the device row to prevent TOTP replay.
+        with transaction.atomic():
+            # Acquire the lock in the same query as the lookup. A separate
+            # unlocked get_or_create followed by select_for_update lets another
+            # request delete an expired row between those two operations.
+            attempt, _ = TwoFactorAttempt.objects.select_for_update().get_or_create(
+                user=user, ip_hash=ip_hash
+            )
+            now = timezone.now()
+            if attempt.expires_at is not None and attempt.expires_at <= now:
+                attempt.failure_count = 0
+                attempt.expires_at = None
+
+            if attempt.failure_count >= self.failure_limit:
+                if attempt.expires_at is None:
+                    attempt.expires_at = now + timedelta(seconds=self.lock_seconds)
+                    attempt.save(update_fields=("expires_at", "updated_at"))
+                throttled = True
+            else:
+                device = TOTPDevice.objects.filter(user=user, confirmed=True).order_by("id").first()
+                verified_device = (
+                    otp_verify_token(user, device.persistent_id, token)
+                    if device is not None and token
+                    else None
+                )
+                verified = verified_device is not None
+                if not verified and token:
+                    verified = consume_recovery_code(user, token)
+
+                if verified and device is not None:
+                    authenticated_device = verified_device or device
+                    attempt.failure_count = 0
+                    attempt.expires_at = now + timedelta(seconds=self.lock_seconds)
+                    attempt.save(update_fields=("failure_count", "expires_at", "updated_at"))
+                else:
+                    attempt.failure_count += 1
+                    attempt.expires_at = now + timedelta(seconds=self.lock_seconds)
+                    attempt.save(update_fields=("failure_count", "expires_at", "updated_at"))
+                    record_audit_event(
+                        user=user,
+                        event_type="two_factor_failure",
+                        metadata={"method": "otp"},
+                        ip_address=request.META.get("REMOTE_ADDR"),
+                        user_agent=request.META.get("HTTP_USER_AGENT"),
+                    )
+
+        if throttled:
             return render(
                 request,
                 self.template_name,
@@ -242,25 +298,10 @@ class TwoFactorVerifyView(LoginRequiredMixin, View):
                 status=429,
             )
 
-        form = TwoFactorVerificationForm(request.POST)
-        device = TOTPDevice.objects.filter(user=user, confirmed=True).order_by("id").first()
-        token = form.cleaned_data["token"].strip() if form.is_valid() else ""
-        verified = bool(device and token and device.verify_token(token))
-        if not verified and token:
-            verified = consume_recovery_code(user, token)
-        if verified and device is not None:
-            cache.delete(key)
-            otp_login(request, device)
+        if authenticated_device is not None:
+            otp_login(request, authenticated_device)
             return redirect(request.session.pop("two_factor_next", settings.LOGIN_REDIRECT_URL))
 
-        cache.set(key, failures + 1, self.lock_seconds)
-        record_audit_event(
-            user=user,
-            event_type="two_factor_failure",
-            metadata={"method": "otp"},
-            ip_address=request.META.get("REMOTE_ADDR"),
-            user_agent=request.META.get("HTTP_USER_AGENT"),
-        )
         if form.is_valid():
             form.add_error("token", "The code is incorrect or expired.")
         return render(request, self.template_name, {"form": form}, status=400)

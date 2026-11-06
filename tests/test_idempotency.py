@@ -40,6 +40,7 @@ from apps.transactions.idempotency import (
     TRANSFER_SOURCE,
     save_once,
     source_key,
+    source_key_for_revision,
 )
 from apps.transactions.models import CanonicalTransaction
 from tests.factories import (
@@ -53,6 +54,20 @@ from tests.factories import (
 pytestmark = pytest.mark.django_db
 
 KEY = os.urandom(32)
+
+
+def test_reopened_match_source_key_advances_only_its_review_revision() -> None:
+    identifier = "match-id"
+
+    assert source_key_for_revision(TRANSFER_SOURCE, identifier, 0) == source_key(
+        TRANSFER_SOURCE, identifier
+    )
+    assert source_key_for_revision(TRANSFER_SOURCE, identifier, 1) == source_key(
+        TRANSFER_SOURCE, f"{identifier}:revision-1"
+    )
+    assert source_key_for_revision(REFUND_SOURCE, identifier, 2) != source_key(
+        REFUND_SOURCE, identifier
+    )
 
 
 @pytest.fixture

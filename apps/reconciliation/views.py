@@ -123,11 +123,11 @@ class MatchLinkView(LoginRequiredMixin, View):
         return render(
             request,
             "reconciliation/match_link.html",
-            {"form": ManualLinkForm(user=request.user)},
+            {"form": ManualLinkForm(user=request.user, data_key=_data_key(request))},
         )
 
     def post(self, request: HttpRequest) -> HttpResponse:
-        form = ManualLinkForm(request.POST, user=request.user)
+        form = ManualLinkForm(request.POST, user=request.user, data_key=_data_key(request))
         if not form.is_valid():
             return render(request, "reconciliation/match_link.html", {"form": form}, status=400)
         try:
