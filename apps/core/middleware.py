@@ -33,7 +33,7 @@ def _error_response(request: HttpRequest, error: ApplicationError) -> HttpRespon
             "message": error.public_message,
             "recovery_hint": error.public_recovery_hint,
             "request_id": request_id,
-            "details": error.details,
+            "details": error.public_details,
         }
     }
     response: HttpResponse
@@ -68,25 +68,32 @@ class ErrorHandlingMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         try:
             return self.get_response(request)
-        except ApplicationError as error:
-            logger.warning("Application request failed: %s", error.code)
-            return _error_response(request, error)
-        except Http404:
-            not_found = ResourceNotFoundError("The requested resource was not found.")
-            logger.warning("Application request failed: %s", not_found.code)
-            return _error_response(request, not_found)
-        except PermissionDenied:
-            forbidden = ForbiddenError("You do not have permission to perform that action.")
-            logger.warning("Application request failed: %s", forbidden.code)
-            return _error_response(request, forbidden)
-        except Exception:
-            logger.exception("Unhandled application request failure")
-            if settings.DEBUG:
+        except Exception as exception:
+            response = self.process_exception(request, exception)
+            if response is None:
                 raise
-            return _error_response(
-                request,
-                InternalServerError("An unexpected error occurred."),
-            )
+            return response
+
+    def process_exception(self, request: HttpRequest, exception: Exception) -> HttpResponse | None:
+        """Handle view failures before Django converts them into generic responses."""
+
+        error: ApplicationError
+        if isinstance(exception, ApplicationError):
+            error = exception
+        elif isinstance(exception, Http404):
+            error = ResourceNotFoundError("The requested resource was not found.")
+        elif isinstance(exception, PermissionDenied):
+            error = ForbiddenError("You do not have permission to perform that action.")
+        else:
+            if settings.DEBUG:
+                return None
+            # Exception messages can contain arbitrary financial text, not just
+            # labeled values that the structured log redactor can recognize.
+            logger.error("Unhandled application request failure")
+            return _error_response(request, InternalServerError("An unexpected error occurred."))
+
+        logger.warning("Application request failed: %s", error.code)
+        return _error_response(request, error)
 
 
 class DataKeyScopeMiddleware:
