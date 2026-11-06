@@ -214,6 +214,10 @@ def link_observations(
         key_version=key_version,
     )
     if match.status == ReconciliationMatch.Status.REJECTED:
+        # A rejected relationship represents a completed review cycle. Only
+        # this explicit user action starts a new cycle and a new canonical
+        # event idempotency key; detection reruns never advance it.
+        match.resolution_revision += 1
         match.status = ReconciliationMatch.Status.PROPOSED
         match.match_score = MANUAL_LINK_SCORE
         match.reviewed_by = None
@@ -224,6 +228,7 @@ def link_observations(
         match.save(
             update_fields=[
                 "status",
+                "resolution_revision",
                 "match_score",
                 "match_features_json_encrypted",
                 "reviewed_by",
@@ -240,6 +245,7 @@ def link_observations(
                 "score": MANUAL_LINK_SCORE,
                 "features": list(features),
                 "reopened": True,
+                "resolution_revision": match.resolution_revision,
             },
         )
     return match
