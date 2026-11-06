@@ -65,6 +65,14 @@ class ReconciliationMatch(EncryptedFieldsMixin, models.Model):
     )
     match_type = models.CharField(max_length=32, choices=MatchType.choices)
     match_score = models.PositiveSmallIntegerField(default=0)
+    #: Incremented only when the owner explicitly reopens a rejected match.
+    #: Reconciliation-created transaction idempotency keys include this value,
+    #: so a deliberate new confirmation cannot reuse a prior voided event.
+    resolution_revision = models.PositiveIntegerField(
+        default=0,
+        editable=False,
+        help_text="User-reopened relationship revision for canonical event idempotency.",
+    )
     #: The features that produced the score, so a reviewer can be told *why*
     #: two rows were paired rather than just how confidently.
     match_features_json_encrypted = models.TextField(blank=True)

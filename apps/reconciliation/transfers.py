@@ -26,7 +26,7 @@ from apps.core.errors import ConflictError, ForbiddenError
 from apps.ledger.rules import PostingRuleAccounts, post_transaction_by_type
 from apps.observations.models import ImportedObservation
 from apps.observations.review import decrypt_observation
-from apps.transactions.idempotency import TRANSFER_SOURCE, save_once, source_key
+from apps.transactions.idempotency import TRANSFER_SOURCE, save_once, source_key_for_revision
 from apps.transactions.invariants import validate_transaction_invariants
 from apps.transactions.models import CanonicalTransaction
 from apps.transactions.money import store_money
@@ -204,7 +204,9 @@ def confirm_internal_transfer(
         transaction_type=CanonicalTransaction.TransactionType.INTERNAL_TRANSFER,
         financial_account=source,
         status=CanonicalTransaction.Status.DRAFT,
-        source_idempotency_key=source_key(TRANSFER_SOURCE, match.pk),
+        source_idempotency_key=source_key_for_revision(
+            TRANSFER_SOURCE, match.pk, match.resolution_revision
+        ),
     )
     # Encrypted under this row's identity before anything is written: the
     # observations these came from held their values encrypted, and copying them
@@ -265,6 +267,7 @@ def confirm_internal_transfer(
             "canonical_transaction_id": str(canonical.pk),
             "outgoing_observation_id": str(outgoing.pk),
             "incoming_observation_id": str(incoming.pk),
+            "resolution_revision": match.resolution_revision,
             "score": match.match_score,
             "posted": ledger_accounts is not None,
         },

@@ -82,6 +82,7 @@ test refuses any column that has none.
 | `ImportedObservation` | `import_key`, `ocr_run_id`, `row_index`, parser provenance, `review_flags` and its five queryable projections, `risk_score`, `reviewed_by_id`, `reviewed_at`, `corrected_fields`, `merged_into_id` | Deterministic document/run/parser/row identity prevents duplicate imports at the database boundary. Review ranking (13.4, section 19) and parser accuracy measurement (31.3) use the remaining projections; the booleans exist because the queue has to filter and sort in the database — JSON containment is not portable across SQLite and PostgreSQL, and ranking in Python would only order rows within a page. |
 | `CanonicalTransaction` | `category_source`, `source_idempotency_key` | Categorization provenance (section 18), so re-classification cannot overwrite a correction a person made; and convergence, so a retried worker produces one transaction rather than two. |
 | `ReconciliationMatch` | `reviewed_at` | When the decision was made, beside who made it. |
+| `ReconciliationMatch` | `resolution_revision` | A user-reopened relationship cycle, so idempotency keys do not reuse a prior voided event. |
 
 `user_id` on `OcrRun` and `OcrToken` is denormalized from the parent document.
 Section 21.3 requires every query for owned data to filter on the owner, and a
