@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load finance_money %}
 {% block title %}Income and spending{% endblock %}
 
 {% block content %}
@@ -25,9 +26,9 @@
   </form>
 
   <dl class="overview-headline">
-    <dt>Income</dt><dd>{{ overview.income_minor }}</dd>
-    <dt>Net spending</dt><dd>{{ overview.net_spending_minor }}</dd>
-    <dt>Difference</dt><dd>{{ overview.net_position_minor }}</dd>
+    <dt>Income</dt><dd>{{ overview.income_minor|money:currency }}</dd>
+    <dt>Net spending</dt><dd>{{ overview.net_spending_minor|money:currency }}</dd>
+    <dt>Difference</dt><dd>{{ overview.net_position_minor|money:currency }}</dd>
   </dl>
 
   <table class="queue-table">
@@ -50,7 +51,7 @@
             {{ figure.label }}
             {% if figure.note %}<small>{{ figure.note }}</small>{% endif %}
           </th>
-          <td>{{ figure.amount_minor }}</td>
+          <td>{{ figure.amount_minor|money:currency }}</td>
           <td>{{ figure.transaction_count }}</td>
           <td>{% if figure.counted %}Yes{% else %}Shown for context{% endif %}</td>
         </tr>
@@ -59,7 +60,7 @@
   </table>
 
   <p class="merge-help">
-    {{ overview.excluded_minor }} moved during this period without being earned
+    {{ overview.excluded_minor|money:currency }} moved during this period without being earned
     or spent — transfers between your own accounts, payments against balances,
     and cash withdrawn. It is listed above so you can see it was left out
     deliberately.
@@ -68,7 +69,7 @@
   {% if overview.has_unresolved %}
     <p class="empty-state">
       {{ overview.unresolved_count }} transaction(s) worth
-      {{ overview.unresolved_minor }} have no type yet, and are in neither total.
+      {{ overview.unresolved_minor|money:currency }} have no type yet, and are in neither total.
     </p>
   {% endif %}
 </section>

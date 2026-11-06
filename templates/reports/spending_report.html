@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load finance_money %}
 {% block title %}Spending by {{ grouping }}{% endblock %}
 
 {% block content %}
@@ -51,9 +52,9 @@
         {% for line in breakdown.lines %}
           <tr {% if not line.key %}class="unassigned"{% endif %}>
             <th scope="row">{{ line.label }}</th>
-            <td>{{ line.gross_spending_minor }}</td>
-            <td>{% if line.has_refunds %}−{{ line.refunds_minor }}{% else %}—{% endif %}</td>
-            <td>{{ line.net_spending_minor }}</td>
+            <td>{{ line.gross_spending_minor|money:currency }}</td>
+            <td>{% if line.has_refunds %}−{{ line.refunds_minor|money:currency }}{% else %}—{% endif %}</td>
+            <td>{{ line.net_spending_minor|money:currency }}</td>
             <td>{{ line.transaction_count }}</td>
           </tr>
         {% endfor %}
@@ -61,9 +62,9 @@
       <tfoot>
         <tr>
           <th scope="row">Total</th>
-          <td>{{ breakdown.gross_spending_minor }}</td>
-          <td>−{{ breakdown.refunds_minor }}</td>
-          <td>{{ breakdown.net_spending_minor }}</td>
+          <td>{{ breakdown.gross_spending_minor|money:currency }}</td>
+          <td>{% if breakdown.refunds_minor %}−{% endif %}{{ breakdown.refunds_minor|money:currency }}</td>
+          <td>{{ breakdown.net_spending_minor|money:currency }}</td>
           <td>{{ breakdown.transaction_count }}</td>
         </tr>
       </tfoot>
@@ -72,14 +73,14 @@
     {% if reconciles is False %}
       <p class="error-state">
         These subtotals do not add up to the month's total of
-        {{ month_totals.net_spending_minor }}. Something is wrong with the
+        {{ month_totals.net_spending_minor|money:currency }}. Something is wrong with the
         figures above; do not rely on them.
       </p>
     {% endif %}
 
     {% if breakdown.unassigned %}
       <p class="empty-state">
-        {{ breakdown.unassigned.net_spending_minor }} is not assigned to a
+        {{ breakdown.unassigned.net_spending_minor|money:currency }} is not assigned to a
         {{ grouping }} yet. Categorising it will move it into the list above.
       </p>
     {% endif %}

@@ -21,6 +21,8 @@ from django.views.decorators.cache import never_cache
 from django.views.generic import View
 
 from apps.categorization.models import Category
+from apps.core.currencies import is_supported, normalize_code
+from apps.core.error_views import render_error_page
 from apps.core.errors import ApplicationError
 from apps.core.key_scope import request_data_key
 from apps.core.ownership import owned_queryset
@@ -102,7 +104,9 @@ class SpendingReportView(LoginRequiredMixin, View):
     def get(self, request: HttpRequest) -> HttpResponse:
         year, month = _month(request)
         start, end = _range(request, year, month)
-        currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
+        currency = normalize_code(request.GET.get("currency") or DEFAULT_CURRENCY)
+        if not is_supported(currency):
+            return render_error_page(request, status=400)
         data_key = request_data_key(request)
         category_id = _owned_id(request, Category, "category")
         build = category_breakdown if self.grouping == "category" else merchant_breakdown
@@ -162,7 +166,9 @@ class AccountReportView(LoginRequiredMixin, View):
     def get(self, request: HttpRequest) -> HttpResponse:
         year, month = _month(request)
         start, end = _range(request, year, month)
-        currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
+        currency = normalize_code(request.GET.get("currency") or DEFAULT_CURRENCY)
+        if not is_supported(currency):
+            return render_error_page(request, status=400)
         data_key = request_data_key(request)
         account_id = _owned_id(request, FinancialAccount, "account")
         instrument_id = _owned_id(request, PaymentInstrument, "instrument")
@@ -226,7 +232,9 @@ class OverviewReportView(LoginRequiredMixin, View):
     def get(self, request: HttpRequest) -> HttpResponse:
         year, month = _month(request)
         start, end = _range(request, year, month)
-        currency = (request.GET.get("currency") or DEFAULT_CURRENCY).upper()
+        currency = normalize_code(request.GET.get("currency") or DEFAULT_CURRENCY)
+        if not is_supported(currency):
+            return render_error_page(request, status=400)
         data_key = request_data_key(request)
         overview = period_overview(
             request.user, start=start, end=end, currency=currency, data_key=data_key

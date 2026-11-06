@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load finance_money %}
 {% block title %}Accounts · Finance workspace{% endblock %}
 
 {% block content %}
@@ -20,7 +21,7 @@
               <td>{{ row.account.get_account_type_display }}</td>
               <td>
                 {% for currency, minor in row.balances.items %}
-                  {{ minor }} {{ currency }}{% if not forloop.last %} · {% endif %}
+                  {{ minor|money:currency }} {{ currency }}{% if not forloop.last %} · {% endif %}
                 {% empty %}—{% endfor %}
               </td>
             </tr>
