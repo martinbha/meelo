@@ -12,8 +12,10 @@ from typing import Any
 
 from django import forms
 
+from apps.core.form_fields import ReadableModelChoiceField
 from apps.core.ownership import owned_queryset
 from apps.observations.models import ImportedObservation
+from apps.observations.selection_labels import observation_label
 
 from .models import ReconciliationMatch
 
@@ -21,17 +23,17 @@ from .models import ReconciliationMatch
 class ManualLinkForm(forms.Form):
     """Two observations the user says belong together, and how."""
 
-    left_observation = forms.ModelChoiceField(
+    left_observation = ReadableModelChoiceField(
         queryset=ImportedObservation.objects.none(), label="First row"
     )
-    right_observation = forms.ModelChoiceField(
+    right_observation = ReadableModelChoiceField(
         queryset=ImportedObservation.objects.none(), label="Second row"
     )
     match_type = forms.ChoiceField(
         choices=ReconciliationMatch.MatchType.choices, label="Relationship"
     )
 
-    def __init__(self, *args: Any, user: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, user: Any, data_key: bytes | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # Rejected and merged rows are excluded: a row already folded into
         # another cannot take part in a second relationship, and one the user
@@ -43,6 +45,13 @@ class ManualLinkForm(forms.Form):
         )
         self.fields["left_observation"].queryset = linkable  # type: ignore[attr-defined]
         self.fields["right_observation"].queryset = linkable  # type: ignore[attr-defined]
+        if data_key is not None:
+            self.fields["left_observation"].set_label_builder(  # type: ignore[attr-defined]
+                lambda observation: observation_label(observation, user=user, data_key=data_key)
+            )
+            self.fields["right_observation"].set_label_builder(  # type: ignore[attr-defined]
+                lambda observation: observation_label(observation, user=user, data_key=data_key)
+            )
 
     def clean(self) -> dict[str, Any]:
         cleaned: dict[str, Any] = super().clean() or {}

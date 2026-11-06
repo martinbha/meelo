@@ -26,6 +26,10 @@ class DuplicateUploadError(ConflictError):
         )
         self.document = document
 
+    @property
+    def public_details(self) -> dict[str, Any]:
+        return {"document_id": str(self.document.pk)}
+
 
 @transaction.atomic
 def create_uploaded_document(

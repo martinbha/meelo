@@ -32,7 +32,7 @@ class ManualTransactionCreateView(LoginRequiredMixin, FormView):  # type: ignore
 
     def get_form_kwargs(self) -> dict[str, Any]:
         kwargs = super().get_form_kwargs()
-        kwargs["user"] = self.request.user
+        kwargs.update(user=self.request.user, data_key=_data_key(self.request))
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:
@@ -63,7 +63,11 @@ class ManualTransactionUpdateView(LoginRequiredMixin, FormView):  # type: ignore
     def get_form_kwargs(self) -> dict[str, Any]:
         kwargs = super().get_form_kwargs()
         assert self.instance is not None
-        kwargs.update(user=self.request.user, instance=self.instance)
+        kwargs.update(
+            user=self.request.user,
+            instance=self.instance,
+            data_key=_data_key(self.request),
+        )
         return kwargs
 
     def form_valid(self, form: ManualTransactionForm) -> HttpResponse:

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load finance_money %}
 {% block title %}Activity by {{ grouping }}{% endblock %}
 
 {% block content %}
@@ -22,18 +23,18 @@
     <label>Account
       <select name="account">
         <option value="">All accounts</option>
-        {% for item in accounts %}
-          <option value="{{ item.pk }}"
-            {% if selected_account == item.pk %}selected{% endif %}>{{ item.name_blind_index }}</option>
+        {% for item in account_options %}
+          <option value="{{ item.id }}"
+            {% if selected_account == item.id %}selected{% endif %}>{{ item.label }}</option>
         {% endfor %}
       </select>
     </label>
     <label>Card
       <select name="instrument">
         <option value="">All cards</option>
-        {% for item in instruments %}
-          <option value="{{ item.pk }}"
-            {% if selected_instrument == item.pk %}selected{% endif %}>{{ item.name_blind_index }}</option>
+        {% for item in instrument_options %}
+          <option value="{{ item.id }}"
+            {% if selected_instrument == item.id %}selected{% endif %}>{{ item.label }}</option>
         {% endfor %}
       </select>
     </label>
@@ -63,13 +64,13 @@
         {% for line in report.lines %}
           <tr {% if not line.is_mapped %}class="unassigned"{% endif %}>
             <th scope="row">{{ line.label }}</th>
-            <td>{{ line.gross_spending_minor }}</td>
-            <td>{% if line.refunds_minor %}−{{ line.refunds_minor }}{% else %}—{% endif %}</td>
-            <td>{{ line.net_spending_minor }}</td>
-            <td>{{ line.income_minor }}</td>
-            <td>{{ line.settlements_minor }}</td>
-            <td>{{ line.movement_minor }}</td>
-            <td>{{ line.unresolved_minor }}</td>
+            <td>{{ line.gross_spending_minor|money:currency }}</td>
+            <td>{% if line.refunds_minor %}−{{ line.refunds_minor|money:currency }}{% else %}—{% endif %}</td>
+            <td>{{ line.net_spending_minor|money:currency }}</td>
+            <td>{{ line.income_minor|money:currency }}</td>
+            <td>{{ line.settlements_minor|money:currency }}</td>
+            <td>{{ line.movement_minor|money:currency }}</td>
+            <td>{{ line.unresolved_minor|money:currency }}</td>
             <td>{{ line.transaction_count }}</td>
           </tr>
         {% endfor %}
@@ -77,13 +78,13 @@
       <tfoot>
         <tr>
           <th scope="row">Total</th>
-          <td>{{ report.gross_spending_minor }}</td>
-          <td>−{{ report.refunds_minor }}</td>
-          <td>{{ report.net_spending_minor }}</td>
-          <td>{{ report.income_minor }}</td>
-          <td>{{ report.settlements_minor }}</td>
-          <td>{{ report.movement_minor }}</td>
-          <td>{{ report.unresolved_minor }}</td>
+          <td>{{ report.gross_spending_minor|money:currency }}</td>
+          <td>{% if report.refunds_minor %}−{% endif %}{{ report.refunds_minor|money:currency }}</td>
+          <td>{{ report.net_spending_minor|money:currency }}</td>
+          <td>{{ report.income_minor|money:currency }}</td>
+          <td>{{ report.settlements_minor|money:currency }}</td>
+          <td>{{ report.movement_minor|money:currency }}</td>
+          <td>{{ report.unresolved_minor|money:currency }}</td>
           <td>{{ report.transaction_count }}</td>
         </tr>
       </tfoot>
