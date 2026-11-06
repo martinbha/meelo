@@ -385,10 +385,9 @@ def _authentication_model_payload_problems(
     if not required_labels:
         return []
     try:
-        rows = json.loads(database_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        # The general backup verifier reports an unreadable database export.
-        return []
+        rows = _database_rows(database_path)
+    except BackupError as error:
+        return [str(error)]
     actual: dict[str, int] = {}
     for row in rows:
         label = row.get("model")
@@ -407,6 +406,20 @@ def _authentication_model_payload_problems(
     return problems
 
 
+def _database_rows(database_path: Path) -> list[dict[str, Any]]:
+    """Read the fixture structure without exposing invalid payloads in errors."""
+
+    try:
+        rows = json.loads(database_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise BackupError("The database export is unreadable.") from error
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict) or not isinstance(row.get("model"), str) for row in rows
+    ):
+        raise BackupError("The database export must be an array of model records.")
+    return rows
+
+
 def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = None) -> list[str]:
     """Check an archive opens and is internally consistent. Returns problems."""
 
@@ -421,9 +434,10 @@ def verify_backup(path: Path, *, passphrase: str, master_key: bytes | None = Non
         report = _unpack_body(body, destination=Path(scratch))
         problems = list(report.problems)
         try:
-            rows = json.loads(report.database_path.read_text())
-        except (OSError, json.JSONDecodeError) as error:
-            problems.append(f"The database export is unreadable: {error}")
+            rows = _database_rows(report.database_path)
+        except BackupError as error:
+            if str(error) not in problems:
+                problems.append(str(error))
             return problems
         counted = len(rows)
         expected = sum(report.manifest.row_counts.values())

@@ -692,3 +692,44 @@ def test_an_archive_is_decrypted_once_per_operation(
     opens["count"] = 0
     assert verify_backup(archive, passphrase=PASSPHRASE) == []
     assert opens["count"] == 1
+
+
+@pytest.mark.parametrize("payload_kind", ["missing-device", "wrong-shape", "invalid-model"])
+def test_authentication_payload_inconsistency_is_refused_before_loading(
+    owner: Any, tmp_path: Path, monkeypatch: Any, payload_kind: str
+) -> None:
+    device = TOTPDevice.objects.create(user=owner, name="synthetic-authenticator", confirmed=True)
+    source = tmp_path / "current.enc"
+    create_backup(source, passphrase=PASSPHRASE)
+    rewritten = BytesIO()
+    body = open_archive(source.read_bytes(), passphrase=PASSPHRASE)
+    with (
+        tarfile.open(fileobj=BytesIO(body), mode="r:gz") as original,
+        tarfile.open(fileobj=rewritten, mode="w:gz") as target,
+    ):
+        for member in original.getmembers():
+            stream = original.extractfile(member)
+            assert stream is not None
+            payload = stream.read()
+            if member.name == DATABASE_NAME:
+                if payload_kind == "missing-device":
+                    rows = json.loads(payload)
+                    payload = json.dumps(
+                        [row for row in rows if row["model"] != "otp_totp.totpdevice"]
+                    ).encode()
+                elif payload_kind == "wrong-shape":
+                    payload = json.dumps({"private_value": device.key}).encode()
+                else:
+                    payload = json.dumps([{"model": [device.key], "fields": {}}]).encode()
+            member.size = len(payload)
+            target.addfile(member, BytesIO(payload))
+    inconsistent = tmp_path / "inconsistent.enc"
+    inconsistent.write_bytes(seal_archive(rewritten.getvalue(), passphrase=PASSPHRASE))
+
+    problems = verify_backup(inconsistent, passphrase=PASSPHRASE)
+    assert problems
+    assert device.key not in " ".join(problems)
+    monkeypatch.setenv(PASSPHRASE_ENV, PASSPHRASE)
+    with pytest.raises(CommandError, match="does not match its manifest"):
+        run("restore_backup", str(inconsistent), str(tmp_path / "restore"), load=True)
+    assert TOTPDevice.objects.get(pk=device.pk).key == device.key
