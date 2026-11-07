@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from django import forms
@@ -10,6 +10,7 @@ from django.core.exceptions import NON_FIELD_ERRORS
 from apps.categorization.models import Category
 from apps.core.blind_index import SearchKey
 from apps.core.crypto import InvalidCiphertextError, is_encrypted_value
+from apps.core.currencies import UnknownCurrencyError, definition_for, normalize_code
 from apps.core.encrypted_values import MalformedPayloadError
 from apps.financial_accounts.models import FinancialAccount
 from apps.instruments.models import PaymentInstrument
@@ -26,7 +27,15 @@ class ManualTransactionForm(forms.Form):
     )
 
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
-    amount = forms.DecimalField(min_value=Decimal("0.01"), max_digits=18, decimal_places=2)
+    amount = forms.DecimalField(
+        min_value=Decimal("0"),
+        max_digits=18,
+        # The currency is another form field. Validate its exponent in clean()
+        # without reserving decimal places and reducing the whole-digit limit.
+        decimal_places=None,
+        help_text="Enter the amount in the selected currency's units.",
+        widget=forms.NumberInput(attrs={"step": "any"}),
+    )
     currency = forms.CharField(max_length=3, initial="KRW")
     transaction_type = forms.ChoiceField(choices=CanonicalTransaction.TransactionType.choices)
     financial_account = forms.ModelChoiceField(queryset=FinancialAccount.objects.none())
@@ -103,6 +112,45 @@ class ManualTransactionForm(forms.Form):
             raise ValueError("A saved transaction value needs explicit recovery.")
         return value
 
+    def clean_currency(self) -> str:
+        currency = normalize_code(self.cleaned_data["currency"])
+        try:
+            definition_for(currency)
+        except UnknownCurrencyError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        return currency
+
+    def clean(self) -> dict[str, Any] | None:
+        cleaned = super().clean()
+        if cleaned is None:
+            return cleaned
+        amount = cleaned.get("amount")
+        currency = cleaned.get("currency")
+        if amount is None or currency is None:
+            return cleaned
+
+        exponent = definition_for(currency).minor_unit_exponent
+        quantum = Decimal(1).scaleb(-exponent)
+        try:
+            representable = amount.quantize(quantum)
+        except InvalidOperation:
+            self.add_error("amount", "Enter a valid amount for this currency.")
+            return cleaned
+
+        if amount != representable:
+            decimal_label = "decimal places" if exponent != 1 else "decimal place"
+            self.add_error(
+                "amount",
+                f"{currency} supports at most {exponent} {decimal_label}.",
+            )
+            return cleaned
+        if representable <= 0:
+            self.add_error("amount", "Amount must be greater than zero.")
+            return cleaned
+
+        cleaned["amount_minor"] = int(representable.scaleb(exponent))
+        return cleaned
+
     def full_clean(self) -> None:
         super().full_clean()
         if self._source_values_unreadable:
@@ -129,7 +177,7 @@ class ManualTransactionForm(forms.Form):
         kwargs = {
             "user": self.user,
             "occurred_at": data["occurred_at"],
-            "amount_minor": int(data["amount"] * 100),
+            "amount_minor": data["amount_minor"],
             "currency": data["currency"],
             "transaction_type": data["transaction_type"],
             "financial_account": data["financial_account"],
